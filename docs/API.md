@@ -1,0 +1,478 @@
+# Apostrophe API Reference
+
+Complete reference for all public functions, types, and macros in `apostrophe.h` and `apostrophe_widgets.h`.
+
+---
+
+## Table of Contents
+
+- [Core (apostrophe.h)](#core)
+  - [Macros & Constants](#macros--constants)
+  - [Types & Enums](#types--enums)
+  - [Lifecycle](#lifecycle)
+  - [Screen & Scaling](#screen--scaling)
+  - [Theming](#theming)
+  - [Fonts](#fonts)
+  - [Input](#input)
+  - [Drawing Primitives](#drawing-primitives)
+  - [Footer & Status Bar](#footer--status-bar)
+  - [Text Scrolling](#text-scrolling)
+  - [Texture Cache](#texture-cache)
+  - [Combos](#combos)
+  - [Logging](#logging)
+- [Widgets (apostrophe_widgets.h)](#widgets)
+  - [List](#list)
+  - [Options List](#options-list)
+  - [Keyboard](#keyboard)
+  - [Confirmation](#confirmation)
+  - [Selection](#selection)
+  - [Process Message](#process-message)
+  - [Detail Screen](#detail-screen)
+  - [Color Picker](#color-picker)
+  - [Help Overlay](#help-overlay)
+
+---
+
+## Core
+
+### Macros & Constants
+
+| Macro | Value | Description |
+|-------|-------|-------------|
+| `AP_OK` | `0` | Success return code |
+| `AP_ERROR` | `-1` | Error return code |
+| `AP_CANCELLED` | `-2` | User cancelled (pressed back) |
+| `AP_REFERENCE_WIDTH` | `1024` | Reference width for scaling |
+| `AP_SCALE_DAMPING` | `0.75f` | Damping for screens wider than reference |
+| `AP_S(base)` | — | Scale a pixel value from reference to actual screen |
+| `AP_PLATFORM_NAME` | `"tg5040"` etc. | Compile-time platform identifier |
+| `AP_PLATFORM_IS_DEVICE` | `0` or `1` | Whether building for a real device |
+| `AP_INPUT_REPEAT_DELAY` | `150` | Initial hold delay (ms) |
+| `AP_INPUT_REPEAT_RATE` | `50` | Repeat rate (ms) |
+| `AP_AXIS_DEADZONE` | `16000` | Joystick axis dead zone |
+| `AP_TEXTURE_CACHE_SIZE` | `8` | LRU texture cache capacity |
+| `AP_MAX_COMBOS` | `16` | Max registered button combos |
+| `AP_MAX_LOG_LEN` | `2048` | Max log message length |
+
+### Types & Enums
+
+#### `ap_button`
+
+Virtual button identifiers, unified from all input sources.
+
+```c
+AP_BTN_NONE, AP_BTN_UP, AP_BTN_DOWN, AP_BTN_LEFT, AP_BTN_RIGHT,
+AP_BTN_A, AP_BTN_B, AP_BTN_X, AP_BTN_Y,
+AP_BTN_L1, AP_BTN_L2, AP_BTN_R1, AP_BTN_R2,
+AP_BTN_START, AP_BTN_SELECT, AP_BTN_MENU, AP_BTN_POWER
+```
+
+#### `ap_font_tier`
+
+```c
+AP_FONT_EXTRA_LARGE  // 60px at 1024 ref
+AP_FONT_LARGE        // 50px
+AP_FONT_MEDIUM       // 44px
+AP_FONT_SMALL        // 34px
+AP_FONT_TINY         // 24px
+AP_FONT_MICRO        // 18px
+```
+
+#### `ap_text_align`
+
+```c
+AP_ALIGN_LEFT, AP_ALIGN_CENTER, AP_ALIGN_RIGHT
+```
+
+#### `ap_list_action`
+
+```c
+AP_ACTION_SELECTED  // User pressed confirm
+AP_ACTION_BACK      // User pressed back
+AP_ACTION_CUSTOM    // Custom action button pressed
+```
+
+#### `ap_color`
+
+Alias for `SDL_Color` (r, g, b, a).
+
+#### `ap_theme`
+
+```c
+typedef struct {
+    ap_color highlight;        // Selected item pill background
+    ap_color accent;           // Footer outer pill, status bar bg
+    ap_color button_label;     // Text inside footer button pills
+    ap_color text;             // Default text color
+    ap_color highlighted_text; // Text on selected items
+    ap_color hint;             // Dim/help text
+    ap_color background;       // Screen background
+    char     font_path[512];
+    char     bg_image_path[512];
+} ap_theme;
+```
+
+#### `ap_config`
+
+```c
+typedef struct {
+    const char *window_title;      // Window title (macOS only)
+    const char *font_path;         // Path to .ttf, NULL = auto
+    const char *bg_image_path;     // Background image, NULL = none
+    const char *log_path;          // Log file, NULL = stderr only
+    const char *primary_color_hex; // Override accent "#RRGGBB"
+    bool        show_background;   // Render bg image behind UI
+    bool        is_nextui;         // Load theme from nextval.elf
+} ap_config;
+```
+
+#### `ap_input_event`
+
+```c
+typedef struct {
+    ap_button button;
+    bool      pressed;   // true = down, false = up
+} ap_input_event;
+```
+
+#### `ap_footer_item`
+
+```c
+typedef struct {
+    ap_button    button;
+    const char  *label;
+    bool         is_confirm;  // true = right-aligned group
+} ap_footer_item;
+```
+
+#### `ap_status_bar_opts`
+
+```c
+typedef struct {
+    bool         show_clock;
+    bool         use_24h;
+    const char **icons;
+    int          icon_count;
+} ap_status_bar_opts;
+```
+
+### Lifecycle
+
+#### `int ap_init(ap_config *cfg)`
+
+Initialise Apostrophe. Creates SDL window/renderer, loads fonts, detects screen size, loads theme (if `is_nextui`), sets up input, starts power button handler (on device).
+
+Returns `AP_OK` on success, `AP_ERROR` on failure.
+
+#### `void ap_quit(void)`
+
+Shut down completely. Frees all resources, destroys SDL context, stops background threads.
+
+### Screen & Scaling
+
+#### `int ap_get_screen_width(void)` / `int ap_get_screen_height(void)`
+
+Get the current screen dimensions in pixels.
+
+#### `float ap_get_scale(void)`
+
+Get the current scaling factor (screen_width / reference_width, with damping).
+
+#### `AP_S(base)`
+
+Macro. Scales an integer pixel value from reference (1024px) to actual screen:
+
+```c
+int margin = AP_S(20);  // 20px * scale factor
+```
+
+### Theming
+
+#### `ap_theme *ap_get_theme(void)`
+
+Get a pointer to the current theme. Modifiable.
+
+#### `void ap_theme_set_color(ap_color *target, const char *hex)`
+
+Parse a `#RRGGBB` string into a color: `ap_theme_set_color(&theme->accent, "#FF6600");`
+
+### Fonts
+
+#### `TTF_Font *ap_get_font(ap_font_tier tier)`
+
+Get a pre-loaded, pre-scaled font for the given tier. Returns NULL if not loaded.
+
+### Input
+
+#### `bool ap_poll_input(ap_input_event *event)`
+
+Poll for the next input event. Returns `true` if an event was available.
+
+Handles SDL event processing internally: keyboard, joystick buttons, joystick axes, joystick hats, and quit events.
+
+#### `bool ap_is_pressed(ap_button btn)`
+
+Check if a button is currently held down.
+
+#### `void ap_input_set_repeat(uint32_t delay_ms, uint32_t rate_ms)`
+
+Configure directional hold repeat timing.
+
+### Drawing Primitives
+
+#### `void ap_clear_screen(void)`
+
+Clear the screen to the theme background color (or render bg image if configured).
+
+#### `void ap_present(void)`
+
+Present the rendered frame. Call after all drawing for the frame.
+
+#### `void ap_draw_bg(void)`
+
+Draw the background image/color (called automatically by `ap_clear_screen`).
+
+#### `int ap_draw_text(TTF_Font *font, const char *text, int x, int y, ap_color color)`
+
+Render text. Returns the rendered width in pixels.
+
+#### `int ap_draw_text_clipped(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w)`
+
+Render text clipped to a maximum width.
+
+#### `void ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align)`
+
+Render multi-line word-wrapped text.
+
+#### `int ap_text_width(TTF_Font *font, const char *text)`
+
+Measure text width without rendering.
+
+#### `void ap_draw_rect(int x, int y, int w, int h, ap_color color)`
+
+Draw a filled rectangle.
+
+#### `void ap_draw_rounded_rect(int x, int y, int w, int h, int radius, ap_color color)`
+
+Draw a filled rounded rectangle using scanline quarter-circle fill (no SDL2_gfx dependency).
+
+#### `void ap_draw_image(const char *path, int x, int y, int w, int h)`
+
+Load and draw an image at the given position/size. Uses the internal texture cache.
+
+### Footer & Status Bar
+
+#### `void ap_draw_footer(ap_footer_item *items, int count)`
+
+Draw the footer bar at the bottom of the screen with button hints.
+
+Button hints on the left, confirm-group hints on the right. Each shows a pill with the button letter and a text label.
+
+#### `int ap_get_footer_height(void)`
+
+Get the footer height in pixels (scaled).
+
+#### `void ap_draw_status_bar(ap_status_bar_opts *opts)`
+
+Draw a status bar at the top of the screen (clock, icons).
+
+### Text Scrolling
+
+#### `void ap_text_scroll_reset(ap_text_scroll *scroll)`
+
+Reset a text scroll state to the beginning.
+
+#### `void ap_text_scroll_update(ap_text_scroll *scroll, int text_w, int visible_w)`
+
+Advance the ping-pong scroll animation. Call once per frame.
+
+### Texture Cache
+
+#### `SDL_Texture *ap_cache_get(const char *key, int *w, int *h)`
+
+Look up a texture in the LRU cache by key string. Returns NULL on miss.
+
+#### `void ap_cache_put(const char *key, SDL_Texture *tex, int w, int h)`
+
+Store a texture in the LRU cache. Evicts least-recently-used entries when full.
+
+#### `void ap_cache_clear(void)`
+
+Flush the entire texture cache and free all textures.
+
+### Combos
+
+#### `void ap_combo_register(const char *id, ap_button *buttons, int count, uint32_t window_ms, bool sequence, bool strict)`
+
+Register a button combination.
+
+- `id`: Unique identifier string
+- `buttons`: Array of buttons in the combo
+- `count`: Number of buttons
+- `window_ms`: Time window to complete the combo (ms)
+- `sequence`: `false` = chord (simultaneous), `true` = sequence (ordered)
+- `strict`: For sequences, must buttons be the exact order?
+
+#### `bool ap_combo_check(const char *id)`
+
+Check if a registered combo was triggered this frame.
+
+### Logging
+
+#### `void ap_log(const char *fmt, ...)`
+
+Printf-style logging. Writes to stderr and optionally to the configured log file.
+
+---
+
+## Widgets
+
+All widget functions return `AP_OK` on successful interaction, `AP_CANCELLED` when the user presses back, or `AP_ERROR` on failure.
+
+### List
+
+```c
+ap_list_opts ap_list_default_opts(const char *title, ap_list_item *items, int count);
+int          ap_list(ap_list_opts *opts, ap_list_result *result);
+```
+
+Scrollable list with:
+- Single selection (A button)
+- Multi-select mode (checkboxes)
+- Reorder mode (hold button + D-Pad)
+- Image thumbnails
+- Text overflow scrolling
+- Help overlay (L1)
+- Custom action button
+
+**`ap_list_item`**:
+```c
+typedef struct {
+    const char  *label;
+    const char  *metadata;
+    SDL_Texture *image;
+    bool         selected;  // For multi-select
+} ap_list_item;
+```
+
+**`ap_list_result`**:
+```c
+typedef struct {
+    int             selected_index;
+    ap_list_action  action;
+    ap_list_item   *items;
+    int             item_count;
+} ap_list_result;
+```
+
+### Options List
+
+```c
+int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result);
+```
+
+Settings-style list where each row has a label and a configurable value area:
+
+| Type | Behavior |
+|------|----------|
+| `AP_OPT_STANDARD` | Left/Right cycles through predefined values |
+| `AP_OPT_KEYBOARD` | A opens keyboard for text input |
+| `AP_OPT_CLICKABLE` | A triggers a navigation/action callback |
+| `AP_OPT_COLOR_PICKER` | A opens the color picker |
+
+### Keyboard
+
+```c
+int ap_keyboard(const char *initial_text, const char *help_text,
+                ap_keyboard_layout layout, ap_keyboard_result *result);
+
+int ap_url_keyboard(const char *initial_text, const char *help_text,
+                    ap_url_keyboard_config *cfg, ap_keyboard_result *result);
+```
+
+Full on-screen keyboard with:
+- QWERTY layout
+- Shift, symbols, backspace, space
+- Cursor movement
+- General, URL, and numeric layouts
+- Custom shortcut keys for URL mode
+
+**Result**: `ap_keyboard_result.text` (char[1024])
+
+### Confirmation
+
+```c
+int ap_confirmation(ap_message_opts *opts, ap_confirm_result *result);
+```
+
+Modal dialog with a message (optionally with an image above it). Waits for user to press A (confirm) or B (cancel).
+
+**Result**: `ap_confirm_result.confirmed` (bool)
+
+### Selection
+
+```c
+int ap_selection(const char *message, ap_selection_option *options, int count,
+                 ap_footer_item *footer, int footer_count,
+                 ap_selection_result *result);
+```
+
+Horizontal pill-style chooser. User presses Left/Right to cycle options, A to confirm.
+
+**Result**: `ap_selection_result.selected_index`
+
+### Process Message
+
+```c
+int ap_process_message(ap_process_opts *opts, ap_process_fn fn, void *userdata);
+```
+
+Runs a worker function in a background thread while displaying a message and optional progress bar.
+
+```c
+typedef int (*ap_process_fn)(void *userdata);
+```
+
+**`ap_process_opts`**:
+```c
+typedef struct {
+    const char     *message;
+    bool            show_progress;
+    float          *progress;          // Worker updates this [0.0–1.0]
+    int            *interrupt_signal;  // UI sets to 1 on cancel
+    ap_button       interrupt_button;  // Cancel button (AP_BTN_NONE = none)
+    char          **dynamic_message;   // Worker can update displayed text
+    int             message_lines;
+} ap_process_opts;
+```
+
+### Detail Screen
+
+```c
+int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result);
+```
+
+Scrollable multi-section view for displaying information. Supports:
+
+| Section Type | Content |
+|-------------|---------|
+| `AP_SECTION_INFO` | Key-value pairs |
+| `AP_SECTION_DESCRIPTION` | Wrapped text block |
+| `AP_SECTION_IMAGE` | Single image |
+| `AP_SECTION_TABLE` | Tabular data |
+
+### Color Picker
+
+```c
+int ap_color_picker(ap_color initial, ap_color *result);
+```
+
+5×5 grid of predefined colors. Navigate with D-Pad, confirm with A.
+
+### Help Overlay
+
+```c
+void ap_show_help_overlay(const char *text);
+```
+
+Full-screen scrollable text overlay. Typically triggered by L1 in widgets that have `help_text` configured.
