@@ -351,19 +351,6 @@ static void ap__content_area(int *y, int *h, bool has_title, bool has_footer) {
     *h = ap_get_screen_height() - top - bottom;
 }
 
-/* Wait for a single press event (blocks within event loop). Returns AP_BTN_NONE on timeout. */
-static ap_button ap__wait_for_press(uint32_t timeout_ms) {
-    uint32_t start = SDL_GetTicks();
-    while (1) {
-        ap_input_event ev;
-        while (ap_poll_input(&ev)) {
-            if (ev.pressed) return ev.button;
-        }
-        if (timeout_ms > 0 && (SDL_GetTicks() - start) > timeout_ms) break;
-        SDL_Delay(AP__FRAME_DELAY);
-    }
-    return AP_BTN_NONE;
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * LIST WIDGET Implementation
@@ -405,7 +392,6 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
 
     ap_theme *theme = ap_get_theme();
     int screen_w = ap_get_screen_width();
-    int screen_h = ap_get_screen_height();
 
     TTF_Font *title_font = ap_get_font(AP_FONT_EXTRA_LARGE);
     TTF_Font *item_font  = ap_get_font(AP_FONT_SMALL);
@@ -416,7 +402,6 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     int pill_h     = AP_S(60);
     int pill_pad   = AP_S(20);
     int item_gap   = 0;
-    int pill_r     = AP_S(30);  /* Gabagool: 30*scaleFactor */
     int image_size = opts->show_images ? AP_S(48) : 0;
     int image_pad  = opts->show_images ? AP_S(12) : 0;
 
@@ -849,7 +834,6 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                 if (!value) value = "";
             }
 
-            int label_w = ap_measure_text(label_font, label);
             int value_w = ap_measure_text(value_font, value);
 
             if (is_selected) {
@@ -1143,9 +1127,6 @@ int ap_keyboard(const char *initial_text, const char *help_text,
 
     uint32_t caret_blink = SDL_GetTicks();
     bool caret_visible = true;
-
-    /* Track which "special key" the cursor is on: 0 = a char key */
-    int selected_special = 0;
 
     /* Current key arrays per row */
     #define AP__KB5_ROW_COUNT 5
@@ -1490,7 +1471,6 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
     int key_w = (screen_w - AP_S(40) - key_spacing * (grid_cols - 1)) / grid_cols;
     int key_h = (kb_area_h - key_spacing * (total_rows + 1)) / (total_rows + 1);
     int key_r = AP_S(6);
-    int grid_x = (screen_w - (grid_cols * (key_w + key_spacing) - key_spacing)) / 2;
     int grid_y = input_y + input_h + AP_S(10);
 
     /* State */
@@ -1598,8 +1578,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
                             int rn = ap__kb5_count(r);
                             if (cursor_col - 1 < rn)
                                 ap__kb_insert(result, &text_cursor, r[cursor_col - 1]);
-                            else /* symbol area: no-op in URL mode */
-                                ;
+                            /* else: symbol area — no-op in URL mode */
                         }
                     }
                     break;
@@ -2115,7 +2094,6 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
 
     ap_theme *theme = ap_get_theme();
     int screen_w = ap_get_screen_width();
-    int screen_h = ap_get_screen_height();
 
     TTF_Font *title_font   = ap_get_font(AP_FONT_SMALL);
     TTF_Font *section_font = ap_get_font(AP_FONT_SMALL);

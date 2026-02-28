@@ -462,7 +462,6 @@ static int ap__clamp(int val, int lo, int hi) {
     return val;
 }
 
-static int ap__min(int a, int b) { return a < b ? a : b; }
 static int ap__max(int a, int b) { return a > b ? a : b; }
 
 /* Base font sizes at 1024px reference width */
@@ -1287,31 +1286,6 @@ bool ap_poll_combo(ap_combo_event *event) {
     return true;
 }
 
-/* Check chords: all buttons held within time window */
-static void ap__check_chords(void) {
-    uint32_t now = SDL_GetTicks();
-    for (int i = 0; i < ap__g.combo_count; i++) {
-        ap_combo *c = &ap__g.combos[i];
-        if (!c->active || c->is_sequence) continue;
-
-        bool all_held = true;
-        uint32_t earliest = now, latest = 0;
-        for (int j = 0; j < c->button_count; j++) {
-            int b = c->buttons[j];
-            if (!ap__g.buttons_held[b]) { all_held = false; break; }
-            uint32_t t = ap__g.button_press_time[b];
-            if (t < earliest) earliest = t;
-            if (t > latest) latest = t;
-        }
-
-        if (all_held && (latest - earliest) <= c->window_ms) {
-            ap__combo_queue_push(c->id, true);
-            /* Prevent re-triggering: clear press times */
-            for (int j = 0; j < c->button_count; j++)
-                ap__g.button_press_time[c->buttons[j]] = 0;
-        }
-    }
-}
 
 /* ─── Drawing Primitives ─────────────────────────────────────────────────── */
 
@@ -1846,7 +1820,6 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     if (!font) return;
 
     int outer_pad = AP_S(20);      /* Gabagool outerPadding */
-    int inner_pad_x = AP_S(10);    /* Gabagool innerPaddingX */
     int inner_pad_y = AP_S(6);     /* Gabagool innerPaddingY */
     int icon_spacing = AP_S(8);    /* Gabagool iconSpacing */
     int margin = AP_S(20);

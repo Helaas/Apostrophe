@@ -9,8 +9,10 @@ CC      := $(CROSS_COMPILE)gcc
 SYSROOT := /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr
 
 PKG_CONFIG := pkg-config
-SDL_CFLAGS  := $(shell $(PKG_CONFIG) --cflags sdl2 SDL2_ttf SDL2_image)
-SDL_LDFLAGS := $(shell $(PKG_CONFIG) --libs sdl2 SDL2_ttf SDL2_image)
+# NOTE: SDL2_ttf.pc and SDL2_image.pc are missing from the Docker toolchain
+# sysroots, but the .so stubs exist.  Use sdl2.pc only and add -l flags manually.
+SDL_CFLAGS  := $(shell $(PKG_CONFIG) --cflags sdl2)
+SDL_LDFLAGS := $(shell $(PKG_CONFIG) --libs sdl2) -lSDL2_ttf -lSDL2_image
 
 # libcurl (optional — enable with CURL=1 or auto-detect)
 CURL ?= $(shell $(PKG_CONFIG) --exists libcurl 2>/dev/null && echo 1 || echo 0)

@@ -188,7 +188,7 @@ static void demo_keyboard(void) {
     int rc = ap_keyboard("Hello", "Enter your name:", AP_KB_GENERAL, &result);
 
     if (rc == AP_OK) {
-        char msg[256];
+        char msg[1100];
         snprintf(msg, sizeof(msg), "You typed:\n%s", result.text);
         ap_footer_item ok_foot[] = {{ .button = AP_BTN_A, .label = "OK", .is_confirm = true }};
         ap_message_opts m = { .message = msg, .footer = ok_foot, .footer_count = 1 };

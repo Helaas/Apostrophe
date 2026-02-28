@@ -102,10 +102,10 @@ ap_options_list(&opts, &result);
 ┌───────────────────────────────────────┐
 │  [ H e l l o _ ]                      │ ← Text field with cursor
 │                                       │
-│  1  2  3  4  5  6  7  8  9  0  [⌫]  │ ← Numbers + backspace
-│     q  w  e  r  t  y  u  i  o  p     │ ← QWERTY (centered)
-│     a  s  d  f  g  h  j  k  l  [↵]   │ ← ASDF + enter
-│  [⇧]  z  x  c  v  b  n  m  [#+=]     │ ← Shift + ZXCV + symbol
+│  1  2  3  4  5  6  7  8  9  0  [⌫]    │ ← Numbers + backspace
+│     q  w  e  r  t  y  u  i  o  p      │ ← QWERTY (centered)
+│     a  s  d  f  g  h  j  k  l  [↵]    │ ← ASDF + enter
+│  [⇧]  z  x  c  v  b  n  m  [#+=]      │ ← Shift + ZXCV + symbol
 │           [     space     ]           │ ← Space bar
 │                                       │
 │             [MENU] Help               │ ← Footer
@@ -155,7 +155,7 @@ Modal message dialog with optional image.
 │                             │
 │                             │
 │─────────────────────────────│
-│  [B] No           [A] Yes  │
+│  [B] No           [A] Yes   │
 └─────────────────────────────┘
 ```
 
@@ -188,7 +188,7 @@ Horizontal pill-style option chooser.
 │    ◂ [Easy] Normal  Hard ▸  │
 │                             │
 │─────────────────────────────│
-│  [B] Cancel   [A] Choose   │
+│  [B] Cancel   [A] Choose    │
 └─────────────────────────────┘
 ```
 
@@ -283,14 +283,14 @@ Scrollable multi-section information view.
 ```
 ┌─────────────────────────────┐
 │                             │
-│    ■ ■ ■ ■ ■               │
-│    ■ ■ [■] ■ ■             │ ← Cursor highlights one
-│    ■ ■ ■ ■ ■               │
-│    ■ ■ ■ ■ ■               │
-│    ■ ■ ■ ■ ■               │
+│    ■ ■ ■ ■ ■                │
+│    ■ ■ [■] ■ ■              │ ← Cursor highlights one
+│    ■ ■ ■ ■ ■                │
+│    ■ ■ ■ ■ ■                │
+│    ■ ■ ■ ■ ■                │
 │                             │
 │─────────────────────────────│
-│  [B] Cancel   [A] Pick     │
+│  [B] Cancel   [A] Pick      │
 └─────────────────────────────┘
 ```
 
@@ -339,11 +339,11 @@ Multi-threaded file downloader with per-file progress bars. Requires libcurl.
 │  Downloading... 2/5                   │
 │                                       │
 │  game-cover.jpg                       │
-│  ███████████████████████████  100%  │ ← Complete
+│  ███████████████████████████  100%    │ ← Complete
 │  1.2 MB/s — Complete                  │
 │                                       │
 │  metadata.json                        │
-│  ████████████░░░░░░░░░░░░░░░   45%  │ ← Downloading
+│  ████████████░░░░░░░░░░░░░░░   45%    │ ← Downloading
 │  340 KB/s                             │
 │                                       │
 │  [Y] Cancel       [X] Hide Speed      │ ← Footer
