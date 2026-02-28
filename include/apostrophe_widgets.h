@@ -344,7 +344,7 @@ static void ap__draw_title_clipped(const char *title, int status_bar_w) {
 /* Calculate the usable content area (below title, above footer) */
 static void ap__content_area(int *y, int *h, bool has_title, bool has_footer) {
     int top = 0;
-    if (has_title) top = AP_S(85);  /* Gabagool: startY(20) + ExtraLarge(60) + TitleSpacing(5) */
+    if (has_title) top = AP_S(100); /* Gabagool: startY(20) + ExtraLarge(60) + gap(20) */
     int bottom = 0;
     if (has_footer) bottom = ap_get_footer_height();
     *y = top;

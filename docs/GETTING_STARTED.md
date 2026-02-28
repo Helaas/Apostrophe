@@ -134,6 +134,21 @@ make mac
 make run-mac
 ```
 
+### macOS Keyboard Controls
+
+When running on macOS, keyboard keys are mapped to controller buttons matching [Gabagool's `DefaultInputMapping()`](https://github.com/BrandonKowalski/gabagool):
+
+| Key | Button | | Key | Button |
+|-----|--------|-|-----|--------|
+| `A` | A (confirm) | | `L` | L1 |
+| `B` | B (back) | | `;` | L2 |
+| `X` | X | | `R` | R1 |
+| `Y` | Y | | `T` | R2 |
+| Arrow keys | D-pad | | `Return` | Start |
+| `H` | Menu | | `Space` | Select |
+
+> **Note:** This matches the physical layout on the device — press `a` on your keyboard to confirm/select, `b` to go back. `Return` maps to Start (not confirm) and `Space` maps to Select.
+
 ### Device
 
 ```bash

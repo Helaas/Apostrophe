@@ -931,25 +931,24 @@ static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
 }
 #else
 static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
+    /* Match Gabagool DefaultInputMapping() — letter keys for face buttons */
     switch (kev->keysym.sym) {
         case SDLK_UP:        return AP_BTN_UP;
         case SDLK_DOWN:      return AP_BTN_DOWN;
         case SDLK_LEFT:      return AP_BTN_LEFT;
         case SDLK_RIGHT:     return AP_BTN_RIGHT;
-        case SDLK_RETURN:
-        case SDLK_SPACE:     return AP_BTN_A;
-        case SDLK_ESCAPE:
-        case SDLK_BACKSPACE: return AP_BTN_B;
+        case SDLK_a:         return AP_BTN_A;
+        case SDLK_b:         return AP_BTN_B;
         case SDLK_x:         return AP_BTN_X;
         case SDLK_y:         return AP_BTN_Y;
-        case SDLK_q:         return AP_BTN_L1;
-        case SDLK_e:         return AP_BTN_R1;
-        case SDLK_1:         return AP_BTN_L2;
-        case SDLK_3:         return AP_BTN_R2;
-        case SDLK_TAB:       return AP_BTN_SELECT;
-        case SDLK_s:         return AP_BTN_START;
-        case SDLK_m:         return AP_BTN_MENU;
-        default:              return AP_BTN_NONE;
+        case SDLK_l:         return AP_BTN_L1;
+        case SDLK_SEMICOLON: return AP_BTN_L2;
+        case SDLK_r:         return AP_BTN_R1;
+        case SDLK_t:         return AP_BTN_R2;
+        case SDLK_RETURN:    return AP_BTN_START;
+        case SDLK_SPACE:     return AP_BTN_SELECT;
+        case SDLK_h:         return AP_BTN_MENU;
+        default:             return AP_BTN_NONE;
     }
 }
 #endif
@@ -1226,14 +1225,6 @@ const char *ap_button_name(ap_button btn) {
 }
 
 /* ─── Combo System ───────────────────────────────────────────────────────── */
-
-static void ap__combo_queue_push(const char *id, bool triggered) {
-    int next = (ap__g.combo_queue_head + 1) % 16;
-    if (next == ap__g.combo_queue_tail) return;
-    ap__g.combo_queue[ap__g.combo_queue_head].id = id;
-    ap__g.combo_queue[ap__g.combo_queue_head].triggered = triggered;
-    ap__g.combo_queue_head = next;
-}
 
 int ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t window_ms) {
     if (ap__g.combo_count >= AP_MAX_COMBOS) return AP_ERROR;
@@ -1830,7 +1821,7 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     if (pill_w <= 0) return;
 
     int pill_h = font_h + inner_pad_y * 2;
-    int pill_y = 20;  /* unscaled 20px, matching Gabagool (aligns with title) */
+    int pill_y = AP_S(20);  /* scaled 20px, matching Gabagool (aligns with title) */
     int pill_x = ap__g.screen_w - margin - pill_w;
     int pill_r = pill_h / 2;
 
