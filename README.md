@@ -2,7 +2,7 @@
 
 A header-only C UI toolkit for building graphical tools (Paks) on retro gaming handhelds running [NextUI](https://github.com/nickvon/NextUI).
 
-Inspired by [Gabagool](https://github.com/LoveRetro/gabagool) (Go). Its framework design directly informed the structure of this project, and this C port would not have been feasible without that foundation.
+Inspired by [Gabagool](https://github.com/BrandonKowalski/gabagool) (Go). Its framework design directly informed the structure of this project, and this C port would not have been feasible without that foundation.
 
 Thanks to Brandon T. Kowalski (https://github.com/BrandonKowalski) for creating Gabagool and publishing such a well-designed and practical reference implementation.
 
@@ -35,6 +35,9 @@ Requires SDL2, SDL2_ttf, and SDL2_image installed via Homebrew:
 
 ```bash
 brew install sdl2 sdl2_ttf sdl2_image
+
+# Optional: libcurl for the Download Manager widget
+brew install curl
 make mac
 make run-mac          # Runs the hello world example
 make run-mac-demo     # Runs the widget demo
@@ -115,8 +118,8 @@ int main(int argc, char *argv[]) {
 ```
 apostrophe.h          — Core: init, lifecycle, input, drawing, theming, fonts, scaling
 apostrophe_widgets.h  — Widgets: list, options list, keyboard, confirmation,
-                        selection, process message, detail screen, color picker,
-                        help overlay
+                        selection, process message, download manager,
+                        detail screen, color picker, help overlay
 ```
 
 All widgets use a **blocking model**: they run their own event loop and return a result struct when the user completes an action or presses back (`AP_CANCELLED`).
@@ -131,7 +134,7 @@ On device, colors are loaded from NextUI's theme system (`nextval.elf`). On macO
 
 ### Input
 
-Apostrophe abstracts all input sources (keyboard, joystick, gamepad axes/hats) into a unified virtual button system (`AP_BTN_*`). Directional buttons auto-repeat with configurable delay/rate.
+Apostrophe abstracts all input sources into a unified virtual button system (`AP_BTN_*`). On macOS and recognised gamepads it uses the SDL GameController API; on TrimUI devices it reads raw joystick events; and on the Miyoo Flip (my355) it maps hardware-specific keyboard scancodes. Directional buttons auto-repeat with configurable delay/rate.
 
 ## Widgets
 
@@ -139,8 +142,9 @@ Apostrophe abstracts all input sources (keyboard, joystick, gamepad axes/hats) i
 |--------|----------|-------------|
 | List | `ap_list()` | Scrollable item list with selection, multi-select, reorder |
 | Options List | `ap_options_list()` | Settings-style list with cycle/keyboard/click/color options |
-| Keyboard | `ap_keyboard()` | On-screen QWERTY keyboard with shift, symbols, cursor |
-| URL Keyboard | `ap_url_keyboard()` | Keyboard with URL shortcut keys |
+| Keyboard | `ap_keyboard()` | 5-row QWERTY keyboard (numbers, qwerty, asdf+enter, shift+zxcv+symbol, space) |
+| URL Keyboard | `ap_url_keyboard()` | Keyboard with configurable URL shortcuts and symbol alternates |
+| Download Manager | `ap_download_manager()` | Multi-threaded file downloader with per-file progress bars (requires libcurl) |
 | Confirmation | `ap_confirmation()` | Modal message dialog |
 | Selection | `ap_selection()` | Horizontal pill-style option chooser |
 | Process Message | `ap_process_message()` | Async worker with progress bar |

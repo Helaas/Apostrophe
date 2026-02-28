@@ -290,7 +290,7 @@ static void demo_detail(void) {
     ap_detail_info_pair info[] = {
         { .key = "Name",     .value = "Apostrophe" },
         { .key = "Version",  .value = "1.0.0"      },
-        { .key = "Author",   .value = "LoveRetro"  },
+        { .key = "Author",   .value = "Helaas"  },
         { .key = "License",  .value = "MIT"         },
     };
 

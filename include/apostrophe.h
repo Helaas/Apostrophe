@@ -414,6 +414,7 @@ void           ap_draw_footer(ap_footer_item *items, int count);
 int            ap_get_footer_height(void);
 void           ap_draw_status_bar(ap_status_bar_opts *opts);
 int            ap_get_status_bar_height(void);
+int            ap_get_status_bar_width(ap_status_bar_opts *opts);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public API — Logging
@@ -1685,23 +1686,22 @@ void ap_cache_clear(void) {
 /* ─── Footer & Status Bar ────────────────────────────────────────────────── */
 
 int ap_get_footer_height(void) {
-    return AP_S(50);
+    return AP_S(80);
 }
 
 void ap_draw_footer(ap_footer_item *items, int count) {
     if (!items || count <= 0) return;
 
-    /* Match Gabagool v2 footer sizing: base 60px outer pill, SmallFont (34px) */
+    /* Match Gabagool v2 footer sizing: base 60px outer pill, SmallFont (34px),
+     * 20px bottom padding between pill and screen edge. */
     TTF_Font *font = ap_get_font(AP_FONT_SMALL);
     if (!font) return;
 
-    int footer_h   = ap_get_footer_height();           /* AP_S(50) */
-    int footer_y   = ap__g.screen_h - footer_h;
     int margin     = AP_S(20);                         /* screen-edge margin */
     int outer_h    = AP_S(60);                         /* outer pill height */
     int inner_marg = AP_S(6);                          /* inset from outer → inner */
     int inner_h    = outer_h - inner_marg * 2;         /* inner button pill height */
-    int pill_y     = footer_y + (footer_h - outer_h) / 2;
+    int pill_y     = ap__g.screen_h - AP_S(20) - outer_h; /* 20px gap from bottom */
     int pad_after_btn = AP_S(10);                      /* gap after inner pill before label */
     int item_gap   = AP_S(20);                         /* gap between items inside outer pill */
     int outer_pad  = AP_S(10);                         /* padding at start/end of outer pill */
@@ -1800,61 +1800,94 @@ void ap_draw_footer(ap_footer_item *items, int count) {
 }
 
 int ap_get_status_bar_height(void) {
-    return AP_S(36);
+    return AP_S(50);
+}
+
+/* Calculate the rendered pixel width of the status bar pill (for title width reduction) */
+int ap_get_status_bar_width(ap_status_bar_opts *opts) {
+    if (!opts) return 0;
+
+    TTF_Font *font = ap_get_font(AP_FONT_SMALL);
+    if (!font) return 0;
+
+    int outer_pad = AP_S(20);   /* padding inside pill at sides */
+    int icon_spacing = AP_S(8);
+    int total_w = 0;
+
+    /* Icons */
+    for (int i = 0; i < opts->icon_count && opts->icons; i++) {
+        if (i > 0) total_w += icon_spacing;
+        total_w += ap_measure_text(font, opts->icons[i]);
+    }
+
+    /* Clock */
+    if (opts->show_clock) {
+        char clock_text[32];
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        if (opts->use_24h)
+            strftime(clock_text, sizeof(clock_text), "%H:%M", t);
+        else
+            strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
+        if (total_w > 0) total_w += icon_spacing;
+        total_w += ap_measure_text(font, clock_text);
+    }
+
+    if (total_w <= 0) return 0;
+    return total_w + outer_pad * 2;  /* pill width */
 }
 
 void ap_draw_status_bar(ap_status_bar_opts *opts) {
     if (!opts) return;
 
-    TTF_Font *font = ap_get_font(AP_FONT_MICRO);
+    /* Match Gabagool: SmallFont (34px base), accent pill, hint text,
+     * positioned at Y=20 (aligning with title), right-aligned. */
+    TTF_Font *font = ap_get_font(AP_FONT_SMALL);
     if (!font) return;
 
-    int bar_h = ap_get_status_bar_height();
-    int margin = AP_S(16);
-    int pad = AP_S(10);
+    int outer_pad = AP_S(20);      /* Gabagool outerPadding */
+    int inner_pad_x = AP_S(10);    /* Gabagool innerPaddingX */
+    int inner_pad_y = AP_S(6);     /* Gabagool innerPaddingY */
+    int icon_spacing = AP_S(8);    /* Gabagool iconSpacing */
+    int margin = AP_S(20);
+    int font_h = TTF_FontHeight(font);
 
-    /* Build the status text */
-    char status_text[128] = "";
+    /* Calculate pill width so we know its position */
+    int pill_w = ap_get_status_bar_width(opts);
+    if (pill_w <= 0) return;
 
-    /* Clock */
+    int pill_h = font_h + inner_pad_y * 2;
+    int pill_y = 20;  /* unscaled 20px, matching Gabagool (aligns with title) */
+    int pill_x = ap__g.screen_w - margin - pill_w;
+    int pill_r = pill_h / 2;
+
+    ap_draw_rounded_rect(pill_x, pill_y, pill_w, pill_h, pill_r, ap__g.theme.accent);
+
+    /* Render each element right-to-left inside the pill */
+    int cx = pill_x + pill_w - outer_pad;  /* start from right */
+
+    /* Clock (rightmost) */
     if (opts->show_clock) {
+        char clock_text[32];
         time_t now = time(NULL);
         struct tm *t = localtime(&now);
         if (opts->use_24h)
-            strftime(status_text, sizeof(status_text), "%H:%M", t);
+            strftime(clock_text, sizeof(clock_text), "%H:%M", t);
         else
-            strftime(status_text, sizeof(status_text), "%I:%M %p", t);
+            strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
+        int tw = ap_measure_text(font, clock_text);
+        cx -= tw;
+        ap_draw_text(font, clock_text, cx, pill_y + inner_pad_y, ap__g.theme.hint);
+        cx -= icon_spacing;
     }
 
-    /* Icons */
-    char icon_str[256] = "";
-    for (int i = 0; i < opts->icon_count && opts->icons; i++) {
-        if (i > 0) strcat(icon_str, " ");
-        strncat(icon_str, opts->icons[i], sizeof(icon_str) - strlen(icon_str) - 1);
+    /* Icons (right-to-left, from last to first) */
+    for (int i = opts->icon_count - 1; i >= 0 && opts->icons; i--) {
+        int tw = ap_measure_text(font, opts->icons[i]);
+        cx -= tw;
+        ap_draw_text(font, opts->icons[i], cx, pill_y + inner_pad_y, ap__g.theme.hint);
+        if (i > 0) cx -= icon_spacing;
     }
-
-    /* Combine */
-    char full_text[384] = "";
-    if (icon_str[0] && status_text[0])
-        snprintf(full_text, sizeof(full_text), "%s  %s", icon_str, status_text);
-    else if (status_text[0])
-        snprintf(full_text, sizeof(full_text), "%s", status_text);
-    else if (icon_str[0])
-        snprintf(full_text, sizeof(full_text), "%s", icon_str);
-
-    if (!full_text[0]) return;
-
-    int text_w = ap_measure_text(font, full_text);
-    int pill_w = text_w + pad * 2;
-    int pill_h = bar_h - AP_S(8);
-    int pill_x = ap__g.screen_w - margin - pill_w;
-    int pill_y = AP_S(4);
-
-    ap_draw_pill(pill_x, pill_y, pill_w, pill_h, ap__g.theme.accent);
-    ap_draw_text(font, full_text,
-                 pill_x + pad,
-                 pill_y + (pill_h - TTF_FontHeight(font)) / 2,
-                 ap__g.theme.hint);
 }
 
 /* ─── Power Button Handler ───────────────────────────────────────────────── */

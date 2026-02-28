@@ -10,6 +10,9 @@ This guide walks you through creating your first NextUI Pak using Apostrophe.
 # Install Homebrew dependencies
 brew install sdl2 sdl2_ttf sdl2_image
 
+# Optional: libcurl for the Download Manager widget
+brew install curl
+
 # Optional: Docker for cross-compiling to device
 brew install --cask docker
 ```

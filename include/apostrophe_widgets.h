@@ -262,6 +262,53 @@ int ap_color_picker(ap_color initial, ap_color *result);
 void ap_show_help_overlay(const char *text);
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Download Manager — multi-threaded file downloader with progress UI
+ *
+ * Requires libcurl. Link with -lcurl. The widget spawns a thread pool
+ * (default 3 concurrent) and displays per-file progress bars with speed.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef enum {
+    AP_DL_PENDING = 0,     /* Waiting to start */
+    AP_DL_DOWNLOADING,     /* In progress */
+    AP_DL_COMPLETE,        /* Finished successfully */
+    AP_DL_FAILED           /* Error occurred */
+} ap_download_status;
+
+/* A single download job */
+typedef struct {
+    const char          *url;            /* Source URL */
+    const char          *dest_path;      /* Destination file path */
+    const char          *label;          /* Display label (e.g. filename) */
+    ap_download_status   status;         /* Set by download manager */
+    float                progress;       /* 0.0–1.0, updated during download */
+    double               speed_bps;      /* Bytes per second, updated live */
+    int                  http_code;      /* HTTP response code (0 before completion) */
+    char                 error[256];     /* Error message if status == AP_DL_FAILED */
+} ap_download;
+
+/* Overall result */
+typedef struct {
+    int  total;
+    int  completed;
+    int  failed;
+    bool cancelled;   /* True if user cancelled */
+} ap_download_result;
+
+/* Options */
+typedef struct {
+    int   max_concurrent;     /* Max simultaneous downloads (default 3) */
+    bool  skip_ssl_verify;    /* Disable SSL cert verification */
+    const char **headers;     /* NULL-terminated array of "Header: Value" strings */
+    int   header_count;
+} ap_download_opts;
+
+/* Run the download manager. Blocks until all downloads finish or user cancels.
+ * Returns AP_OK when all complete, AP_CANCELLED if user cancelled, AP_ERROR on error. */
+int ap_download_manager(ap_download *downloads, int count,
+                        ap_download_opts *opts, ap_download_result *result);
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * IMPLEMENTATION
  * ═══════════════════════════════════════════════════════════════════════════ */
 #ifdef AP_WIDGETS_IMPLEMENTATION
@@ -271,21 +318,33 @@ void ap_show_help_overlay(const char *text);
 /* Standard widget loop timing */
 #define AP__FRAME_DELAY 16  /* ~60 fps */
 
-/* Draw title bar text at top of screen */
+/* Draw title bar text at top of screen — ExtraLarge font matching Gabagool */
 static void ap__draw_title(const char *title) {
     if (!title || !title[0]) return;
-    TTF_Font *font = ap_get_font(AP_FONT_SMALL);
+    TTF_Font *font = ap_get_font(AP_FONT_EXTRA_LARGE);
     if (!font) return;
 
-    int margin = AP_S(20);
-    int title_y = AP_S(12);
+    int margin = AP_S(30);   /* Gabagool: Margins.Left(20) + 10 = 30 */
+    int title_y = AP_S(20);  /* Gabagool: startY = 20 */
     ap_draw_text(font, title, margin, title_y, ap_get_theme()->text);
+}
+
+/* Draw title with width reduced by status bar to prevent overlap */
+static void ap__draw_title_clipped(const char *title, int status_bar_w) {
+    if (!title || !title[0]) return;
+    TTF_Font *font = ap_get_font(AP_FONT_EXTRA_LARGE);
+    if (!font) return;
+
+    int margin = AP_S(30);
+    int title_y = AP_S(20);
+    int max_w = ap_get_screen_width() - margin * 2 - status_bar_w;
+    ap_draw_text_clipped(font, title, margin, title_y, ap_get_theme()->text, max_w);
 }
 
 /* Calculate the usable content area (below title, above footer) */
 static void ap__content_area(int *y, int *h, bool has_title, bool has_footer) {
     int top = 0;
-    if (has_title) top = AP_S(52);
+    if (has_title) top = AP_S(85);  /* Gabagool: startY(20) + ExtraLarge(60) + TitleSpacing(5) */
     int bottom = 0;
     if (has_footer) bottom = ap_get_footer_height();
     *y = top;
@@ -348,16 +407,16 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     int screen_w = ap_get_screen_width();
     int screen_h = ap_get_screen_height();
 
-    TTF_Font *title_font = ap_get_font(AP_FONT_SMALL);
+    TTF_Font *title_font = ap_get_font(AP_FONT_EXTRA_LARGE);
     TTF_Font *item_font  = ap_get_font(AP_FONT_SMALL);
     if (!title_font || !item_font) return AP_ERROR;
 
-    /* Layout constants */
+    /* Layout constants — match Gabagool: 60px pill, no gap */
     int margin     = AP_S(20);
-    int pill_h     = AP_S(56);
+    int pill_h     = AP_S(60);
     int pill_pad   = AP_S(20);
-    int item_gap   = AP_S(4);
-    int pill_r     = pill_h / 2;  /* Capsule shape */
+    int item_gap   = 0;
+    int pill_r     = AP_S(30);  /* Gabagool: 30*scaleFactor */
     int image_size = opts->show_images ? AP_S(48) : 0;
     int image_pad  = opts->show_images ? AP_S(12) : 0;
 
@@ -478,8 +537,14 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         /* Render */
         ap_draw_background();
 
-        /* Title */
-        if (opts->title) ap__draw_title(opts->title);
+        /* Title (clipped if status bar present) */
+        if (opts->title) {
+            int sb_w = opts->status_bar ? ap_get_status_bar_width(opts->status_bar) : 0;
+            if (sb_w > 0)
+                ap__draw_title_clipped(opts->title, sb_w + AP_S(10));
+            else
+                ap__draw_title(opts->title);
+        }
 
         /* Status bar */
         if (opts->status_bar) ap_draw_status_bar(opts->status_bar);
@@ -860,39 +925,90 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * KEYBOARD Implementation
+ * KEYBOARD Implementation — matches Gabagool 5-row layout with special keys
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Keyboard layouts */
-static const char *ap__kb_general_lower[] = {
-    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p",
-    "a", "s", "d", "f", "g", "h", "j", "k", "l", NULL,
-    "z", "x", "c", "v", "b", "n", "m", NULL, NULL, NULL,
-};
+/* Special key identifiers used internally for cursor tracking.
+ * These are negative to distinguish them from character-key grid indices. */
+#define AP__KB_KEY_BACKSPACE  (-1)
+#define AP__KB_KEY_ENTER      (-2)
+#define AP__KB_KEY_SHIFT      (-3)
+#define AP__KB_KEY_SYMBOL     (-4)
+#define AP__KB_KEY_SPACE      (-5)
 
-static const char *ap__kb_general_upper[] = {
-    "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P",
-    "A", "S", "D", "F", "G", "H", "J", "K", "L", NULL,
-    "Z", "X", "C", "V", "B", "N", "M", NULL, NULL, NULL,
-};
+/* 5-row general layout — 12-column virtual grid.
+ * Row 0: 1-0 keys (10) + backspace (2 cols)
+ * Row 1: qwertyuiop (10 cols, centered)
+ * Row 2: asdfghjkl (9 cols) + enter (1.5 cols)
+ * Row 3: shift (2 cols) + zxcvbnm (7 cols) + symbol (2 cols)
+ * Row 4: space (8 cols, centered)
+ */
 
-static const char *ap__kb_symbols[] = {
-    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
-    "!", "@", "#", "$", "%", "^", "&", "*", "(", ")",
-    "-", "_", "=", "+", "[", "]", "{", "}", ";", ":",
-};
+/* Lower-case keys per row (NULL-terminated) */
+static const char *ap__kb5_row0_lower[] = {"1","2","3","4","5","6","7","8","9","0", NULL};
+static const char *ap__kb5_row1_lower[] = {"q","w","e","r","t","y","u","i","o","p", NULL};
+static const char *ap__kb5_row2_lower[] = {"a","s","d","f","g","h","j","k","l", NULL};
+static const char *ap__kb5_row3_lower[] = {"z","x","c","v","b","n","m", NULL};
 
+/* Upper-case */
+static const char *ap__kb5_row0_upper[] = {"1","2","3","4","5","6","7","8","9","0", NULL};
+static const char *ap__kb5_row1_upper[] = {"Q","W","E","R","T","Y","U","I","O","P", NULL};
+static const char *ap__kb5_row2_upper[] = {"A","S","D","F","G","H","J","K","L", NULL};
+static const char *ap__kb5_row3_upper[] = {"Z","X","C","V","B","N","M", NULL};
+
+/* Symbols mode */
+static const char *ap__kb5_row0_sym[] = {"!","@","#","$","%","^","&","*","(",")", NULL};
+static const char *ap__kb5_row1_sym[] = {"`","~","[","]","\\","|","{","}",";",":", NULL};
+static const char *ap__kb5_row2_sym[] = {"'","\"","<",">","?","/","+","=","_", NULL};
+static const char *ap__kb5_row3_sym[] = {",",".","-","\xe2\x82\xac","\xc2\xa3","\xc2\xa5","\xc2\xa2", NULL};
+
+/* Numeric layout */
 static const char *ap__kb_numeric[] = {
     "1", "2", "3",
     "4", "5", "6",
     "7", "8", "9",
     NULL, "0", NULL,
 };
-
-#define AP__KB_COLS_GENERAL 10
-#define AP__KB_ROWS_GENERAL 3
 #define AP__KB_COLS_NUMERIC  3
 #define AP__KB_ROWS_NUMERIC  4
+
+/* Keyboard row metadata for 5-row general layout */
+typedef struct {
+    const char **chars;       /* pointer to char array for this row */
+    int          char_count;  /* number of character keys */
+    int          special;     /* special key at end: AP__KB_KEY_* or 0 = none */
+    int          special_pre; /* special key at start: AP__KB_KEY_* or 0 = none */
+} ap__kb_row_info;
+
+static int ap__kb5_count(const char **row) {
+    int n = 0;
+    while (row[n]) n++;
+    return n;
+}
+
+/* Helper: insert a string at text_cursor in result->text */
+static void ap__kb_insert(ap_keyboard_result *result, int *text_cursor, const char *str) {
+    int len = (int)strlen(result->text);
+    int slen = (int)strlen(str);
+    if (len + slen < (int)sizeof(result->text) - 1) {
+        memmove(result->text + *text_cursor + slen,
+                result->text + *text_cursor,
+                len - *text_cursor + 1);
+        memcpy(result->text + *text_cursor, str, slen);
+        *text_cursor += slen;
+    }
+}
+
+/* Helper: backspace at text_cursor */
+static void ap__kb_backspace(ap_keyboard_result *result, int *text_cursor) {
+    if (*text_cursor > 0) {
+        int len = (int)strlen(result->text);
+        memmove(result->text + *text_cursor - 1,
+                result->text + *text_cursor,
+                len - *text_cursor + 1);
+        (*text_cursor)--;
+    }
+}
 
 int ap_keyboard(const char *initial_text, const char *help_text,
                 ap_keyboard_layout layout, ap_keyboard_result *result) {
@@ -907,242 +1023,400 @@ int ap_keyboard(const char *initial_text, const char *help_text,
     int screen_w = ap_get_screen_width();
     int screen_h = ap_get_screen_height();
 
-    TTF_Font *text_font = ap_get_font(AP_FONT_MEDIUM);
-    TTF_Font *key_font  = ap_get_font(AP_FONT_SMALL);
+    TTF_Font *text_font    = ap_get_font(AP_FONT_MEDIUM);
+    TTF_Font *key_font     = ap_get_font(AP_FONT_MEDIUM);   /* Gabagool: MediumFont for keys */
+    TTF_Font *special_font = ap_get_font(AP_FONT_LARGE);    /* Gabagool: LargeFont for special keys */
     if (!text_font || !key_font) return AP_ERROR;
 
-    /* Determine layout params */
     bool is_numeric = (layout == AP_KB_NUMERIC);
-    int kb_cols = is_numeric ? AP__KB_COLS_NUMERIC : AP__KB_COLS_GENERAL;
-    int kb_rows = is_numeric ? AP__KB_ROWS_NUMERIC : AP__KB_ROWS_GENERAL;
 
-    const char **keys_lower = is_numeric ? ap__kb_numeric : ap__kb_general_lower;
-    const char **keys_upper = is_numeric ? ap__kb_numeric : ap__kb_general_upper;
-    const char **keys_sym   = ap__kb_symbols;
+    /* ── Numeric keyboard (simple 3×4 grid) ── */
+    if (is_numeric) {
+        int kb_cols = AP__KB_COLS_NUMERIC;
+        int kb_rows = AP__KB_ROWS_NUMERIC;
+        int key_w = AP_S(80);
+        int key_h = AP_S(52);
+        int key_gap = AP_S(6);
+        int key_r = AP_S(8);
+        int grid_w = kb_cols * (key_w + key_gap) - key_gap;
+        int grid_x = (screen_w - grid_w) / 2;
+        int grid_y = screen_h - (kb_rows * (key_h + key_gap)) - AP_S(80);
+        int input_y = AP_S(40), input_h = AP_S(60), input_x = AP_S(40);
+        int input_w = screen_w - AP_S(80);
+        int cursor_x = 0, cursor_y = 0;
+        int text_cursor = (int)strlen(result->text);
+        bool running = true;
+        uint32_t caret_blink = SDL_GetTicks();
+        bool caret_visible = true;
 
-    int key_w   = AP_S(is_numeric ? 80 : 64);
-    int key_h   = AP_S(52);
-    int key_gap = AP_S(6);
-    int key_r   = AP_S(8);
+        while (running) {
+            uint32_t now = SDL_GetTicks();
+            if (now - caret_blink > 500) { caret_visible = !caret_visible; caret_blink = now; }
 
-    /* Keyboard grid position (centered horizontally, lower portion of screen) */
-    int grid_w = kb_cols * (key_w + key_gap) - key_gap;
-    int grid_x = (screen_w - grid_w) / 2;
-    int grid_y = screen_h - (kb_rows * (key_h + key_gap)) - AP_S(80);
+            ap_input_event ev;
+            while (ap_poll_input(&ev)) {
+                if (!ev.pressed) continue;
+                switch (ev.button) {
+                    case AP_BTN_UP:    cursor_y = (cursor_y - 1 + kb_rows) % kb_rows; break;
+                    case AP_BTN_DOWN:  cursor_y = (cursor_y + 1) % kb_rows; break;
+                    case AP_BTN_LEFT:  cursor_x = (cursor_x - 1 + kb_cols) % kb_cols; break;
+                    case AP_BTN_RIGHT: cursor_x = (cursor_x + 1) % kb_cols; break;
+                    case AP_BTN_A: {
+                        int ki = cursor_y * kb_cols + cursor_x;
+                        if (ki < kb_rows * kb_cols && ap__kb_numeric[ki])
+                            ap__kb_insert(result, &text_cursor, ap__kb_numeric[ki]);
+                        break;
+                    }
+                    case AP_BTN_B: ap__kb_backspace(result, &text_cursor); break;
+                    case AP_BTN_Y: return AP_CANCELLED;
+                    case AP_BTN_START: return AP_OK;
+                    case AP_BTN_L1: if (text_cursor > 0) text_cursor--; break;
+                    case AP_BTN_R1: if (text_cursor < (int)strlen(result->text)) text_cursor++; break;
+                    default: break;
+                }
+            }
 
-    /* Text input area (above keyboard) */
-    int input_y = AP_S(40);
-    int input_h = AP_S(60);
-    int input_x = AP_S(40);
-    int input_w = screen_w - AP_S(80);
+            ap_draw_background();
+            ap_draw_pill(input_x, input_y, input_w, input_h, theme->highlight);
+            {
+                int ty = input_y + (input_h - TTF_FontHeight(text_font)) / 2;
+                int tx = input_x + AP_S(16);
+                if (result->text[0])
+                    ap_draw_text_clipped(text_font, result->text, tx, ty, theme->highlighted_text, input_w - AP_S(32));
+                if (caret_visible) {
+                    char saved = result->text[text_cursor]; result->text[text_cursor] = '\0';
+                    int cx = tx + ap_measure_text(text_font, result->text);
+                    result->text[text_cursor] = saved;
+                    ap_draw_rect(cx, ty, AP_S(2), TTF_FontHeight(text_font), theme->highlighted_text);
+                }
+            }
+            for (int row = 0; row < kb_rows; row++) {
+                for (int col = 0; col < kb_cols; col++) {
+                    int ki = row * kb_cols + col;
+                    const char *key = ap__kb_numeric[ki];
+                    if (!key) continue;
+                    int kx = grid_x + col * (key_w + key_gap);
+                    int ky = grid_y + row * (key_h + key_gap);
+                    bool sel = (row == cursor_y && col == cursor_x);
+                    ap_draw_rounded_rect(kx, ky, key_w, key_h, key_r, sel ? theme->highlight : theme->accent);
+                    int tw = ap_measure_text(key_font, key);
+                    ap_draw_text(key_font, key, kx + (key_w - tw)/2, ky + (key_h - TTF_FontHeight(key_font))/2,
+                                 sel ? theme->highlighted_text : theme->hint);
+                }
+            }
+            ap_present();
+            SDL_Delay(AP__FRAME_DELAY);
+        }
+        return AP_CANCELLED;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+     * 5-Row General Keyboard (matches Gabagool)
+     * ═══════════════════════════════════════════════════════════════════════ */
+
+    /* Keyboard occupies ~85% of screen height, text input = screen_h/10 */
+    int kb_area_h  = screen_h * 85 / 100;
+    int input_h    = screen_h / 10;
+    int input_y    = (screen_h - kb_area_h - input_h) / 2;
+    int input_x    = AP_S(40);
+    int input_w    = screen_w - AP_S(80);
+
+    /* 12-column grid, 6-row tall area (5 key rows + spacing) */
+    int grid_cols = 12;
+    int grid_rows_total = 6; /* 5 data rows + 1 for footer/bottom margin */
+    int key_spacing = AP_S(4);
+    int key_w = (screen_w - AP_S(40) - key_spacing * (grid_cols - 1)) / grid_cols;
+    int key_h = (kb_area_h - key_spacing * (grid_rows_total - 1)) / grid_rows_total;
+    int key_r = AP_S(6);
+
+    /* Grid top-left */
+    int grid_x = (screen_w - (grid_cols * (key_w + key_spacing) - key_spacing)) / 2;
+    int grid_y = input_y + input_h + AP_S(10);
 
     /* State */
-    int cursor_x = 0, cursor_y = 0;
-    int text_cursor = (int)strlen(result->text);
+    int cursor_row = 1;  /* Start on qwerty row */
+    int cursor_col = 0;
     bool shift = false;
     bool symbols = false;
+    int text_cursor = (int)strlen(result->text);
     bool running = true;
 
-    /* Caret blink */
     uint32_t caret_blink = SDL_GetTicks();
     bool caret_visible = true;
 
-    /* Footer for help */
-    ap_footer_item footer[] = {
-        {AP_BTN_B, help_text ? help_text : "Cancel", false},
-        {AP_BTN_Y, shift ? "abc" : "ABC", false},
-        {AP_BTN_X, symbols ? "abc" : "!@#", false},
-        {AP_BTN_A, "OK", true},
-    };
+    /* Track which "special key" the cursor is on: 0 = a char key */
+    int selected_special = 0;
+
+    /* Current key arrays per row */
+    #define AP__KB5_ROW_COUNT 5
 
     while (running) {
         uint32_t now = SDL_GetTicks();
+        if (now - caret_blink > 500) { caret_visible = !caret_visible; caret_blink = now; }
 
-        /* Caret blink toggle every 500ms */
-        if (now - caret_blink > 500) {
-            caret_visible = !caret_visible;
-            caret_blink = now;
-        }
+        /* Build current row info from mode */
+        const char **r0 = symbols ? ap__kb5_row0_sym : (shift ? ap__kb5_row0_upper : ap__kb5_row0_lower);
+        const char **r1 = symbols ? ap__kb5_row1_sym : (shift ? ap__kb5_row1_upper : ap__kb5_row1_lower);
+        const char **r2 = symbols ? ap__kb5_row2_sym : (shift ? ap__kb5_row2_upper : ap__kb5_row2_lower);
+        const char **r3 = symbols ? ap__kb5_row3_sym : (shift ? ap__kb5_row3_upper : ap__kb5_row3_lower);
+
+        int r0n = ap__kb5_count(r0);  /* 10 */
+        int r1n = ap__kb5_count(r1);  /* 10 */
+        int r2n = ap__kb5_count(r2);  /* 9 */
+        int r3n = ap__kb5_count(r3);  /* 7 */
+
+        /* Effective navigation column limits per row:
+         * Row 0: 0..10 (10 chars + backspace at col 10)
+         * Row 1: 0..9  (10 chars)
+         * Row 2: 0..9  (9 chars + enter at col 9)
+         * Row 3: 0..8  (shift at 0, then 7 chars at 1..7, symbol at 8)
+         * Row 4: 0 only (space bar)  */
+        int row_max_col[AP__KB5_ROW_COUNT] = {10, 9, 9, 8, 0};
 
         /* Input */
-        ap_input_event ev;
-        while (ap_poll_input(&ev)) {
-            if (!ev.pressed) continue;
+        ap_input_event iev;
+        while (ap_poll_input(&iev)) {
+            if (!iev.pressed) continue;
 
-            switch (ev.button) {
+            switch (iev.button) {
                 case AP_BTN_UP:
-                    cursor_y--;
-                    if (cursor_y < 0) cursor_y = kb_rows - 1;
-                    if (cursor_x >= kb_cols) cursor_x = kb_cols - 1;
+                    cursor_row = (cursor_row - 1 + AP__KB5_ROW_COUNT) % AP__KB5_ROW_COUNT;
+                    if (cursor_col > row_max_col[cursor_row])
+                        cursor_col = row_max_col[cursor_row];
                     break;
-
                 case AP_BTN_DOWN:
-                    cursor_y++;
-                    if (cursor_y >= kb_rows) cursor_y = 0;
-                    if (cursor_x >= kb_cols) cursor_x = kb_cols - 1;
+                    cursor_row = (cursor_row + 1) % AP__KB5_ROW_COUNT;
+                    if (cursor_col > row_max_col[cursor_row])
+                        cursor_col = row_max_col[cursor_row];
                     break;
-
                 case AP_BTN_LEFT:
-                    cursor_x--;
-                    if (cursor_x < 0) cursor_x = kb_cols - 1;
+                    cursor_col--;
+                    if (cursor_col < 0) cursor_col = row_max_col[cursor_row];
                     break;
-
                 case AP_BTN_RIGHT:
-                    cursor_x++;
-                    if (cursor_x >= kb_cols) cursor_x = 0;
+                    cursor_col++;
+                    if (cursor_col > row_max_col[cursor_row]) cursor_col = 0;
                     break;
 
                 case AP_BTN_A: {
-                    /* Type the selected key */
-                    int ki = cursor_y * kb_cols + cursor_x;
-                    const char **active_keys = symbols ? keys_sym : (shift ? keys_upper : keys_lower);
-                    int total_keys = kb_rows * kb_cols;
-
-                    if (ki < total_keys && active_keys[ki] != NULL) {
-                        int len = (int)strlen(result->text);
-                        int klen = (int)strlen(active_keys[ki]);
-                        if (len + klen < (int)sizeof(result->text) - 1) {
-                            /* Insert at cursor position */
-                            memmove(result->text + text_cursor + klen,
-                                    result->text + text_cursor,
-                                    len - text_cursor + 1);
-                            memcpy(result->text + text_cursor, active_keys[ki], klen);
-                            text_cursor += klen;
+                    /* Type the selected character or activate special key */
+                    if (cursor_row == 0) {
+                        if (cursor_col < r0n)
+                            ap__kb_insert(result, &text_cursor, r0[cursor_col]);
+                        else /* backspace */
+                            ap__kb_backspace(result, &text_cursor);
+                    } else if (cursor_row == 1) {
+                        if (cursor_col < r1n)
+                            ap__kb_insert(result, &text_cursor, r1[cursor_col]);
+                    } else if (cursor_row == 2) {
+                        if (cursor_col < r2n)
+                            ap__kb_insert(result, &text_cursor, r2[cursor_col]);
+                        else /* enter = confirm */
+                            return AP_OK;
+                    } else if (cursor_row == 3) {
+                        if (cursor_col == 0) {
+                            /* shift */
+                            shift = !shift; symbols = false;
+                        } else if (cursor_col <= r3n) {
+                            ap__kb_insert(result, &text_cursor, r3[cursor_col - 1]);
+                        } else {
+                            /* symbol */
+                            symbols = !symbols; shift = false;
                         }
+                    } else if (cursor_row == 4) {
+                        /* space bar */
+                        ap__kb_insert(result, &text_cursor, " ");
                     }
                     break;
                 }
 
                 case AP_BTN_B:
-                    /* Cancel */
-                    return AP_CANCELLED;
-
-                case AP_BTN_Y:
-                    /* Toggle shift */
-                    shift = !shift;
-                    symbols = false;
+                    /* Backspace (Gabagool mapping) */
+                    ap__kb_backspace(result, &text_cursor);
                     break;
 
                 case AP_BTN_X:
-                    /* Toggle symbols */
-                    symbols = !symbols;
-                    shift = false;
+                    /* Space (Gabagool mapping for general keyboard) */
+                    ap__kb_insert(result, &text_cursor, " ");
                     break;
 
-                case AP_BTN_L1:
-                    /* Backspace */
-                    if (text_cursor > 0) {
-                        int len = (int)strlen(result->text);
-                        memmove(result->text + text_cursor - 1,
-                                result->text + text_cursor,
-                                len - text_cursor + 1);
-                        text_cursor--;
-                    }
-                    break;
+                case AP_BTN_Y:
+                    /* Exit without saving (Gabagool mapping) */
+                    return AP_CANCELLED;
 
-                case AP_BTN_R1:
-                    /* Space */
-                    {
-                        int len = (int)strlen(result->text);
-                        if (len < (int)sizeof(result->text) - 1) {
-                            memmove(result->text + text_cursor + 1,
-                                    result->text + text_cursor,
-                                    len - text_cursor + 1);
-                            result->text[text_cursor] = ' ';
-                            text_cursor++;
-                        }
-                    }
+                case AP_BTN_SELECT:
+                    /* Toggle shift (Gabagool mapping) */
+                    shift = !shift; symbols = false;
                     break;
 
                 case AP_BTN_START:
-                    /* Confirm and return */
+                    /* Enter / confirm */
                     return AP_OK;
 
-                case AP_BTN_L2:
+                case AP_BTN_L1:
                     /* Move text cursor left */
                     if (text_cursor > 0) text_cursor--;
                     break;
 
-                case AP_BTN_R2:
+                case AP_BTN_R1:
                     /* Move text cursor right */
                     if (text_cursor < (int)strlen(result->text)) text_cursor++;
                     break;
 
-                default:
+                case AP_BTN_MENU:
+                    /* Help overlay */
+                    if (help_text) ap_show_help_overlay(help_text);
                     break;
+
+                default: break;
             }
         }
 
-        /* Render */
+        /* ── Render ── */
         ap_draw_background();
 
-        /* Input field */
-        ap_draw_pill(input_x, input_y, input_w, input_h, theme->highlight);
+        /* Text input field */
+        ap_color input_bg = {50, 50, 60, 255};
+        ap_color input_border = {200, 200, 200, 255};
+        ap_draw_rounded_rect(input_x, input_y, input_w, input_h, AP_S(8), input_bg);
+        /* Border — draw slightly larger rounded rect behind */
+        ap_draw_rounded_rect(input_x - 1, input_y - 1, input_w + 2, input_h + 2, AP_S(8), input_border);
+        ap_draw_rounded_rect(input_x, input_y, input_w, input_h, AP_S(8), input_bg);
+
         {
-            int text_w_px = ap_measure_text(text_font, result->text);
-            int text_y_center = input_y + (input_h - TTF_FontHeight(text_font)) / 2;
-            int text_draw_x = input_x + AP_S(16);
-
-            if (result->text[0]) {
-                ap_draw_text_clipped(text_font, result->text,
-                    text_draw_x, text_y_center,
+            int ty = input_y + (input_h - TTF_FontHeight(text_font)) / 2;
+            int tx = input_x + AP_S(16);
+            if (result->text[0])
+                ap_draw_text_clipped(text_font, result->text, tx, ty,
                     theme->highlighted_text, input_w - AP_S(32));
-            }
-
-            /* Blinking caret */
             if (caret_visible) {
-                /* Measure text up to cursor position */
-                char saved = result->text[text_cursor];
-                result->text[text_cursor] = '\0';
-                int caret_x = text_draw_x + ap_measure_text(text_font, result->text);
+                char saved = result->text[text_cursor]; result->text[text_cursor] = '\0';
+                int cx = tx + ap_measure_text(text_font, result->text);
                 result->text[text_cursor] = saved;
-
-                int caret_h = TTF_FontHeight(text_font);
-                ap_draw_rect(caret_x, text_y_center, AP_S(2), caret_h, theme->highlighted_text);
+                ap_draw_rect(cx, ty, AP_S(2), TTF_FontHeight(text_font), theme->highlighted_text);
             }
         }
 
-        /* Key grid */
-        const char **active_keys = symbols ? keys_sym : (shift ? keys_upper : keys_lower);
-        for (int row = 0; row < kb_rows; row++) {
-            /* Center each row */
-            int row_cols = kb_cols;
-            /* For general layout, rows have different widths */
-            if (!is_numeric && row == 1) row_cols = 9;
-            if (!is_numeric && row == 2) row_cols = 7;
+        /* ── Key rendering ── */
+        ap_color key_bg_normal  = {50, 50, 60, 255};
+        ap_color key_bg_sel     = {100, 100, 240, 255};
+        ap_color key_fg_normal  = theme->hint;
+        ap_color key_fg_sel     = theme->highlighted_text;
 
-            int row_w = row_cols * (key_w + key_gap) - key_gap;
-            int row_x = (screen_w - row_w) / 2;
+        /* Helper macro: draw a single key rectangle with text */
+        #define AP__KB_DRAW_KEY(x, y, w, h, label, is_sel, font_to_use) do { \
+            ap_color _bg = (is_sel) ? key_bg_sel : key_bg_normal; \
+            ap_color _fg = (is_sel) ? key_fg_sel : key_fg_normal; \
+            ap_draw_rounded_rect((x), (y), (w), (h), key_r, _bg); \
+            if (label) { \
+                int _tw = ap_measure_text((font_to_use), (label)); \
+                int _th = TTF_FontHeight((font_to_use)); \
+                ap_draw_text((font_to_use), (label), \
+                    (x) + ((w) - _tw) / 2, (y) + ((h) - _th) / 2, _fg); \
+            } \
+        } while(0)
 
-            for (int col = 0; col < row_cols; col++) {
-                int ki = row * kb_cols + col;
-                if (ki >= kb_rows * kb_cols) break;
-
-                const char *key = active_keys[ki];
-                if (key == NULL) continue;
-
-                int kx = row_x + col * (key_w + key_gap);
-                int ky = grid_y + row * (key_h + key_gap);
-
-                bool is_cursor = (row == cursor_y && col == cursor_x);
-                ap_color key_bg = is_cursor ? theme->highlight : theme->accent;
-                ap_color key_fg = is_cursor ? theme->highlighted_text : theme->hint;
-
-                ap_draw_rounded_rect(kx, ky, key_w, key_h, key_r, key_bg);
-
-                int tw = ap_measure_text(key_font, key);
-                int th = TTF_FontHeight(key_font);
-                ap_draw_text(key_font, key,
-                    kx + (key_w - tw) / 2,
-                    ky + (key_h - th) / 2,
-                    key_fg);
+        /* Row 0: numbers + backspace */
+        {
+            int row_y = grid_y;
+            int cx = grid_x;
+            for (int i = 0; i < r0n; i++) {
+                bool sel = (cursor_row == 0 && cursor_col == i);
+                AP__KB_DRAW_KEY(cx, row_y, key_w, key_h, r0[i], sel, key_font);
+                cx += key_w + key_spacing;
+            }
+            /* Backspace — 2× width */
+            {
+                int bw = key_w * 2 + key_spacing;
+                bool sel = (cursor_row == 0 && cursor_col == r0n);
+                AP__KB_DRAW_KEY(cx, row_y, bw, key_h, "\xe2\x8c\xab", sel, special_font ? special_font : key_font);
             }
         }
 
-        /* Footer hints */
-        footer[1].label = shift ? "abc" : "ABC";
-        footer[2].label = symbols ? "abc" : "!@#";
-        ap_draw_footer(footer, 4);
+        /* Row 1: qwertyuiop (centered) */
+        {
+            int row_y = grid_y + (key_h + key_spacing);
+            int row_w = r1n * (key_w + key_spacing) - key_spacing;
+            int cx = (screen_w - row_w) / 2;
+            for (int i = 0; i < r1n; i++) {
+                bool sel = (cursor_row == 1 && cursor_col == i);
+                AP__KB_DRAW_KEY(cx, row_y, key_w, key_h, r1[i], sel, key_font);
+                cx += key_w + key_spacing;
+            }
+        }
+
+        /* Row 2: asdfghjkl + enter */
+        {
+            int row_y = grid_y + 2 * (key_h + key_spacing);
+            /* 9 keys + enter (1.5× width) */
+            int enter_w = key_w * 3 / 2 + key_spacing / 2;
+            int row_w = r2n * (key_w + key_spacing) + enter_w;
+            int cx = (screen_w - row_w) / 2;
+            for (int i = 0; i < r2n; i++) {
+                bool sel = (cursor_row == 2 && cursor_col == i);
+                AP__KB_DRAW_KEY(cx, row_y, key_w, key_h, r2[i], sel, key_font);
+                cx += key_w + key_spacing;
+            }
+            /* Enter */
+            {
+                bool sel = (cursor_row == 2 && cursor_col == r2n);
+                AP__KB_DRAW_KEY(cx, row_y, enter_w, key_h, "\xe2\x86\xb5", sel, special_font ? special_font : key_font);
+            }
+        }
+
+        /* Row 3: shift + zxcvbnm + symbol */
+        {
+            int row_y = grid_y + 3 * (key_h + key_spacing);
+            int shift_w = key_w * 2 + key_spacing;
+            int sym_w   = key_w * 2 + key_spacing;
+            int row_w = shift_w + key_spacing + r3n * (key_w + key_spacing) - key_spacing + key_spacing + sym_w;
+            int cx = (screen_w - row_w) / 2;
+            /* Shift */
+            {
+                bool sel = (cursor_row == 3 && cursor_col == 0);
+                const char *lbl = shift ? "\xe2\x87\xa7" : "\xe2\x87\xa7";
+                AP__KB_DRAW_KEY(cx, row_y, shift_w, key_h, lbl, sel, special_font ? special_font : key_font);
+                cx += shift_w + key_spacing;
+            }
+            /* Character keys */
+            for (int i = 0; i < r3n; i++) {
+                bool sel = (cursor_row == 3 && cursor_col == i + 1);
+                AP__KB_DRAW_KEY(cx, row_y, key_w, key_h, r3[i], sel, key_font);
+                cx += key_w + key_spacing;
+            }
+            /* Symbol toggle */
+            {
+                bool sel = (cursor_row == 3 && cursor_col == r3n + 1);
+                AP__KB_DRAW_KEY(cx, row_y, sym_w, key_h, symbols ? "ABC" : "#+=", sel, key_font);
+            }
+        }
+
+        /* Row 4: space bar (8× width, centered) */
+        {
+            int row_y = grid_y + 4 * (key_h + key_spacing);
+            int space_w = key_w * 8 + key_spacing * 7;
+            int sx = (screen_w - space_w) / 2;
+            bool sel = (cursor_row == 4);
+            ap_color bg = sel ? key_bg_sel : key_bg_normal;
+            ap_draw_rounded_rect(sx, row_y, space_w, key_h, key_r, bg);
+            /* Space indicator: centered line */
+            int line_w = space_w / 3;
+            int line_h = AP_S(3);
+            int line_x = sx + (space_w - line_w) / 2;
+            int line_y = row_y + (key_h - line_h) / 2;
+            ap_color line_c = sel ? key_fg_sel : key_fg_normal;
+            ap_draw_rect(line_x, line_y, line_w, line_h, line_c);
+        }
+
+        #undef AP__KB_DRAW_KEY
+
+        /* Footer: single centered "Menu: Help" hint */
+        if (help_text) {
+            ap_footer_item kb_footer[] = {
+                {AP_BTN_MENU, "Help", false},
+            };
+            ap_draw_footer(kb_footer, 1);
+        }
 
         ap_present();
         SDL_Delay(AP__FRAME_DELAY);
@@ -1151,12 +1425,355 @@ int ap_keyboard(const char *initial_text, const char *help_text,
     return AP_CANCELLED;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * URL KEYBOARD Implementation — Gabagool-matching with shortcut rows
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Default URL shortcuts (normal mode) */
+static const char *ap__url_shortcuts_default[] = {
+    "https://", "www.", ".com", ".org", ".net",
+    ".io", ".dev", ".app", ".edu", ".gov",
+};
+/* Symbol-alternate shortcuts */
+static const char *ap__url_shortcuts_alt[] = {
+    "http://", "ftp://", ".co", ".tv", ".me",
+    ".gg", ".uk", ".de", ".ca", ".au",
+};
+/* URL-specific character row */
+static const char *ap__url_chars[] = {"/",":","@","-","_",".","~","?","#","&", NULL};
+
 int ap_url_keyboard(const char *initial_text, const char *help_text,
                     ap_url_keyboard_config *cfg, ap_keyboard_result *result) {
-    /* URL keyboard is General keyboard with URL shortcuts displayed */
-    /* For now, delegate to general keyboard — shortcuts are a future enhancement */
-    (void)cfg;
-    return ap_keyboard(initial_text, help_text, AP_KB_URL, result);
+    if (!result) return AP_ERROR;
+
+    memset(result, 0, sizeof(*result));
+    if (initial_text)
+        strncpy(result->text, initial_text, sizeof(result->text) - 1);
+
+    ap_theme *theme = ap_get_theme();
+    int screen_w = ap_get_screen_width();
+    int screen_h = ap_get_screen_height();
+
+    TTF_Font *text_font    = ap_get_font(AP_FONT_MEDIUM);
+    TTF_Font *key_font     = ap_get_font(AP_FONT_MEDIUM);
+    TTF_Font *shortcut_font = ap_get_font(AP_FONT_SMALL);
+    TTF_Font *special_font = ap_get_font(AP_FONT_LARGE);
+    if (!text_font || !key_font) return AP_ERROR;
+
+    /* Use provided shortcuts or defaults */
+    const char **shortcuts = ap__url_shortcuts_default;
+    const char **shortcuts_alt = ap__url_shortcuts_alt;
+    int shortcut_count = 10;
+    if (cfg && cfg->shortcut_keys && cfg->shortcut_count > 0) {
+        shortcuts = cfg->shortcut_keys;
+        shortcut_count = cfg->shortcut_count;
+        if (shortcut_count > 10) shortcut_count = 10;
+        shortcuts_alt = NULL; /* No alternates for custom shortcuts */
+    }
+
+    /* Layout: 5-row if ≤5 shortcuts, 6-row if 6-10 */
+    int shortcut_rows = (shortcut_count > 5) ? 2 : 1;
+    int shortcuts_per_row = (shortcut_rows == 2) ? (shortcut_count + 1) / 2 : shortcut_count;
+    if (shortcuts_per_row > 5) shortcuts_per_row = 5;
+
+    /* Total rows: shortcut_rows + url_chars + qwerty + asdf + zxcv (no space bar in URL mode) */
+    int total_rows = shortcut_rows + 4; /* url chars + 3 QWERTY rows */
+
+    /* Keyboard sizing */
+    int kb_area_h = screen_h * 85 / 100;
+    int input_h = screen_h / 10;
+    int input_y = (screen_h - kb_area_h - input_h) / 2;
+    int input_x = AP_S(40);
+    int input_w = screen_w - AP_S(80);
+    int key_spacing = AP_S(4);
+    int grid_cols = 12;
+    int key_w = (screen_w - AP_S(40) - key_spacing * (grid_cols - 1)) / grid_cols;
+    int key_h = (kb_area_h - key_spacing * (total_rows + 1)) / (total_rows + 1);
+    int key_r = AP_S(6);
+    int grid_x = (screen_w - (grid_cols * (key_w + key_spacing) - key_spacing)) / 2;
+    int grid_y = input_y + input_h + AP_S(10);
+
+    /* State */
+    int cursor_row = shortcut_rows; /* start on url chars row */
+    int cursor_col = 0;
+    bool shift = false;
+    bool sym_alt = false; /* toggle for shortcut alternates */
+    int text_cursor = (int)strlen(result->text);
+    bool running = true;
+    uint32_t caret_blink = SDL_GetTicks();
+    bool caret_visible = true;
+
+    /* Row max columns for navigation */
+    /* shortcut rows: shortcuts_per_row-1 (+ backspace on last shortcut row) */
+    /* url_chars row: 9 */
+    /* qwerty rows: same as general kb rows 1,2,3 but no space */
+
+    while (running) {
+        uint32_t now = SDL_GetTicks();
+        if (now - caret_blink > 500) { caret_visible = !caret_visible; caret_blink = now; }
+
+        /* Current active shortcuts */
+        const char **active_shortcuts = (sym_alt && shortcuts_alt) ? shortcuts_alt : shortcuts;
+
+        /* Row max col computation */
+        int row_max[8] = {0}; /* up to 8 rows max */
+        int ri = 0;
+        for (int sr = 0; sr < shortcut_rows; sr++, ri++) {
+            int first = sr * shortcuts_per_row;
+            int cnt = 0;
+            for (int i = first; i < shortcut_count && i < first + shortcuts_per_row; i++) cnt++;
+            row_max[ri] = (sr == shortcut_rows - 1) ? cnt : cnt - 1; /* last shortcut row has backspace */
+        }
+        int url_chars_row = ri; ri++;
+        row_max[url_chars_row] = 9;
+        int qwerty_row = ri; ri++;
+        row_max[qwerty_row] = 9;
+        int asdf_row = ri; ri++;
+        row_max[asdf_row] = 9; /* 9 + enter */
+        int zxcv_row = ri;
+        row_max[zxcv_row] = 8; /* shift + 7 + symbol */
+        int actual_total_rows = ri + 1;
+
+        /* Input */
+        ap_input_event iev;
+        while (ap_poll_input(&iev)) {
+            if (!iev.pressed) continue;
+            switch (iev.button) {
+                case AP_BTN_UP:
+                    cursor_row = (cursor_row - 1 + actual_total_rows) % actual_total_rows;
+                    if (cursor_col > row_max[cursor_row]) cursor_col = row_max[cursor_row];
+                    break;
+                case AP_BTN_DOWN:
+                    cursor_row = (cursor_row + 1) % actual_total_rows;
+                    if (cursor_col > row_max[cursor_row]) cursor_col = row_max[cursor_row];
+                    break;
+                case AP_BTN_LEFT:
+                    cursor_col--;
+                    if (cursor_col < 0) cursor_col = row_max[cursor_row];
+                    break;
+                case AP_BTN_RIGHT:
+                    cursor_col++;
+                    if (cursor_col > row_max[cursor_row]) cursor_col = 0;
+                    break;
+
+                case AP_BTN_A: {
+                    /* Shortcut rows */
+                    if (cursor_row < shortcut_rows) {
+                        int first = cursor_row * shortcuts_per_row;
+                        if (cursor_row == shortcut_rows - 1 && cursor_col == row_max[cursor_row]) {
+                            /* Backspace on last shortcut row */
+                            ap__kb_backspace(result, &text_cursor);
+                        } else {
+                            int si = first + cursor_col;
+                            if (si < shortcut_count)
+                                ap__kb_insert(result, &text_cursor, active_shortcuts[si]);
+                        }
+                    }
+                    /* URL chars row */
+                    else if (cursor_row == url_chars_row) {
+                        if (cursor_col < ap__kb5_count((const char **)ap__url_chars))
+                            ap__kb_insert(result, &text_cursor, ap__url_chars[cursor_col]);
+                    }
+                    /* QWERTY row */
+                    else if (cursor_row == qwerty_row) {
+                        const char **r = shift ? ap__kb5_row1_upper : ap__kb5_row1_lower;
+                        if (cursor_col < ap__kb5_count(r))
+                            ap__kb_insert(result, &text_cursor, r[cursor_col]);
+                    }
+                    /* ASDF row */
+                    else if (cursor_row == asdf_row) {
+                        const char **r = shift ? ap__kb5_row2_upper : ap__kb5_row2_lower;
+                        int rn = ap__kb5_count(r);
+                        if (cursor_col < rn)
+                            ap__kb_insert(result, &text_cursor, r[cursor_col]);
+                        else /* enter */
+                            return AP_OK;
+                    }
+                    /* ZXCV row */
+                    else if (cursor_row == zxcv_row) {
+                        if (cursor_col == 0) {
+                            shift = !shift;
+                        } else {
+                            const char **r = shift ? ap__kb5_row3_upper : ap__kb5_row3_lower;
+                            int rn = ap__kb5_count(r);
+                            if (cursor_col - 1 < rn)
+                                ap__kb_insert(result, &text_cursor, r[cursor_col - 1]);
+                            else /* symbol area: no-op in URL mode */
+                                ;
+                        }
+                    }
+                    break;
+                }
+
+                case AP_BTN_B:
+                    ap__kb_backspace(result, &text_cursor);
+                    break;
+                case AP_BTN_X:
+                    /* Toggle symbol alternates for shortcuts (not space in URL mode) */
+                    sym_alt = !sym_alt;
+                    break;
+                case AP_BTN_Y:
+                    return AP_CANCELLED;
+                case AP_BTN_SELECT:
+                    shift = !shift;
+                    break;
+                case AP_BTN_START:
+                    return AP_OK;
+                case AP_BTN_L1:
+                    if (text_cursor > 0) text_cursor--;
+                    break;
+                case AP_BTN_R1:
+                    if (text_cursor < (int)strlen(result->text)) text_cursor++;
+                    break;
+                case AP_BTN_MENU:
+                    if (help_text) ap_show_help_overlay(help_text);
+                    break;
+                default: break;
+            }
+        }
+
+        /* ── Render ── */
+        ap_draw_background();
+
+        /* Input field */
+        ap_color url_input_bg = {50, 50, 60, 255};
+        ap_draw_rounded_rect(input_x - 1, input_y - 1, input_w + 2, input_h + 2, AP_S(8), (ap_color){200,200,200,255});
+        ap_draw_rounded_rect(input_x, input_y, input_w, input_h, AP_S(8), url_input_bg);
+        {
+            int ty = input_y + (input_h - TTF_FontHeight(text_font)) / 2;
+            int tx = input_x + AP_S(16);
+            if (result->text[0])
+                ap_draw_text_clipped(text_font, result->text, tx, ty, theme->highlighted_text, input_w - AP_S(32));
+            if (caret_visible) {
+                char saved = result->text[text_cursor]; result->text[text_cursor] = '\0';
+                int cx = tx + ap_measure_text(text_font, result->text);
+                result->text[text_cursor] = saved;
+                ap_draw_rect(cx, ty, AP_S(2), TTF_FontHeight(text_font), theme->highlighted_text);
+            }
+        }
+
+        ap_color key_bg_normal = {50, 50, 60, 255};
+        ap_color key_bg_sel    = {100, 100, 240, 255};
+        ap_color key_fg_normal = theme->hint;
+        ap_color key_fg_sel    = theme->highlighted_text;
+
+        #define AP__KB_DRAW_KEY2(x, y, w, h, label, is_sel, fnt) do { \
+            ap_color _bg = (is_sel) ? key_bg_sel : key_bg_normal; \
+            ap_color _fg = (is_sel) ? key_fg_sel : key_fg_normal; \
+            ap_draw_rounded_rect((x), (y), (w), (h), key_r, _bg); \
+            if (label) { \
+                int _tw = ap_measure_text((fnt), (label)); \
+                int _th = TTF_FontHeight((fnt)); \
+                ap_draw_text((fnt), (label), (x)+((w)-_tw)/2, (y)+((h)-_th)/2, _fg); \
+            } \
+        } while(0)
+
+        int ry = grid_y;
+
+        /* Shortcut rows */
+        for (int sr = 0; sr < shortcut_rows; sr++) {
+            int first = sr * shortcuts_per_row;
+            int cnt = 0;
+            for (int i = first; i < shortcut_count && i < first + shortcuts_per_row; i++) cnt++;
+
+            /* Each shortcut uses 2 key widths */
+            int short_w = key_w * 2 + key_spacing;
+            bool has_backspace = (sr == shortcut_rows - 1);
+            int bksp_w = has_backspace ? (key_w * 2 + key_spacing) : 0;
+            int row_w = cnt * (short_w + key_spacing) - key_spacing + (has_backspace ? key_spacing + bksp_w : 0);
+            int cx = (screen_w - row_w) / 2;
+
+            for (int i = 0; i < cnt; i++) {
+                int si = first + i;
+                bool sel = (cursor_row == sr && cursor_col == i);
+                AP__KB_DRAW_KEY2(cx, ry, short_w, key_h, active_shortcuts[si], sel, shortcut_font ? shortcut_font : key_font);
+                cx += short_w + key_spacing;
+            }
+            if (has_backspace) {
+                bool sel = (cursor_row == sr && cursor_col == cnt);
+                AP__KB_DRAW_KEY2(cx, ry, bksp_w, key_h, "\xe2\x8c\xab", sel, special_font ? special_font : key_font);
+            }
+            ry += key_h + key_spacing;
+        }
+
+        /* URL chars row */
+        {
+            int ucn = ap__kb5_count((const char **)ap__url_chars);
+            int row_w = ucn * (key_w + key_spacing) - key_spacing;
+            int cx = (screen_w - row_w) / 2;
+            for (int i = 0; i < ucn; i++) {
+                bool sel = (cursor_row == url_chars_row && cursor_col == i);
+                AP__KB_DRAW_KEY2(cx, ry, key_w, key_h, ap__url_chars[i], sel, key_font);
+                cx += key_w + key_spacing;
+            }
+            ry += key_h + key_spacing;
+        }
+
+        /* QWERTY row */
+        {
+            const char **r = shift ? ap__kb5_row1_upper : ap__kb5_row1_lower;
+            int rn = ap__kb5_count(r);
+            int row_w = rn * (key_w + key_spacing) - key_spacing;
+            int cx = (screen_w - row_w) / 2;
+            for (int i = 0; i < rn; i++) {
+                bool sel = (cursor_row == qwerty_row && cursor_col == i);
+                AP__KB_DRAW_KEY2(cx, ry, key_w, key_h, r[i], sel, key_font);
+                cx += key_w + key_spacing;
+            }
+            ry += key_h + key_spacing;
+        }
+
+        /* ASDF + enter row */
+        {
+            const char **r = shift ? ap__kb5_row2_upper : ap__kb5_row2_lower;
+            int rn = ap__kb5_count(r);
+            int enter_w = key_w * 3 / 2;
+            int row_w = rn * (key_w + key_spacing) + enter_w;
+            int cx = (screen_w - row_w) / 2;
+            for (int i = 0; i < rn; i++) {
+                bool sel = (cursor_row == asdf_row && cursor_col == i);
+                AP__KB_DRAW_KEY2(cx, ry, key_w, key_h, r[i], sel, key_font);
+                cx += key_w + key_spacing;
+            }
+            {
+                bool sel = (cursor_row == asdf_row && cursor_col == rn);
+                AP__KB_DRAW_KEY2(cx, ry, enter_w, key_h, "\xe2\x86\xb5", sel, special_font ? special_font : key_font);
+            }
+            ry += key_h + key_spacing;
+        }
+
+        /* ZXCV row: shift + chars + (no symbol toggle in URL mode — use the space) */
+        {
+            const char **r = shift ? ap__kb5_row3_upper : ap__kb5_row3_lower;
+            int rn = ap__kb5_count(r);
+            int shift_w = key_w * 2 + key_spacing;
+            int row_w = shift_w + key_spacing + rn * (key_w + key_spacing) - key_spacing;
+            int cx = (screen_w - row_w) / 2;
+            {
+                bool sel = (cursor_row == zxcv_row && cursor_col == 0);
+                AP__KB_DRAW_KEY2(cx, ry, shift_w, key_h, "\xe2\x87\xa7", sel, special_font ? special_font : key_font);
+                cx += shift_w + key_spacing;
+            }
+            for (int i = 0; i < rn; i++) {
+                bool sel = (cursor_row == zxcv_row && cursor_col == i + 1);
+                AP__KB_DRAW_KEY2(cx, ry, key_w, key_h, r[i], sel, key_font);
+                cx += key_w + key_spacing;
+            }
+        }
+
+        #undef AP__KB_DRAW_KEY2
+
+        /* Footer */
+        if (help_text) {
+            ap_footer_item kb_footer[] = {{AP_BTN_MENU, "Help", false}};
+            ap_draw_footer(kb_footer, 1);
+        }
+
+        ap_present();
+        SDL_Delay(AP__FRAME_DELAY);
+    }
+
+    return AP_CANCELLED;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1877,6 +2494,407 @@ void ap_show_help_overlay(const char *text) {
         SDL_Delay(AP__FRAME_DELAY);
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * DOWNLOAD MANAGER Implementation
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#ifdef AP_ENABLE_CURL
+#include <curl/curl.h>
+
+/* Worker thread context */
+typedef struct {
+    ap_download      *downloads;
+    int               count;
+    ap_download_opts *opts;
+    int               next_index;     /* Next download to start */
+    int               active;         /* Currently running downloads */
+    int               completed;      /* Finished (success + fail) */
+    bool              cancel;         /* Set by UI to abort */
+    pthread_mutex_t   mutex;
+} ap__dl_context;
+
+/* Per-download thread data */
+typedef struct {
+    ap_download    *dl;
+    ap__dl_context *ctx;
+} ap__dl_thread_data;
+
+/* libcurl progress callback */
+static int ap__dl_progress_cb(void *clientp,
+                               double dltotal, double dlnow,
+                               double ultotal, double ulnow) {
+    (void)ultotal; (void)ulnow;
+    ap__dl_thread_data *td = (ap__dl_thread_data *)clientp;
+
+    /* Check cancellation */
+    pthread_mutex_lock(&td->ctx->mutex);
+    bool cancel = td->ctx->cancel;
+    pthread_mutex_unlock(&td->ctx->mutex);
+    if (cancel) return 1; /* Abort transfer */
+
+    if (dltotal > 0.0) {
+        td->dl->progress = (float)(dlnow / dltotal);
+    }
+    td->dl->speed_bps = dlnow; /* Will be divided by elapsed time later */
+    return 0;
+}
+
+/* libcurl write callback — write to file */
+static size_t ap__dl_write_cb(void *ptr, size_t size, size_t nmemb, void *userdata) {
+    FILE *fp = (FILE *)userdata;
+    return fwrite(ptr, size, nmemb, fp);
+}
+
+/* Worker thread function */
+static void *ap__dl_worker(void *arg) {
+    ap__dl_thread_data *td = (ap__dl_thread_data *)arg;
+    ap_download *dl = td->dl;
+
+    dl->status = AP_DL_DOWNLOADING;
+    dl->progress = 0.0f;
+
+    FILE *fp = fopen(dl->dest_path, "wb");
+    if (!fp) {
+        snprintf(dl->error, sizeof(dl->error), "Cannot open: %s", dl->dest_path);
+        dl->status = AP_DL_FAILED;
+        goto done;
+    }
+
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        snprintf(dl->error, sizeof(dl->error), "curl_easy_init failed");
+        dl->status = AP_DL_FAILED;
+        fclose(fp);
+        goto done;
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, dl->url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, ap__dl_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+    curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, ap__dl_progress_cb);
+    curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, td);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 100L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
+
+    if (td->ctx->opts && td->ctx->opts->skip_ssl_verify) {
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    }
+
+    /* Custom headers */
+    struct curl_slist *hdrs = NULL;
+    if (td->ctx->opts && td->ctx->opts->headers) {
+        for (int i = 0; i < td->ctx->opts->header_count; i++) {
+            hdrs = curl_slist_append(hdrs, td->ctx->opts->headers[i]);
+        }
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, hdrs);
+    }
+
+    CURLcode res = curl_easy_perform(curl);
+
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    dl->http_code = (int)http_code;
+
+    /* Get final speed */
+    double speed = 0;
+    curl_easy_getinfo(curl, CURLINFO_SPEED_DOWNLOAD, &speed);
+    dl->speed_bps = speed;
+
+    if (hdrs) curl_slist_free_all(hdrs);
+    curl_easy_cleanup(curl);
+    fclose(fp);
+
+    if (res == CURLE_ABORTED_BY_CALLBACK) {
+        dl->status = AP_DL_FAILED;
+        snprintf(dl->error, sizeof(dl->error), "Cancelled");
+        remove(dl->dest_path);
+    } else if (res != CURLE_OK) {
+        dl->status = AP_DL_FAILED;
+        snprintf(dl->error, sizeof(dl->error), "%s", curl_easy_strerror(res));
+        remove(dl->dest_path);
+    } else if (http_code >= 400) {
+        dl->status = AP_DL_FAILED;
+        snprintf(dl->error, sizeof(dl->error), "HTTP %d", (int)http_code);
+        remove(dl->dest_path);
+    } else {
+        dl->status = AP_DL_COMPLETE;
+        dl->progress = 1.0f;
+    }
+
+done:
+    pthread_mutex_lock(&td->ctx->mutex);
+    td->ctx->active--;
+    td->ctx->completed++;
+    pthread_mutex_unlock(&td->ctx->mutex);
+
+    free(td);
+    return NULL;
+}
+
+/* Start the next pending download if capacity allows */
+static void ap__dl_dispatch(ap__dl_context *ctx) {
+    pthread_mutex_lock(&ctx->mutex);
+    int max_c = (ctx->opts && ctx->opts->max_concurrent > 0)
+                 ? ctx->opts->max_concurrent : 3;
+
+    while (ctx->active < max_c && ctx->next_index < ctx->count) {
+        ap_download *dl = &ctx->downloads[ctx->next_index];
+        ctx->next_index++;
+
+        if (dl->status != AP_DL_PENDING) continue;
+
+        ap__dl_thread_data *td = (ap__dl_thread_data *)calloc(1, sizeof(*td));
+        if (!td) break;
+        td->dl = dl;
+        td->ctx = ctx;
+
+        ctx->active++;
+
+        pthread_t thr;
+        if (pthread_create(&thr, NULL, ap__dl_worker, td) != 0) {
+            free(td);
+            ctx->active--;
+            dl->status = AP_DL_FAILED;
+            snprintf(dl->error, sizeof(dl->error), "Thread creation failed");
+            ctx->completed++;
+        } else {
+            pthread_detach(thr);
+        }
+    }
+    pthread_mutex_unlock(&ctx->mutex);
+}
+
+/* Format bytes per second as human-readable speed */
+static void ap__dl_format_speed(double bps, char *buf, int bufsize) {
+    if (bps >= 1048576.0)
+        snprintf(buf, bufsize, "%.1f MB/s", bps / 1048576.0);
+    else if (bps >= 1024.0)
+        snprintf(buf, bufsize, "%.0f KB/s", bps / 1024.0);
+    else
+        snprintf(buf, bufsize, "%.0f B/s", bps);
+}
+
+int ap_download_manager(ap_download *downloads, int count,
+                        ap_download_opts *opts, ap_download_result *result) {
+    if (!downloads || count <= 0 || !result) return AP_ERROR;
+
+    memset(result, 0, sizeof(*result));
+    result->total = count;
+
+    /* Initialize all downloads to pending */
+    for (int i = 0; i < count; i++) {
+        downloads[i].status = AP_DL_PENDING;
+        downloads[i].progress = 0.0f;
+        downloads[i].speed_bps = 0;
+        downloads[i].http_code = 0;
+        downloads[i].error[0] = '\0';
+    }
+
+    /* Init curl globally (safe to call multiple times) */
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+
+    ap__dl_context ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.downloads = downloads;
+    ctx.count = count;
+    ctx.opts = opts;
+    pthread_mutex_init(&ctx.mutex, NULL);
+
+    ap_theme *theme = ap_get_theme();
+    int screen_w = ap_get_screen_width();
+    int screen_h = ap_get_screen_height();
+    TTF_Font *label_font = ap_get_font(AP_FONT_MEDIUM);
+    TTF_Font *speed_font = ap_get_font(AP_FONT_SMALL);
+
+    bool show_speed = true;
+    bool all_done = false;
+    int scroll = 0;
+
+    /* Progress bar sizing — 3/4 of screen width, max 900px */
+    int bar_w = screen_w * 3 / 4;
+    if (bar_w > AP_S(900)) bar_w = AP_S(900);
+    int bar_h = AP_S(16);
+    int bar_r = AP_S(8);
+    int item_gap = AP_S(12);
+    int label_h = label_font ? TTF_FontHeight(label_font) : AP_S(30);
+    int speed_h = speed_font ? TTF_FontHeight(speed_font) : AP_S(20);
+    int item_h = label_h + AP_S(4) + bar_h + (show_speed ? AP_S(2) + speed_h : 0);
+
+    /* Visible area */
+    int title_zone = AP_S(85);
+    int footer_zone = ap_get_footer_height();
+    int content_y = title_zone;
+    int content_h = screen_h - title_zone - footer_zone;
+    int max_visible = content_h / (item_h + item_gap);
+    if (max_visible < 1) max_visible = 1;
+
+    while (!all_done) {
+        /* Dispatch pending downloads */
+        ap__dl_dispatch(&ctx);
+
+        /* Check overall status */
+        pthread_mutex_lock(&ctx.mutex);
+        int done_count = ctx.completed;
+        bool cancelled = ctx.cancel;
+        pthread_mutex_unlock(&ctx.mutex);
+
+        int comp_ok = 0, comp_fail = 0;
+        for (int i = 0; i < count; i++) {
+            if (downloads[i].status == AP_DL_COMPLETE) comp_ok++;
+            if (downloads[i].status == AP_DL_FAILED) comp_fail++;
+        }
+        result->completed = comp_ok;
+        result->failed = comp_fail;
+
+        if (done_count >= count) all_done = true;
+        if (cancelled && ctx.active <= 0) { all_done = true; result->cancelled = true; }
+
+        /* Input */
+        ap_input_event ev;
+        while (ap_poll_input(&ev)) {
+            if (!ev.pressed) continue;
+            switch (ev.button) {
+                case AP_BTN_Y:
+                    if (!all_done) {
+                        pthread_mutex_lock(&ctx.mutex);
+                        ctx.cancel = true;
+                        pthread_mutex_unlock(&ctx.mutex);
+                    }
+                    break;
+                case AP_BTN_X:
+                    show_speed = !show_speed;
+                    item_h = label_h + AP_S(4) + bar_h + (show_speed ? AP_S(2) + speed_h : 0);
+                    max_visible = content_h / (item_h + item_gap);
+                    if (max_visible < 1) max_visible = 1;
+                    break;
+                case AP_BTN_A:
+                    if (all_done) goto dm_exit;
+                    break;
+                case AP_BTN_UP:
+                    if (scroll > 0) scroll--;
+                    break;
+                case AP_BTN_DOWN:
+                    if (scroll < count - max_visible) scroll++;
+                    break;
+                default: break;
+            }
+        }
+
+        /* Auto-scroll to show active downloads */
+        if (!all_done) {
+            for (int i = count - 1; i >= 0; i--) {
+                if (downloads[i].status == AP_DL_DOWNLOADING) {
+                    if (i >= scroll + max_visible) scroll = i - max_visible + 1;
+                    if (i < scroll) scroll = i;
+                    break;
+                }
+            }
+        }
+
+        /* ── Render ── */
+        ap_draw_background();
+
+        /* Title: "Downloading..." or completion summary */
+        {
+            char title_buf[128];
+            if (all_done) {
+                snprintf(title_buf, sizeof(title_buf), "Downloads Complete (%d/%d)", comp_ok, count);
+            } else {
+                snprintf(title_buf, sizeof(title_buf), "Downloading... %d/%d", done_count, count);
+            }
+            ap__draw_title(title_buf);
+        }
+
+        /* Download items */
+        int bar_x = (screen_w - bar_w) / 2;
+        for (int vi = 0; vi < max_visible && vi + scroll < count; vi++) {
+            int i = vi + scroll;
+            ap_download *dl = &downloads[i];
+            int iy = content_y + vi * (item_h + item_gap);
+
+            /* Label */
+            const char *lbl = dl->label ? dl->label : dl->url;
+            ap_color lbl_color = theme->text;
+            if (dl->status == AP_DL_COMPLETE) lbl_color = (ap_color){100, 255, 100, 255};
+            if (dl->status == AP_DL_FAILED) lbl_color = (ap_color){255, 100, 100, 255};
+
+            if (label_font) {
+                ap_draw_text_clipped(label_font, lbl, bar_x, iy, lbl_color, bar_w);
+            }
+
+            /* Progress bar */
+            int bar_y = iy + label_h + AP_S(4);
+            ap_color bar_bg = {40, 40, 50, 255};
+            ap_draw_rounded_rect(bar_x, bar_y, bar_w, bar_h, bar_r, bar_bg);
+
+            if (dl->progress > 0.001f) {
+                int fill_w = (int)(dl->progress * bar_w);
+                if (fill_w < bar_h) fill_w = bar_h; /* Minimum for rounding */
+                ap_color fill_c;
+                if (dl->status == AP_DL_COMPLETE) fill_c = (ap_color){80, 200, 80, 255};
+                else if (dl->status == AP_DL_FAILED) fill_c = (ap_color){200, 80, 80, 255};
+                else fill_c = theme->highlight;
+                ap_draw_rounded_rect(bar_x, bar_y, fill_w, bar_h, bar_r, fill_c);
+            }
+
+            /* Speed / status text */
+            if (show_speed && speed_font) {
+                int sy = bar_y + bar_h + AP_S(2);
+                char speed_buf[64];
+                if (dl->status == AP_DL_DOWNLOADING) {
+                    ap__dl_format_speed(dl->speed_bps, speed_buf, sizeof(speed_buf));
+                    char pct_buf[80];
+                    snprintf(pct_buf, sizeof(pct_buf), "%.0f%% — %s", dl->progress * 100.0f, speed_buf);
+                    ap_draw_text(speed_font, pct_buf, bar_x, sy, theme->hint);
+                } else if (dl->status == AP_DL_COMPLETE) {
+                    ap_draw_text(speed_font, "Complete", bar_x, sy, (ap_color){100,255,100,255});
+                } else if (dl->status == AP_DL_FAILED) {
+                    ap_draw_text_clipped(speed_font, dl->error, bar_x, sy,
+                        (ap_color){255,100,100,255}, bar_w);
+                } else {
+                    ap_draw_text(speed_font, "Pending...", bar_x, sy, theme->hint);
+                }
+            }
+        }
+
+        /* Scrollbar */
+        if (count > max_visible) {
+            ap_draw_scrollbar(bar_x + bar_w + AP_S(12), content_y,
+                content_h, content_h, count * (item_h + item_gap), scroll * (item_h + item_gap));
+        }
+
+        /* Footer */
+        if (all_done) {
+            ap_footer_item dm_footer[] = {{AP_BTN_A, "Close", true}};
+            ap_draw_footer(dm_footer, 1);
+        } else {
+            ap_footer_item dm_footer[] = {
+                {AP_BTN_Y, "Cancel", false},
+                {AP_BTN_X, show_speed ? "Hide Speed" : "Show Speed", false},
+            };
+            ap_draw_footer(dm_footer, 2);
+        }
+
+        ap_present();
+        SDL_Delay(AP__FRAME_DELAY);
+    }
+
+dm_exit:
+    pthread_mutex_destroy(&ctx.mutex);
+    curl_global_cleanup();
+
+    if (result->cancelled) return AP_CANCELLED;
+    if (result->failed > 0 && result->completed == 0) return AP_ERROR;
+    return AP_OK;
+}
+
+#endif /* AP_ENABLE_CURL */
 
 #endif /* AP_WIDGETS_IMPLEMENTATION */
 #endif /* APOSTROPHE_WIDGETS_H */

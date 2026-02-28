@@ -96,30 +96,48 @@ ap_options_list(&opts, &result);
 
 ## Keyboard (`ap_keyboard`)
 
-Full on-screen QWERTY keyboard.
+5-row on-screen keyboard matching Gabagool's layout.
 
 ```
-┌─────────────────────────────┐
-│  Enter your name:           │ ← Help text
-│─────────────────────────────│
-│  [ H e l l o _ ]            │ ← Text field with cursor
-│                             │
-│  q w e r t y u i o p        │
-│   a s d f g h j k l         │
-│  ⇧ z x c v b n m  ⌫        │
-│         [ space ]            │
-│─────────────────────────────│
-│  [B] Cancel     [A] Confirm │
-└─────────────────────────────┘
+┌───────────────────────────────────────┐
+│  [ H e l l o _ ]                      │ ← Text field with cursor
+│                                       │
+│  1  2  3  4  5  6  7  8  9  0  [⌫]  │ ← Numbers + backspace
+│     q  w  e  r  t  y  u  i  o  p     │ ← QWERTY (centered)
+│     a  s  d  f  g  h  j  k  l  [↵]   │ ← ASDF + enter
+│  [⇧]  z  x  c  v  b  n  m  [#+=]     │ ← Shift + ZXCV + symbol
+│           [     space     ]           │ ← Space bar
+│                                       │
+│             [MENU] Help               │ ← Footer
+└───────────────────────────────────────┘
 ```
 
 **Layouts**: `AP_KB_GENERAL`, `AP_KB_URL`, `AP_KB_NUMERIC`
+
+**Controls** (Gabagool-compatible):
+| Button | Action |
+|--------|--------|
+| D-Pad | Navigate keys |
+| A | Type selected key / activate special key |
+| B | Backspace |
+| X | Space (general) / Toggle URL shortcuts (URL mode) |
+| Y | Exit without saving |
+| Select | Toggle shift |
+| Start | Confirm text |
+| L1 / R1 | Move text cursor left / right |
+| Menu | Show help overlay |
 
 **Usage**:
 ```c
 ap_keyboard_result result;
 int rc = ap_keyboard("initial", "Enter text:", AP_KB_GENERAL, &result);
 if (rc == AP_OK) printf("Got: %s\n", result.text);
+```
+
+**URL Keyboard** adds shortcut rows (e.g. `https://`, `.com`) above the QWERTY keys:
+```c
+ap_keyboard_result result;
+int rc = ap_url_keyboard("https://", "Enter URL:", NULL, &result);
 ```
 
 ---
@@ -308,4 +326,46 @@ Full-screen scrollable text overlay. Triggered automatically by L1 in widgets th
 **Usage** (usually automatic via widgets, but can be called directly):
 ```c
 ap_show_help_overlay("Navigate with D-Pad.\nPress A to select.\nPress B to go back.");
+```
+
+---
+
+## Download Manager (`ap_download_manager`)
+
+Multi-threaded file downloader with per-file progress bars. Requires libcurl.
+
+```
+┌───────────────────────────────────────┐
+│  Downloading... 2/5                   │
+│                                       │
+│  game-cover.jpg                       │
+│  ███████████████████████████  100%  │ ← Complete
+│  1.2 MB/s — Complete                  │
+│                                       │
+│  metadata.json                        │
+│  ████████████░░░░░░░░░░░░░░░   45%  │ ← Downloading
+│  340 KB/s                             │
+│                                       │
+│  [Y] Cancel       [X] Hide Speed      │ ← Footer
+└───────────────────────────────────────┘
+```
+
+**Features**:
+- Thread pool with configurable concurrency (default 3 simultaneous)
+- Per-file progress bars (3/4 of screen width)
+- Live download speed in MB/s or KB/s
+- Auto-scroll to show active downloads
+- Cancel all pending with Y
+- Custom HTTP headers and SSL options
+
+**Usage**:
+```c
+ap_download downloads[] = {
+    { .url = "https://example.com/file1.zip", .dest_path = "/tmp/file1.zip", .label = "file1.zip" },
+    { .url = "https://example.com/file2.zip", .dest_path = "/tmp/file2.zip", .label = "file2.zip" },
+};
+ap_download_opts opts = { .max_concurrent = 3 };
+ap_download_result result;
+int rc = ap_download_manager(downloads, 2, &opts, &result);
+if (rc == AP_OK) printf("%d/%d succeeded\n", result.completed, result.total);
 ```

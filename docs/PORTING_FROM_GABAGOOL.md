@@ -120,6 +120,21 @@ if (rc == AP_OK) {
 }
 ```
 
+The keyboard now matches Gabagool's 5-row layout:
+- Row 0: Numbers 1-0 + backspace
+- Row 1: QWERTY (centered)
+- Row 2: ASDF + enter
+- Row 3: Shift + ZXCV + symbol toggle
+- Row 4: Space bar
+
+**Button mapping** is Gabagool-compatible: B=backspace, X=space, Y=exit, Select=shift, Start=confirm, L1/R1=cursor, Menu=help.
+
+**URL Keyboard** supports configurable shortcuts:
+```c
+ap_keyboard_result result;
+int rc = ap_url_keyboard("https://", "Enter URL:", NULL, &result);
+```
+
 ## Process Message (Async Worker)
 
 ### Gabagool
@@ -302,3 +317,34 @@ while (1) {
     // handle result...
 }
 ```
+
+## Download Manager
+
+Gabagool's `DownloadManager` maps to Apostrophe's `ap_download_manager`. Both use concurrent downloads with progress reporting.
+
+### Gabagool
+```go
+downloads := []gabagool.Download{
+    {URL: "https://example.com/a.zip", DestPath: "/tmp/a.zip", Label: "a.zip"},
+    {URL: "https://example.com/b.zip", DestPath: "/tmp/b.zip", Label: "b.zip"},
+}
+result, err := app.DownloadManager(downloads, &gabagool.DownloadOptions{
+    MaxConcurrent: 3,
+})
+```
+
+### Apostrophe
+```c
+ap_download downloads[] = {
+    { .url = "https://example.com/a.zip", .dest_path = "/tmp/a.zip", .label = "a.zip" },
+    { .url = "https://example.com/b.zip", .dest_path = "/tmp/b.zip", .label = "b.zip" },
+};
+ap_download_opts opts = { .max_concurrent = 3 };
+ap_download_result result;
+ap_download_manager(downloads, 2, &opts, &result);
+```
+
+**Key differences**:
+- Go's HTTP client → libcurl (compile with `-DAP_ENABLE_CURL`, link with `-lcurl`)
+- Go's goroutines → pthreads (managed internally by the widget)
+- Status is tracked per-job via the `ap_download` struct fields (`status`, `progress`, `speed_bps`)

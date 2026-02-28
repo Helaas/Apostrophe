@@ -12,6 +12,16 @@ PKG_CONFIG := pkg-config
 SDL_CFLAGS  := $(shell $(PKG_CONFIG) --cflags sdl2 SDL2_ttf SDL2_image)
 SDL_LDFLAGS := $(shell $(PKG_CONFIG) --libs sdl2 SDL2_ttf SDL2_image)
 
+# libcurl (optional — enable with CURL=1 or auto-detect)
+CURL ?= $(shell $(PKG_CONFIG) --exists libcurl 2>/dev/null && echo 1 || echo 0)
+ifeq ($(CURL),1)
+CURL_CFLAGS := $(shell $(PKG_CONFIG) --cflags libcurl) -DAP_ENABLE_CURL
+CURL_LDFLAGS := $(shell $(PKG_CONFIG) --libs libcurl)
+else
+CURL_CFLAGS :=
+CURL_LDFLAGS :=
+endif
+
 EXAMPLE   ?= hello
 BUILD_DIR ?= /workspace/build/my355/$(EXAMPLE)
 SRC       := /workspace/examples/$(EXAMPLE)/main.c
@@ -20,9 +30,9 @@ CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter \
 	-mcpu=cortex-a55 -mtune=cortex-a55 \
 	-DPLATFORM_MY355 \
 	-I/workspace/include \
-	$(SDL_CFLAGS)
+	$(SDL_CFLAGS) $(CURL_CFLAGS)
 
-LDFLAGS := $(SDL_LDFLAGS) -lpthread -ldl -lm
+LDFLAGS := $(SDL_LDFLAGS) $(CURL_LDFLAGS) -lpthread -ldl -lm
 
 .PHONY: all clean
 

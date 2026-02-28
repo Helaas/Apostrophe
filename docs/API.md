@@ -27,6 +27,7 @@ Complete reference for all public functions, types, and macros in `apostrophe.h`
   - [Confirmation](#confirmation)
   - [Selection](#selection)
   - [Process Message](#process-message)
+  - [Download Manager](#download-manager)
   - [Detail Screen](#detail-screen)
   - [Color Picker](#color-picker)
   - [Help Overlay](#help-overlay)
@@ -208,7 +209,7 @@ Get a pre-loaded, pre-scaled font for the given tier. Returns NULL if not loaded
 
 Poll for the next input event. Returns `true` if an event was available.
 
-Handles SDL event processing internally: keyboard, joystick buttons, joystick axes, joystick hats, and quit events.
+Handles SDL event processing internally: keyboard events, raw joystick buttons/axes/hats (TrimUI), SDL GameController buttons/axes (macOS + recognised gamepads), platform-specific scancodes (my355), and quit events.
 
 #### `bool ap_is_pressed(ap_button btn)`
 
@@ -266,7 +267,7 @@ Load and draw an image at the given position/size. Uses the internal texture cac
 
 Draw the footer bar at the bottom of the screen with button hints.
 
-Button hints on the left, confirm-group hints on the right. Each shows a pill with the button letter and a text label.
+Non-confirm items render in one continuous outer pill on the left; confirm items render in one continuous outer pill on the right. Inside each outer pill, every item shows an inner button pill (letter/symbol) followed by a text label. Sizing matches Gabagool: base 60px outer pill height, SmallFont (34px), with circular inner pills for single-character buttons.
 
 #### `int ap_get_footer_height(void)`
 
@@ -274,7 +275,11 @@ Get the footer height in pixels (scaled).
 
 #### `void ap_draw_status_bar(ap_status_bar_opts *opts)`
 
-Draw a status bar at the top of the screen (clock, icons).
+Draw a status bar at the top of the screen (clock, icons). Uses SmallFont (34px base), renders icons right-to-left in a pill at `pillY=20` (unscaled).
+
+#### `int ap_get_status_bar_width(ap_status_bar_opts *opts)`
+
+Calculate the pixel width of the status bar pill, including padding. Use this to clip long title text to avoid overlap.
 
 ### Text Scrolling
 
@@ -390,12 +395,29 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
                     ap_url_keyboard_config *cfg, ap_keyboard_result *result);
 ```
 
-Full on-screen keyboard with:
-- QWERTY layout
-- Shift, symbols, backspace, space
-- Cursor movement
-- General, URL, and numeric layouts
-- Custom shortcut keys for URL mode
+5-row on-screen keyboard matching Gabagool's layout:
+- **Row 0**: Numbers 1-0 + backspace (⌫, 2× width)
+- **Row 1**: QWERTY row (10 keys, centered)
+- **Row 2**: ASDF row (9 keys) + enter (↵, 1.5× width)
+- **Row 3**: Shift (⇧, 2× width) + ZXCV row (7 keys) + symbol toggle (#+=, 2× width)
+- **Row 4**: Space bar (8× width, centered)
+
+**Button mapping** (Gabagool-compatible):
+- **B**: Backspace
+- **X**: Space (general) / Toggle symbol alternates (URL)
+- **Y**: Exit without saving
+- **Select**: Toggle shift
+- **Start**: Confirm
+- **L1/R1**: Move text cursor left/right
+- **Menu**: Help overlay
+
+**URL Keyboard** adds configurable shortcut rows above the QWERTY keys:
+- Default shortcuts: `https://`, `www.`, `.com`, `.org`, `.net`, `.io`, `.dev`, `.app`, `.edu`, `.gov`
+- X toggles to symbol alternates: `http://`, `ftp://`, `.co`, `.tv`, `.me`, `.gg`, `.uk`, `.de`, `.ca`, `.au`
+- URL special chars row: `/ : @ - _ . ~ ? # &`
+- No space bar in URL mode
+
+**Layouts**: `AP_KB_GENERAL`, `AP_KB_URL`, `AP_KB_NUMERIC`
 
 **Result**: `ap_keyboard_result.text` (char[1024])
 
@@ -460,7 +482,56 @@ Scrollable multi-section view for displaying information. Supports:
 | `AP_SECTION_DESCRIPTION` | Wrapped text block |
 | `AP_SECTION_IMAGE` | Single image |
 | `AP_SECTION_TABLE` | Tabular data |
+### Download Manager
 
+```c
+int ap_download_manager(ap_download *downloads, int count,
+                        ap_download_opts *opts, ap_download_result *result);
+```
+
+Multi-threaded file downloader with per-file progress bars. Requires libcurl (compile with `-DAP_ENABLE_CURL` and link with `-lcurl`).
+
+**Features**:
+- Thread pool with configurable concurrency (default 3)
+- Per-file progress bars (3/4 screen width, max 900px)
+- Live download speed display (toggleable with X)
+- Auto-scroll to active downloads
+- Cancel all with Y
+- Custom HTTP headers and SSL options
+
+**`ap_download`** (per-job):
+```c
+typedef struct {
+    const char          *url;         // Source URL
+    const char          *dest_path;   // Destination file path
+    const char          *label;       // Display label
+    ap_download_status   status;      // AP_DL_PENDING/DOWNLOADING/COMPLETE/FAILED
+    float                progress;    // 0.0–1.0
+    double               speed_bps;   // Bytes per second
+    int                  http_code;   // HTTP response code
+    char                 error[256];  // Error message
+} ap_download;
+```
+
+**`ap_download_opts`**:
+```c
+typedef struct {
+    int   max_concurrent;     // Max simultaneous downloads (default 3)
+    bool  skip_ssl_verify;    // Disable SSL cert verification
+    const char **headers;     // "Header: Value" strings
+    int   header_count;
+} ap_download_opts;
+```
+
+**`ap_download_result`**:
+```c
+typedef struct {
+    int  total;
+    int  completed;
+    int  failed;
+    bool cancelled;
+} ap_download_result;
+```
 ### Color Picker
 
 ```c

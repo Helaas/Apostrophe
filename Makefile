@@ -43,6 +43,16 @@ all: tg5040 tg5050 my355
 
 mac: $(EXAMPLES:%=mac-%)
 
+# libcurl support (optional — enable with CURL=1 or auto-detect)
+CURL ?= $(shell pkg-config --exists libcurl 2>/dev/null && echo 1 || echo 0)
+ifeq ($(CURL),1)
+CURL_CFLAGS := $(shell pkg-config --cflags libcurl) -DAP_ENABLE_CURL
+CURL_LDFLAGS := $(shell pkg-config --libs libcurl)
+else
+CURL_CFLAGS :=
+CURL_LDFLAGS :=
+endif
+
 mac-%:
 	@echo "════════ Building $* for macOS ════════"
 	@mkdir -p $(BUILD_DIR)/mac/$*
@@ -50,9 +60,11 @@ mac-%:
 		-DPLATFORM_MAC \
 		-I$(INCLUDE_DIR) \
 		$(shell pkg-config --cflags sdl2 SDL2_ttf SDL2_image) \
+		$(CURL_CFLAGS) \
 		-o $(BUILD_DIR)/mac/$*/$* \
 		$(EXAMPLES_DIR)/$*/main.c \
 		$(shell pkg-config --libs sdl2 SDL2_ttf SDL2_image) \
+		$(CURL_LDFLAGS) \
 		-lm -lpthread
 	@cp -f $(RES_DIR)/font.ttf $(BUILD_DIR)/mac/$*/font.ttf
 	@echo "→ $(BUILD_DIR)/mac/$*/$*"
