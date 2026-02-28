@@ -1,15 +1,24 @@
-# Apostrophe
+# Apostrophe (')
 
-A header-only C UI toolkit for building graphical tools (Paks) on retro gaming handhelds running [NextUI](https://github.com/nickvon/NextUI). Inspired by [Gabagool](https://github.com/LoveRetro/gabagool) (Go), ported to C for low-overhead embedding.
+A header-only C UI toolkit for building graphical tools (Paks) on retro gaming handhelds running [NextUI](https://github.com/nickvon/NextUI).
+
+Inspired by [Gabagool](https://github.com/LoveRetro/gabagool) (Go). Its framework design directly informed the structure of this project, and this C port would not have been feasible without that foundation.
+
+Thanks to Brandon T. Kowalski (https://github.com/BrandonKowalski) for creating Gabagool and publishing such a well-designed and practical reference implementation.
+
+---
 
 ## Supported Platforms
 
+> **Note:** The TrimUI Smart Brick is internally referred to as `tg3040`, but under NextUI it shares the `tg5040` platform with the Smart Pro.
+
 | Platform | Device | Resolution | CPU |
-|----------|--------|-----------|-----|
-| `tg5040` | TrimUI Brick / Smart Pro | 1280×720 or 1024×768 | Cortex-A53 |
-| `tg5050` | TrimUI Smart Pro S | 1280×720 | Cortex-A55 |
-| `my355`  | Miyoo Mini Flip | 640×480 | Cortex-A55 |
-| `mac`    | macOS (dev/testing) | 1024×768 windowed | native |
+|-----------|--------|------------|-----|
+| `tg5040` | TrimUI Smart Pro | 1280×720 | Allwinner A133 Plus – Quad-core Cortex-A53 |
+| `tg5040` | TrimUI Smart Brick (`tg3040` hardware) | 1024×768 | Allwinner A133 Plus – Quad-core Cortex-A53 |
+| `tg5050` | TrimUI Smart Pro S | 1280×720 | Allwinner A523 – Octa-core Cortex-A55 |
+| `my355`  | Miyoo Flip | 640×480 | Rockchip RK3566 – Quad-core Cortex-A55 |
+| `mac`    | macOS (dev/testing) | 1024×768 windowed | native host CPU |
 
 ## Quick Start
 

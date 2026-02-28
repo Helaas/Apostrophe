@@ -53,3 +53,26 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Build artifacts
+build/*
+
+# macOS
+.DS_Store
+
+# IDE / editor
+.vscode/
+*.swp
+*.swo
+*~
+
+# Package outputs
+*.pakz
+*.pak.zip
+
+# Docker cache
+.docker/
+
+# Temporary
+*.tmp
+*.bak

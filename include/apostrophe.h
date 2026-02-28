@@ -250,12 +250,13 @@ typedef struct {
 
 typedef struct {
     /* SDL */
-    SDL_Window   *window;
-    SDL_Renderer *renderer;
-    SDL_Joystick *joystick;
-    SDL_Texture  *bg_texture;
-    int           screen_w;
-    int           screen_h;
+    SDL_Window         *window;
+    SDL_Renderer       *renderer;
+    SDL_Joystick       *joystick;
+    SDL_GameController *controller;
+    SDL_Texture        *bg_texture;
+    int                 screen_w;
+    int                 screen_h;
 
     /* Scaling */
     float         scale_factor;
@@ -504,7 +505,7 @@ static const char *ap__font_search_paths[] = {
     NULL,
 };
 
-/* Joystick button mapping (matches Gabagool / Undertune conventions) */
+/* Joystick button mapping — TrimUI raw values (firmware swaps A/B, X/Y) */
 #define AP__JOY_BTN_A       1
 #define AP__JOY_BTN_B       0
 #define AP__JOY_BTN_X       3
@@ -516,6 +517,25 @@ static const char *ap__font_search_paths[] = {
 #define AP__JOY_BTN_SELECT  6
 #define AP__JOY_BTN_START   7
 #define AP__JOY_BTN_MENU    8
+
+/* my355 (Miyoo Mini Flip) keyboard scancode mapping.
+ * On the Flip, ALL buttons arrive as SDL keyboard scancodes, not joystick. */
+#define AP__MY355_CODE_A       44   /* SDL_SCANCODE_SPACE */
+#define AP__MY355_CODE_B       224  /* SDL_SCANCODE_LCTRL */
+#define AP__MY355_CODE_X       225  /* SDL_SCANCODE_LSHIFT */
+#define AP__MY355_CODE_Y       226  /* SDL_SCANCODE_LALT */
+#define AP__MY355_CODE_UP      82   /* SDL_SCANCODE_UP */
+#define AP__MY355_CODE_DOWN    81   /* SDL_SCANCODE_DOWN */
+#define AP__MY355_CODE_LEFT    80   /* SDL_SCANCODE_LEFT */
+#define AP__MY355_CODE_RIGHT   79   /* SDL_SCANCODE_RIGHT */
+#define AP__MY355_CODE_START   40   /* SDL_SCANCODE_RETURN */
+#define AP__MY355_CODE_SELECT  228  /* SDL_SCANCODE_RCTRL */
+#define AP__MY355_CODE_L1      43   /* SDL_SCANCODE_TAB */
+#define AP__MY355_CODE_R1      42   /* SDL_SCANCODE_BACKSLASH */
+#define AP__MY355_CODE_L2      75   /* SDL_SCANCODE_PAGEUP */
+#define AP__MY355_CODE_R2      78   /* SDL_SCANCODE_PAGEDOWN */
+#define AP__MY355_CODE_MENU    41   /* SDL_SCANCODE_ESCAPE */
+#define AP__MY355_CODE_POWER   102  /* SDL_SCANCODE_POWER */
 
 /* Virtual button names */
 static const char *ap__button_names[AP_BTN_COUNT] = {
@@ -831,7 +851,7 @@ TTF_Font *ap_get_font(ap_font_tier tier) {
 
 /* ─── Input System ───────────────────────────────────────────────────────── */
 
-/* Map SDL joystick button to virtual button */
+/* Map SDL joystick button to virtual button (raw joystick — used on TrimUI) */
 static ap_button ap__map_joy_button(uint8_t btn) {
     if (ap__g.face_buttons_flipped) {
         if (btn == AP__JOY_BTN_A) return AP_BTN_B;
@@ -853,29 +873,86 @@ static ap_button ap__map_joy_button(uint8_t btn) {
     }
 }
 
-/* Map SDL key to virtual button */
-static ap_button ap__map_key(SDL_Keycode key) {
-    switch (key) {
-        case SDLK_UP:     return AP_BTN_UP;
-        case SDLK_DOWN:   return AP_BTN_DOWN;
-        case SDLK_LEFT:   return AP_BTN_LEFT;
-        case SDLK_RIGHT:  return AP_BTN_RIGHT;
-        case SDLK_RETURN:
-        case SDLK_SPACE:  return AP_BTN_A;
-        case SDLK_ESCAPE:
-        case SDLK_BACKSPACE: return AP_BTN_B;
-        case SDLK_x:      return AP_BTN_X;
-        case SDLK_y:      return AP_BTN_Y;
-        case SDLK_q:      return AP_BTN_L1;
-        case SDLK_e:      return AP_BTN_R1;
-        case SDLK_1:      return AP_BTN_L2;
-        case SDLK_3:      return AP_BTN_R2;
-        case SDLK_TAB:    return AP_BTN_SELECT;
-        case SDLK_s:      return AP_BTN_START;
-        case SDLK_m:      return AP_BTN_MENU;
-        default:           return AP_BTN_NONE;
+/* Map SDL GameController button to virtual button (used on macOS / when SDL
+ * recognises the device as a standard game controller) */
+static ap_button ap__map_controller_button(uint8_t btn) {
+    ap_button mapped = AP_BTN_NONE;
+    switch (btn) {
+        case SDL_CONTROLLER_BUTTON_A:             mapped = AP_BTN_A;      break;
+        case SDL_CONTROLLER_BUTTON_B:             mapped = AP_BTN_B;      break;
+        case SDL_CONTROLLER_BUTTON_X:             mapped = AP_BTN_X;      break;
+        case SDL_CONTROLLER_BUTTON_Y:             mapped = AP_BTN_Y;      break;
+        case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  mapped = AP_BTN_L1;     break;
+        case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: mapped = AP_BTN_R1;     break;
+        case SDL_CONTROLLER_BUTTON_BACK:          mapped = AP_BTN_SELECT; break;
+        case SDL_CONTROLLER_BUTTON_START:         mapped = AP_BTN_START;  break;
+        case SDL_CONTROLLER_BUTTON_GUIDE:         mapped = AP_BTN_MENU;   break;
+        case SDL_CONTROLLER_BUTTON_DPAD_UP:       mapped = AP_BTN_UP;     break;
+        case SDL_CONTROLLER_BUTTON_DPAD_DOWN:     mapped = AP_BTN_DOWN;   break;
+        case SDL_CONTROLLER_BUTTON_DPAD_LEFT:     mapped = AP_BTN_LEFT;   break;
+        case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:    mapped = AP_BTN_RIGHT;  break;
+        default: break;
+    }
+    /* Apply face-button flip (Nintendo-style A↔B, X↔Y) */
+    if (ap__g.face_buttons_flipped) {
+        if (mapped == AP_BTN_A) return AP_BTN_B;
+        if (mapped == AP_BTN_B) return AP_BTN_A;
+        if (mapped == AP_BTN_X) return AP_BTN_Y;
+        if (mapped == AP_BTN_Y) return AP_BTN_X;
+    }
+    return mapped;
+}
+
+/* Map SDL keyboard to virtual button.
+ * On my355 we match by scancode (the Flip sends buttons as keyboard HID scancodes).
+ * On all other platforms we match by keycode for developer convenience. */
+#if defined(PLATFORM_MY355)
+static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
+    uint8_t sc = (uint8_t)kev->keysym.scancode;
+    switch (sc) {
+        case AP__MY355_CODE_UP:     return AP_BTN_UP;
+        case AP__MY355_CODE_DOWN:   return AP_BTN_DOWN;
+        case AP__MY355_CODE_LEFT:   return AP_BTN_LEFT;
+        case AP__MY355_CODE_RIGHT:  return AP_BTN_RIGHT;
+        case AP__MY355_CODE_A:      return AP_BTN_A;
+        case AP__MY355_CODE_B:      return AP_BTN_B;
+        case AP__MY355_CODE_X:      return AP_BTN_X;
+        case AP__MY355_CODE_Y:      return AP_BTN_Y;
+        case AP__MY355_CODE_L1:     return AP_BTN_L1;
+        case AP__MY355_CODE_R1:     return AP_BTN_R1;
+        case AP__MY355_CODE_L2:     return AP_BTN_L2;
+        case AP__MY355_CODE_R2:     return AP_BTN_R2;
+        case AP__MY355_CODE_START:  return AP_BTN_START;
+        case AP__MY355_CODE_SELECT: return AP_BTN_SELECT;
+        case AP__MY355_CODE_MENU:   return AP_BTN_MENU;
+        case AP__MY355_CODE_POWER:  return AP_BTN_POWER;
+        default:                    return AP_BTN_NONE;
     }
 }
+#else
+static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
+    switch (kev->keysym.sym) {
+        case SDLK_UP:        return AP_BTN_UP;
+        case SDLK_DOWN:      return AP_BTN_DOWN;
+        case SDLK_LEFT:      return AP_BTN_LEFT;
+        case SDLK_RIGHT:     return AP_BTN_RIGHT;
+        case SDLK_RETURN:
+        case SDLK_SPACE:     return AP_BTN_A;
+        case SDLK_ESCAPE:
+        case SDLK_BACKSPACE: return AP_BTN_B;
+        case SDLK_x:         return AP_BTN_X;
+        case SDLK_y:         return AP_BTN_Y;
+        case SDLK_q:         return AP_BTN_L1;
+        case SDLK_e:         return AP_BTN_R1;
+        case SDLK_1:         return AP_BTN_L2;
+        case SDLK_3:         return AP_BTN_R2;
+        case SDLK_TAB:       return AP_BTN_SELECT;
+        case SDLK_s:         return AP_BTN_START;
+        case SDLK_m:         return AP_BTN_MENU;
+        default:              return AP_BTN_NONE;
+    }
+}
+#endif
 
 /* Internal input event buffer */
 static ap_input_event ap__input_queue[64];
@@ -903,7 +980,7 @@ static void ap__process_sdl_events(void) {
 
             case SDL_KEYDOWN:
                 if (!ev.key.repeat) {
-                    ap_button b = ap__map_key(ev.key.keysym.sym);
+                    ap_button b = ap__map_key_event(&ev.key);
                     ap__input_push(b, true);
                     if (b != AP_BTN_NONE) {
                         ap__g.buttons_held[b] = true;
@@ -913,7 +990,7 @@ static void ap__process_sdl_events(void) {
                 break;
 
             case SDL_KEYUP: {
-                ap_button b = ap__map_key(ev.key.keysym.sym);
+                ap_button b = ap__map_key_event(&ev.key);
                 ap__input_push(b, false);
                 if (b != AP_BTN_NONE) {
                     ap__g.buttons_held[b] = false;
@@ -921,6 +998,7 @@ static void ap__process_sdl_events(void) {
                 break;
             }
 
+            /* --- Raw Joystick events (TrimUI devices) --- */
             case SDL_JOYBUTTONDOWN: {
                 ap_button b = ap__map_joy_button(ev.jbutton.button);
                 ap__input_push(b, true);
@@ -936,6 +1014,88 @@ static void ap__process_sdl_events(void) {
                 ap__input_push(b, false);
                 if (b != AP_BTN_NONE) {
                     ap__g.buttons_held[b] = false;
+                }
+                break;
+            }
+
+            /* --- SDL GameController events (macOS / recognised controllers) --- */
+            case SDL_CONTROLLERBUTTONDOWN: {
+                ap_button b = ap__map_controller_button(ev.cbutton.button);
+                ap__input_push(b, true);
+                if (b != AP_BTN_NONE) {
+                    ap__g.buttons_held[b] = true;
+                    ap__g.button_press_time[b] = now;
+                }
+                break;
+            }
+
+            case SDL_CONTROLLERBUTTONUP: {
+                ap_button b = ap__map_controller_button(ev.cbutton.button);
+                ap__input_push(b, false);
+                if (b != AP_BTN_NONE) {
+                    ap__g.buttons_held[b] = false;
+                }
+                break;
+            }
+
+            case SDL_CONTROLLERAXISMOTION: {
+                /* Map left analog stick to d-pad via GameController axis */
+                if (ev.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
+                    if (ev.caxis.value < -AP_AXIS_DEADZONE) {
+                        if (ap__g.axis_held_dir_y != -1) {
+                            ap__input_push(AP_BTN_UP, true);
+                            ap__g.axis_repeat_time_y = now + AP_INPUT_REPEAT_DELAY;
+                        }
+                        ap__g.axis_held_dir_y = -1;
+                    } else if (ev.caxis.value > AP_AXIS_DEADZONE) {
+                        if (ap__g.axis_held_dir_y != 1) {
+                            ap__input_push(AP_BTN_DOWN, true);
+                            ap__g.axis_repeat_time_y = now + AP_INPUT_REPEAT_DELAY;
+                        }
+                        ap__g.axis_held_dir_y = 1;
+                    } else {
+                        if (ap__g.axis_held_dir_y == -1) ap__input_push(AP_BTN_UP, false);
+                        if (ap__g.axis_held_dir_y ==  1) ap__input_push(AP_BTN_DOWN, false);
+                        ap__g.axis_held_dir_y = 0;
+                    }
+                } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
+                    if (ev.caxis.value < -AP_AXIS_DEADZONE) {
+                        if (ap__g.axis_held_dir_x != -1) {
+                            ap__input_push(AP_BTN_LEFT, true);
+                            ap__g.axis_repeat_time_x = now + AP_INPUT_REPEAT_DELAY;
+                        }
+                        ap__g.axis_held_dir_x = -1;
+                    } else if (ev.caxis.value > AP_AXIS_DEADZONE) {
+                        if (ap__g.axis_held_dir_x != 1) {
+                            ap__input_push(AP_BTN_RIGHT, true);
+                            ap__g.axis_repeat_time_x = now + AP_INPUT_REPEAT_DELAY;
+                        }
+                        ap__g.axis_held_dir_x = 1;
+                    } else {
+                        if (ap__g.axis_held_dir_x == -1) ap__input_push(AP_BTN_LEFT, false);
+                        if (ap__g.axis_held_dir_x ==  1) ap__input_push(AP_BTN_RIGHT, false);
+                        ap__g.axis_held_dir_x = 0;
+                    }
+                } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
+                    if (ev.caxis.value > AP_AXIS_DEADZONE) {
+                        if (!ap__g.buttons_held[AP_BTN_L2]) {
+                            ap__input_push(AP_BTN_L2, true);
+                            ap__g.buttons_held[AP_BTN_L2] = true;
+                        }
+                    } else if (ap__g.buttons_held[AP_BTN_L2]) {
+                        ap__input_push(AP_BTN_L2, false);
+                        ap__g.buttons_held[AP_BTN_L2] = false;
+                    }
+                } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+                    if (ev.caxis.value > AP_AXIS_DEADZONE) {
+                        if (!ap__g.buttons_held[AP_BTN_R2]) {
+                            ap__input_push(AP_BTN_R2, true);
+                            ap__g.buttons_held[AP_BTN_R2] = true;
+                        }
+                    } else if (ap__g.buttons_held[AP_BTN_R2]) {
+                        ap__input_push(AP_BTN_R2, false);
+                        ap__g.buttons_held[AP_BTN_R2] = false;
+                    }
                 }
                 break;
             }
@@ -1531,85 +1691,112 @@ int ap_get_footer_height(void) {
 void ap_draw_footer(ap_footer_item *items, int count) {
     if (!items || count <= 0) return;
 
-    TTF_Font *font = ap_get_font(AP_FONT_TINY);
+    /* Match Gabagool v2 footer sizing: base 60px outer pill, SmallFont (34px) */
+    TTF_Font *font = ap_get_font(AP_FONT_SMALL);
     if (!font) return;
 
-    int footer_h = ap_get_footer_height();
-    int footer_y = ap__g.screen_h - footer_h;
-    int margin = AP_S(16);
-    int pill_h = AP_S(30);
-    int pill_y = footer_y + (footer_h - pill_h) / 2;
-    int inner_pad = AP_S(8);
-    int group_gap = AP_S(12);
-    int btn_pill_h = AP_S(22);
+    int footer_h   = ap_get_footer_height();           /* AP_S(50) */
+    int footer_y   = ap__g.screen_h - footer_h;
+    int margin     = AP_S(20);                         /* screen-edge margin */
+    int outer_h    = AP_S(60);                         /* outer pill height */
+    int inner_marg = AP_S(6);                          /* inset from outer → inner */
+    int inner_h    = outer_h - inner_marg * 2;         /* inner button pill height */
+    int pill_y     = footer_y + (footer_h - outer_h) / 2;
+    int pad_after_btn = AP_S(10);                      /* gap after inner pill before label */
+    int item_gap   = AP_S(20);                         /* gap between items inside outer pill */
+    int outer_pad  = AP_S(10);                         /* padding at start/end of outer pill */
+    int font_h     = TTF_FontHeight(font);
 
-    /* Split into left group (non-confirm) and right group (confirm) */
-    /* Left group: rendered left-to-right */
-    int left_x = margin;
+    /* ── Helper: measure total inner width for a group of items ── */
+    /* Each item: [inner_pill] + pad_after_btn + label_w, separated by item_gap */
+    #define AP__FOOTER_ITEM_W(btn_name, label) \
+        ({ int _bw = ap_measure_text(font, btn_name); \
+           int _bpw = (_bw < inner_h - AP_S(4)) ? inner_h : _bw + AP_S(12); \
+           int _lw = ap_measure_text(font, label); \
+           _bpw + pad_after_btn + _lw; })
+
+    /* ── Left group (non-confirm items) ── */
+    int left_count = 0;
+    int left_total_inner = 0;
     for (int i = 0; i < count; i++) {
         if (items[i].is_confirm) continue;
-
-        const char *btn_name = ap_button_name(items[i].button);
-        int btn_w = ap_measure_text(font, btn_name);
-        int label_w = ap_measure_text(font, items[i].label);
-
-        /* Outer pill containing [button_pill] + label */
-        int btn_pill_w = btn_w + inner_pad * 2;
-        int total_w = btn_pill_w + inner_pad + label_w + inner_pad * 2;
-
-        /* Outer pill (accent color) */
-        ap_draw_pill(left_x, pill_y, total_w, pill_h, ap__g.theme.accent);
-
-        /* Inner button pill */
-        int btn_pill_y = pill_y + (pill_h - btn_pill_h) / 2;
-        ap_draw_pill(left_x + inner_pad, btn_pill_y, btn_pill_w, btn_pill_h, ap__g.theme.highlight);
-        ap_draw_text(font, btn_name,
-                     left_x + inner_pad + (btn_pill_w - btn_w) / 2,
-                     btn_pill_y + (btn_pill_h - TTF_FontHeight(font)) / 2,
-                     ap__g.theme.button_label);
-
-        /* Label text */
-        ap_draw_text(font, items[i].label,
-                     left_x + btn_pill_w + inner_pad * 2,
-                     pill_y + (pill_h - TTF_FontHeight(font)) / 2,
-                     ap__g.theme.hint);
-
-        left_x += total_w + group_gap;
+        if (left_count > 0) left_total_inner += item_gap;
+        left_total_inner += AP__FOOTER_ITEM_W(ap_button_name(items[i].button), items[i].label);
+        left_count++;
     }
 
-    /* Right group: rendered right-to-left */
-    int right_x = ap__g.screen_w - margin;
-    for (int i = count - 1; i >= 0; i--) {
+    if (left_count > 0) {
+        int outer_w = outer_pad * 2 + left_total_inner;
+        ap_draw_pill(margin, pill_y, outer_w, outer_h, ap__g.theme.accent);
+
+        int cx = margin + outer_pad;
+        for (int i = 0; i < count; i++) {
+            if (items[i].is_confirm) continue;
+
+            const char *btn_name = ap_button_name(items[i].button);
+            int btn_tw = ap_measure_text(font, btn_name);
+            int btn_pill_w = (btn_tw < inner_h - AP_S(4)) ? inner_h : btn_tw + AP_S(12);
+            int btn_pill_y = pill_y + inner_marg;
+
+            /* Inner button pill */
+            ap_draw_pill(cx, btn_pill_y, btn_pill_w, inner_h, ap__g.theme.highlight);
+            ap_draw_text(font, btn_name,
+                         cx + (btn_pill_w - btn_tw) / 2,
+                         btn_pill_y + (inner_h - font_h) / 2,
+                         ap__g.theme.button_label);
+
+            /* Label text */
+            cx += btn_pill_w + pad_after_btn;
+            ap_draw_text(font, items[i].label,
+                         cx,
+                         pill_y + (outer_h - font_h) / 2,
+                         ap__g.theme.hint);
+            cx += ap_measure_text(font, items[i].label) + item_gap;
+        }
+    }
+
+    /* ── Right group (confirm items) ── */
+    int right_count = 0;
+    int right_total_inner = 0;
+    for (int i = 0; i < count; i++) {
         if (!items[i].is_confirm) continue;
-
-        const char *btn_name = ap_button_name(items[i].button);
-        int btn_w = ap_measure_text(font, btn_name);
-        int label_w = ap_measure_text(font, items[i].label);
-
-        int btn_pill_w = btn_w + inner_pad * 2;
-        int total_w = btn_pill_w + inner_pad + label_w + inner_pad * 2;
-
-        right_x -= total_w;
-
-        /* Outer pill */
-        ap_draw_pill(right_x, pill_y, total_w, pill_h, ap__g.theme.accent);
-
-        /* Inner button pill */
-        int btn_pill_y_i = pill_y + (pill_h - btn_pill_h) / 2;
-        ap_draw_pill(right_x + inner_pad, btn_pill_y_i, btn_pill_w, btn_pill_h, ap__g.theme.highlight);
-        ap_draw_text(font, btn_name,
-                     right_x + inner_pad + (btn_pill_w - btn_w) / 2,
-                     btn_pill_y_i + (btn_pill_h - TTF_FontHeight(font)) / 2,
-                     ap__g.theme.button_label);
-
-        /* Label text */
-        ap_draw_text(font, items[i].label,
-                     right_x + btn_pill_w + inner_pad * 2,
-                     pill_y + (pill_h - TTF_FontHeight(font)) / 2,
-                     ap__g.theme.hint);
-
-        right_x -= group_gap;
+        if (right_count > 0) right_total_inner += item_gap;
+        right_total_inner += AP__FOOTER_ITEM_W(ap_button_name(items[i].button), items[i].label);
+        right_count++;
     }
+
+    if (right_count > 0) {
+        int outer_w = outer_pad * 2 + right_total_inner;
+        int rx = ap__g.screen_w - margin - outer_w;
+        ap_draw_pill(rx, pill_y, outer_w, outer_h, ap__g.theme.accent);
+
+        int cx = rx + outer_pad;
+        for (int i = 0; i < count; i++) {
+            if (!items[i].is_confirm) continue;
+
+            const char *btn_name = ap_button_name(items[i].button);
+            int btn_tw = ap_measure_text(font, btn_name);
+            int btn_pill_w = (btn_tw < inner_h - AP_S(4)) ? inner_h : btn_tw + AP_S(12);
+            int btn_pill_y = pill_y + inner_marg;
+
+            /* Inner button pill */
+            ap_draw_pill(cx, btn_pill_y, btn_pill_w, inner_h, ap__g.theme.highlight);
+            ap_draw_text(font, btn_name,
+                         cx + (btn_pill_w - btn_tw) / 2,
+                         btn_pill_y + (inner_h - font_h) / 2,
+                         ap__g.theme.button_label);
+
+            /* Label text */
+            cx += btn_pill_w + pad_after_btn;
+            ap_draw_text(font, items[i].label,
+                         cx,
+                         pill_y + (outer_h - font_h) / 2,
+                         ap__g.theme.hint);
+            cx += ap_measure_text(font, items[i].label) + item_gap;
+        }
+    }
+
+    #undef AP__FOOTER_ITEM_W
 }
 
 int ap_get_status_bar_height(void) {
@@ -1789,8 +1976,8 @@ int ap_init(ap_config *cfg) {
     /* Input defaults */
     ap__g.input_delay_ms = AP_INPUT_DEBOUNCE;
 
-    /* Init SDL2 */
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS) < 0) {
+    /* Init SDL2 — include GAMECONTROLLER for macOS / standard gamepads */
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) < 0) {
         ap__set_error("SDL_Init failed: %s", SDL_GetError());
         return AP_ERROR;
     }
@@ -1807,13 +1994,30 @@ int ap_init(ap_config *cfg) {
         /* Non-fatal — some platforms may not support all formats */
     }
 
-    /* Open joystick if available */
-    if (SDL_NumJoysticks() > 0) {
-        ap__g.joystick = SDL_JoystickOpen(0);
-        if (ap__g.joystick) {
-            ap_log("Joystick opened: %s", SDL_JoystickName(ap__g.joystick));
+    /* Open input devices — prefer GameController API, fall back to raw joystick */
+    int num_joy = SDL_NumJoysticks();
+    for (int i = 0; i < num_joy; i++) {
+        if (SDL_IsGameController(i)) {
+            ap__g.controller = SDL_GameControllerOpen(i);
+            if (ap__g.controller) {
+                ap_log("Game controller opened: %s", SDL_GameControllerName(ap__g.controller));
+                /* Also grab underlying joystick for hat/axis fallback */
+                ap__g.joystick = SDL_GameControllerGetJoystick(ap__g.controller);
+                break;
+            }
+        } else {
+            ap__g.joystick = SDL_JoystickOpen(i);
+            if (ap__g.joystick) {
+                ap_log("Joystick opened: %s", SDL_JoystickName(ap__g.joystick));
+                break;
+            }
         }
     }
+
+    /* Default face-button flip on TrimUI devices (firmware swaps A/B at hardware level) */
+#if defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050)
+    ap__g.face_buttons_flipped = false;  /* Raw joystick map already accounts for TrimUI swap */
+#endif
 
     /* Determine screen size */
     bool dev_mode = false;
@@ -1988,8 +2192,12 @@ void ap_quit(void) {
         }
     }
 
-    /* Close joystick */
-    if (ap__g.joystick) {
+    /* Close controller / joystick */
+    if (ap__g.controller) {
+        SDL_GameControllerClose(ap__g.controller);
+        ap__g.controller = NULL;
+        ap__g.joystick = NULL; /* owned by controller */
+    } else if (ap__g.joystick) {
         SDL_JoystickClose(ap__g.joystick);
         ap__g.joystick = NULL;
     }

@@ -71,11 +71,10 @@ tg5040-%:
 	@mkdir -p $(BUILD_DIR)/tg5040/$*
 	docker run --rm \
 		-v "$(CURDIR)":/workspace \
-		-w /workspace \
 		$(TG5040_TOOLCHAIN) \
-		make -f ports/tg5040/Makefile \
+		make -C /workspace -f ports/tg5040/Makefile \
 			EXAMPLE=$* \
-			BUILD_DIR=$(BUILD_DIR)/tg5040/$*
+			BUILD_DIR=/workspace/$(BUILD_DIR)/tg5040/$*
 	@echo "→ $(BUILD_DIR)/tg5040/$*/$*"
 
 # ─── TG5050 (TrimUI Smart Pro S) via Docker ────────────────────────────
@@ -87,11 +86,10 @@ tg5050-%:
 	@mkdir -p $(BUILD_DIR)/tg5050/$*
 	docker run --rm \
 		-v "$(CURDIR)":/workspace \
-		-w /workspace \
 		$(TG5050_TOOLCHAIN) \
-		make -f ports/tg5050/Makefile \
+		make -C /workspace -f ports/tg5050/Makefile \
 			EXAMPLE=$* \
-			BUILD_DIR=$(BUILD_DIR)/tg5050/$*
+			BUILD_DIR=/workspace/$(BUILD_DIR)/tg5050/$*
 	@echo "→ $(BUILD_DIR)/tg5050/$*/$*"
 
 # ─── MY355 (Miyoo Mini Flip) via Docker ────────────────────────────────
@@ -103,11 +101,10 @@ my355-%:
 	@mkdir -p $(BUILD_DIR)/my355/$*
 	docker run --rm \
 		-v "$(CURDIR)":/workspace \
-		-w /workspace \
 		$(MY355_TOOLCHAIN) \
-		make -f ports/my355/Makefile \
+		make -C /workspace -f ports/my355/Makefile \
 			EXAMPLE=$* \
-			BUILD_DIR=$(BUILD_DIR)/my355/$*
+			BUILD_DIR=/workspace/$(BUILD_DIR)/my355/$*
 	@echo "→ $(BUILD_DIR)/my355/$*/$*"
 
 # ─── Packaging ──────────────────────────────────────────────────────────

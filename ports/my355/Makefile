@@ -2,21 +2,27 @@
 # Apostrophe — my355 (Miyoo Mini Flip) cross-compile Makefile
 # ═══════════════════════════════════════════════════════════════════════════
 # Called by root Makefile inside Docker container.
+# Based on Undertune / scrapegoat-pak conventions.
 
-CC      := aarch64-nextui-linux-gnu-gcc
-SYSROOT := $(shell $(CC) -print-sysroot)
+CROSS_COMPILE ?= aarch64-nextui-linux-gnu-
+CC      := $(CROSS_COMPILE)gcc
+SYSROOT := /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr
+
+PKG_CONFIG := pkg-config
+SDL_CFLAGS  := $(shell $(PKG_CONFIG) --cflags sdl2 SDL2_ttf SDL2_image)
+SDL_LDFLAGS := $(shell $(PKG_CONFIG) --libs sdl2 SDL2_ttf SDL2_image)
 
 EXAMPLE   ?= hello
-BUILD_DIR ?= build/my355/$(EXAMPLE)
-SRC       := examples/$(EXAMPLE)/main.c
+BUILD_DIR ?= /workspace/build/my355/$(EXAMPLE)
+SRC       := /workspace/examples/$(EXAMPLE)/main.c
 
-CFLAGS := -std=gnu11 -O2 \
+CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter \
 	-mcpu=cortex-a55 -mtune=cortex-a55 \
 	-DPLATFORM_MY355 \
-	-I include \
-	-I$(SYSROOT)/usr/include/SDL2
+	-I/workspace/include \
+	$(SDL_CFLAGS)
 
-LDFLAGS := -lSDL2 -lSDL2_ttf -lSDL2_image -lpthread -ldl -lm
+LDFLAGS := $(SDL_LDFLAGS) -lpthread -ldl -lm
 
 .PHONY: all clean
 
@@ -28,3 +34,4 @@ $(BUILD_DIR)/$(EXAMPLE): $(SRC)
 
 clean:
 	rm -rf $(BUILD_DIR)
+
