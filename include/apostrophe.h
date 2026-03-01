@@ -1298,29 +1298,55 @@ void ap_draw_background(void) {
     }
 }
 
-/* Fill a quarter-circle arc (scanline approach, no SDL2_gfx) */
+/* Fill a quarter-circle arc with anti-aliased edges */
 static void ap__fill_circle_quadrant(int cx, int cy, int r, int quadrant) {
     SDL_Renderer *rend = ap__g.renderer;
+    Uint8 base_r, base_g, base_b, base_a;
+    SDL_GetRenderDrawColor(rend, &base_r, &base_g, &base_b, &base_a);
+
     for (int dy = 0; dy <= r; dy++) {
-        int dx = (int)(sqrtf((float)(r * r - dy * dy)) + 0.5f);
-        int x0, y0;
+        float fx = sqrtf((float)(r * r - dy * dy));
+        int ix = (int)fx;            /* integer part = fully filled pixels */
+        float frac = fx - (float)ix; /* fractional part = edge pixel alpha */
+        Uint8 edge_a = (Uint8)(frac * base_a);
+        int y0;
 
         switch (quadrant) {
             case 0: /* top-left */
-                x0 = cx - dx; y0 = cy - dy;
-                SDL_RenderDrawLine(rend, x0, y0, cx, y0);
+                y0 = cy - dy;
+                SDL_RenderDrawLine(rend, cx - ix, y0, cx, y0);
+                if (edge_a > 0) {
+                    SDL_SetRenderDrawColor(rend, base_r, base_g, base_b, edge_a);
+                    SDL_RenderDrawPoint(rend, cx - ix - 1, y0);
+                    SDL_SetRenderDrawColor(rend, base_r, base_g, base_b, base_a);
+                }
                 break;
             case 1: /* top-right */
-                x0 = cx; y0 = cy - dy;
-                SDL_RenderDrawLine(rend, x0, y0, cx + dx, y0);
+                y0 = cy - dy;
+                SDL_RenderDrawLine(rend, cx, y0, cx + ix, y0);
+                if (edge_a > 0) {
+                    SDL_SetRenderDrawColor(rend, base_r, base_g, base_b, edge_a);
+                    SDL_RenderDrawPoint(rend, cx + ix + 1, y0);
+                    SDL_SetRenderDrawColor(rend, base_r, base_g, base_b, base_a);
+                }
                 break;
             case 2: /* bottom-left */
-                x0 = cx - dx; y0 = cy + dy;
-                SDL_RenderDrawLine(rend, x0, y0, cx, y0);
+                y0 = cy + dy;
+                SDL_RenderDrawLine(rend, cx - ix, y0, cx, y0);
+                if (edge_a > 0) {
+                    SDL_SetRenderDrawColor(rend, base_r, base_g, base_b, edge_a);
+                    SDL_RenderDrawPoint(rend, cx - ix - 1, y0);
+                    SDL_SetRenderDrawColor(rend, base_r, base_g, base_b, base_a);
+                }
                 break;
             case 3: /* bottom-right */
-                x0 = cx; y0 = cy + dy;
-                SDL_RenderDrawLine(rend, x0, y0, cx + dx, y0);
+                y0 = cy + dy;
+                SDL_RenderDrawLine(rend, cx, y0, cx + ix, y0);
+                if (edge_a > 0) {
+                    SDL_SetRenderDrawColor(rend, base_r, base_g, base_b, edge_a);
+                    SDL_RenderDrawPoint(rend, cx + ix + 1, y0);
+                    SDL_SetRenderDrawColor(rend, base_r, base_g, base_b, base_a);
+                }
                 break;
         }
     }
@@ -1821,7 +1847,7 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     if (pill_w <= 0) return;
 
     int pill_h = font_h + inner_pad_y * 2;
-    int pill_y = AP_S(20);  /* scaled 20px, matching Gabagool (aligns with title) */
+    int pill_y = AP_S(0);   /* Flush to top, matching title */
     int pill_x = ap__g.screen_w - margin - pill_w;
     int pill_r = pill_h / 2;
 
