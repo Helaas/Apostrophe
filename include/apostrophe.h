@@ -39,6 +39,7 @@
 #include <linux/input.h>
 #include <dirent.h>
 #include <signal.h>
+#include <errno.h>
 #endif
 
 #ifdef __APPLE__
@@ -312,6 +313,7 @@ typedef struct {
     #if AP_PLATFORM_IS_DEVICE
     pthread_t     power_thread;
     bool          power_thread_running;
+    int           power_fd;
     #endif
 
     /* Initialization flag */
@@ -916,6 +918,7 @@ static ap_button ap__map_joy_button(uint8_t btn) {
 
 /* Map SDL GameController button to virtual button (used on macOS / when SDL
  * recognises the device as a standard game controller) */
+#if !AP_PLATFORM_IS_DEVICE
 static ap_button ap__map_controller_button(uint8_t btn) {
     ap_button mapped = AP_BTN_NONE;
     switch (btn) {
@@ -943,6 +946,7 @@ static ap_button ap__map_controller_button(uint8_t btn) {
     }
     return mapped;
 }
+#endif
 
 /* Map SDL keyboard to virtual button.
  * On my355 we match by scancode (the Flip sends buttons as keyboard HID scancodes).
@@ -1067,6 +1071,7 @@ static void ap__process_sdl_events(void) {
             }
 
             /* --- SDL GameController events (macOS / recognised controllers) --- */
+            #if !AP_PLATFORM_IS_DEVICE
             case SDL_CONTROLLERBUTTONDOWN: {
                 ap_button b = ap__map_controller_button(ev.cbutton.button);
                 ap__input_push(b, true);
@@ -1151,6 +1156,7 @@ static void ap__process_sdl_events(void) {
                 }
                 break;
             }
+            #endif
 
             case SDL_JOYHATMOTION: {
                 uint8_t hat = ev.jhat.value;
@@ -1990,7 +1996,7 @@ static void *ap__power_thread_func(void *arg) {
 
     int fd = -1;
     for (int i = 0; input_paths[i]; i++) {
-        fd = open(input_paths[i], O_RDONLY);
+        fd = open(input_paths[i], O_RDONLY | O_NONBLOCK);
         if (fd >= 0) break;
     }
 
@@ -1998,11 +2004,15 @@ static void *ap__power_thread_func(void *arg) {
         ap_log("Power handler: could not open input device");
         return NULL;
     }
+    ap__g.power_fd = fd;
 
     while (ap__g.power_thread_running) {
         struct input_event ev;
         ssize_t n = read(fd, &ev, sizeof(ev));
-        if (n != sizeof(ev)) continue;
+        if (n != sizeof(ev)) {
+            SDL_Delay(10);
+            continue;
+        }
 
         if (ev.type == EV_KEY && ev.code == KEY_POWER) {
             if (ev.value == 1) { /* Press */
@@ -2017,6 +2027,7 @@ static void *ap__power_thread_func(void *arg) {
                         break;
                     }
                     if (SDL_GetTicks() - press_start > 2000) break;
+                    SDL_Delay(10);
                 }
 
                 uint32_t held_ms = SDL_GetTicks() - press_start;
@@ -2045,7 +2056,9 @@ static void *ap__power_thread_func(void *arg) {
         }
     }
 
-    close(fd);
+    int fd_to_close = ap__g.power_fd;
+    ap__g.power_fd = -1;
+    if (fd_to_close >= 0) close(fd_to_close);
     return NULL;
 }
 #endif
@@ -2055,11 +2068,21 @@ void ap_set_power_handler(bool enabled) {
 
 #if AP_PLATFORM_IS_DEVICE
     if (enabled && !ap__g.power_thread_running) {
+        ap_log("Power handler: starting thread");
+        ap__g.power_fd = -1;
         ap__g.power_thread_running = true;
-        pthread_create(&ap__g.power_thread, NULL, ap__power_thread_func, NULL);
+        if (pthread_create(&ap__g.power_thread, NULL, ap__power_thread_func, NULL) != 0) {
+            ap_log("Power handler: failed to create thread");
+            ap__g.power_thread_running = false;
+        }
     } else if (!enabled && ap__g.power_thread_running) {
+        ap_log("Power handler: stopping thread");
         ap__g.power_thread_running = false;
+        int fd_to_close = ap__g.power_fd;
+        ap__g.power_fd = -1;
+        if (fd_to_close >= 0) close(fd_to_close);
         pthread_join(ap__g.power_thread, NULL);
+        ap_log("Power handler: thread stopped");
     }
 #endif
 }
@@ -2080,6 +2103,9 @@ int ap_init(ap_config *cfg) {
     }
 
     memset(&ap__g, 0, sizeof(ap__g));
+    #if AP_PLATFORM_IS_DEVICE
+    ap__g.power_fd = -1;
+    #endif
 
     /* Logging */
     if (cfg && cfg->log_path) {
@@ -2096,8 +2122,11 @@ int ap_init(ap_config *cfg) {
     ap__g.input_repeat_delay_ms = AP_INPUT_REPEAT_DELAY;
     ap__g.input_repeat_rate_ms = AP_INPUT_REPEAT_RATE;
 
-    /* Init SDL2 — include GAMECONTROLLER for macOS / standard gamepads */
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) < 0) {
+    uint32_t sdl_flags = SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS;
+    #if !AP_PLATFORM_IS_DEVICE
+    sdl_flags |= SDL_INIT_GAMECONTROLLER;
+    #endif
+    if (SDL_Init(sdl_flags) < 0) {
         ap__set_error("SDL_Init failed: %s", SDL_GetError());
         return AP_ERROR;
     }
@@ -2114,9 +2143,13 @@ int ap_init(ap_config *cfg) {
         /* Non-fatal — some platforms may not support all formats */
     }
 
-    /* Open input devices — prefer GameController API, fall back to raw joystick */
+    /* Open input devices.
+     * On device we prefer raw joystick mapping because SDL GameController
+     * DB mappings can remap face buttons in ways that differ from NextUI's
+     * expected A/B layout on TrimUI hardware. */
     int num_joy = SDL_NumJoysticks();
     for (int i = 0; i < num_joy; i++) {
+        #if !AP_PLATFORM_IS_DEVICE
         if (SDL_IsGameController(i)) {
             ap__g.controller = SDL_GameControllerOpen(i);
             if (ap__g.controller) {
@@ -2125,14 +2158,18 @@ int ap_init(ap_config *cfg) {
                 ap__g.joystick = SDL_GameControllerGetJoystick(ap__g.controller);
                 break;
             }
-        } else {
-            ap__g.joystick = SDL_JoystickOpen(i);
-            if (ap__g.joystick) {
-                ap_log("Joystick opened: %s", SDL_JoystickName(ap__g.joystick));
-                break;
-            }
+        }
+        #endif
+
+        ap__g.joystick = SDL_JoystickOpen(i);
+        if (ap__g.joystick) {
+            ap_log("Joystick opened: %s", SDL_JoystickName(ap__g.joystick));
+            break;
         }
     }
+    ap_log("Input backend: %s",
+           ap__g.controller ? "gamecontroller" :
+           (ap__g.joystick ? "joystick" : "none"));
 
     /* Default face-button flip on TrimUI devices (firmware swaps A/B at hardware level) */
 #if defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050)

@@ -27,6 +27,7 @@ endif
 EXAMPLE   ?= hello
 BUILD_DIR ?= /workspace/build/tg5050/$(EXAMPLE)
 SRC       := /workspace/examples/$(EXAMPLE)/main.c
+DEPS      := /workspace/include/apostrophe.h /workspace/include/apostrophe_widgets.h
 
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter \
 	-mcpu=cortex-a55 -mtune=cortex-a55 \
@@ -40,10 +41,9 @@ LDFLAGS := $(SDL_LDFLAGS) $(CURL_LDFLAGS) -lpthread -ldl -lm
 
 all: $(BUILD_DIR)/$(EXAMPLE)
 
-$(BUILD_DIR)/$(EXAMPLE): $(SRC)
+$(BUILD_DIR)/$(EXAMPLE): $(SRC) $(DEPS)
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 clean:
 	rm -rf $(BUILD_DIR)
-

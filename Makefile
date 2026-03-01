@@ -146,22 +146,45 @@ package: all
 
 deploy:
 	@echo "Detecting platform..."
-	@PLATFORM=$$(adb shell cat /tmp/minui_platform 2>/dev/null | tr -d '\r\n'); \
+	@PLATFORM=$$(adb shell ' \
+		if [ -f /tmp/minui_platform ]; then \
+			cat /tmp/minui_platform; \
+		elif [ -d /mnt/SDCARD/Tools/tg5040 ]; then \
+			echo tg5040; \
+		elif [ -d /mnt/SDCARD/Tools/tg5050 ]; then \
+			echo tg5050; \
+		elif [ -d /mnt/SDCARD/Tools/my355 ]; then \
+			echo my355; \
+		fi' 2>/dev/null | tr -d '\r\n'); \
 	if [ -z "$$PLATFORM" ]; then \
 		echo "Error: Could not detect platform. Is device connected via adb?"; \
 		exit 1; \
 	fi; \
 	echo "Detected platform: $$PLATFORM"; \
 	for example in $(EXAMPLES); do \
-		pak_name=$$(echo "$$example" | sed 's/.*/\u&/'); \
-		echo "Deploying $$pak_name to $$PLATFORM..."; \
-		adb push "$(BUILD_DIR)/$$PLATFORM/$$example/$$example" \
-			"/mnt/SDCARD/Tools/$$PLATFORM/$${pak_name}.pak/$$example"; \
-		adb push "$(RES_DIR)/font.ttf" \
-			"/mnt/SDCARD/Tools/$$PLATFORM/$${pak_name}.pak/font.ttf"; \
-		if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
-			adb push "$(EXAMPLES_DIR)/$$example/pak/launch.sh" \
-				"/mnt/SDCARD/Tools/$$PLATFORM/$${pak_name}.pak/launch.sh"; \
+		upper_name=$$(printf '%s' "$$example" | awk '{print toupper(substr($$0,1,1)) substr($$0,2)}'); \
+		lower_dir="/mnt/SDCARD/Tools/$$PLATFORM/u$${example}.pak"; \
+		upper_dir="/mnt/SDCARD/Tools/$$PLATFORM/$${upper_name}.pak"; \
+		deployed=0; \
+		for pak_dir in "$$lower_dir" "$$upper_dir"; do \
+			if adb shell "[ -d '$$pak_dir' ]" >/dev/null 2>&1; then \
+				echo "Deploying $$example to $$pak_dir..."; \
+				adb push "$(BUILD_DIR)/$$PLATFORM/$$example/$$example" "$$pak_dir/$$example"; \
+				adb push "$(RES_DIR)/font.ttf" "$$pak_dir/font.ttf"; \
+				if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
+					adb push "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$pak_dir/launch.sh"; \
+				fi; \
+				deployed=1; \
+			fi; \
+		done; \
+		if [ "$$deployed" -eq 0 ]; then \
+			echo "No pak folder found for $$example; creating $$lower_dir"; \
+			adb shell "mkdir -p '$$lower_dir'"; \
+			adb push "$(BUILD_DIR)/$$PLATFORM/$$example/$$example" "$$lower_dir/$$example"; \
+			adb push "$(RES_DIR)/font.ttf" "$$lower_dir/font.ttf"; \
+			if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
+				adb push "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$lower_dir/launch.sh"; \
+			fi; \
 		fi; \
 	done
 	@echo "Deploy complete."
