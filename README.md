@@ -158,6 +158,7 @@ Apostrophe abstracts all input sources into a unified virtual button system (`AP
 - [API Reference](docs/API.md) — Complete function/struct reference
 - [Widget Catalog](docs/WIDGETS.md) — Visual guide to every widget
 - [Porting from Gabagool](docs/PORTING_FROM_GABAGOOL.md) — Migration guide from Go to C
+- [Gabagool Parity v2.9.6](docs/GABAGOOL_PARITY_v2.9.6.md) — Feature parity matrix and backlog
 
 ## License
 

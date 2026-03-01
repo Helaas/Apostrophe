@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-APP_BIN="demo"
+APP_BIN="download"
 PAK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PAK_NAME=$(basename "$PAK_DIR")
 PAK_NAME=${PAK_NAME%.pak}

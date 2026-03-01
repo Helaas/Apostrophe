@@ -45,10 +45,14 @@ typedef struct {
     bool             multi_select;     /* Enable checkbox multi-selection */
     ap_button        reorder_button;   /* AP_BTN_NONE = no reorder. Set e.g. AP_BTN_X */
     ap_button        action_button;    /* Custom action button (AP_BTN_START, etc.) */
+    ap_button        secondary_action_button; /* Secondary action (e.g. Y) */
+    ap_button        confirm_button;   /* Confirm/accept action (e.g. START) */
+    ap_button        tertiary_action_button; /* Tertiary action (e.g. MENU) */
     bool             show_images;      /* Show image column */
     const char      *help_text;        /* Help overlay text (L1 to show) */
     uint32_t         input_delay;      /* Override input debounce (0 = default) */
     int              initial_index;    /* Starting cursor position */
+    int              visible_start_index; /* Initial scroll top index */
 } ap_list_opts;
 
 /* Result from closing a list */
@@ -57,6 +61,7 @@ typedef struct {
     ap_list_action  action;            /* What caused the list to close */
     ap_list_item   *items;             /* Items array (potentially reordered) */
     int             item_count;
+    int             visible_start_index; /* Final scroll top index for restoration */
 } ap_list_result;
 
 /* Create default list options with sensible values */
@@ -96,6 +101,10 @@ typedef struct {
     ap_footer_item    *footer;
     int                footer_count;
     ap_status_bar_opts *status_bar;
+    int                initial_selected_index;  /* Initial focused row */
+    int                visible_start_index;     /* Initial scroll top index */
+    ap_button          action_button;           /* Primary trigger button */
+    ap_button          secondary_action_button; /* Secondary trigger button */
     ap_button          confirm_button;  /* Button that confirms/exits (e.g. START) */
     const char        *help_text;
     uint32_t           input_delay;
@@ -106,6 +115,7 @@ typedef struct {
     ap_list_action   action;
     ap_options_item *items;
     int              item_count;
+    int              visible_start_index;
 } ap_options_list_result;
 
 int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result);
@@ -367,10 +377,14 @@ ap_list_opts ap_list_default_opts(const char *title, ap_list_item *items, int co
     opts.multi_select = false;
     opts.reorder_button = AP_BTN_NONE;
     opts.action_button = AP_BTN_NONE;
+    opts.secondary_action_button = AP_BTN_NONE;
+    opts.confirm_button = AP_BTN_NONE;
+    opts.tertiary_action_button = AP_BTN_NONE;
     opts.show_images = false;
     opts.help_text = NULL;
     opts.input_delay = 0;
     opts.initial_index = 0;
+    opts.visible_start_index = 0;
     return opts;
 }
 
@@ -382,6 +396,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     result->items = opts->items;
     result->item_count = opts->item_count;
     result->selected_index = -1;
+    result->visible_start_index = 0;
 
     /* Save/restore input delay */
     uint32_t saved_delay = 0;
@@ -417,7 +432,10 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     int cursor = opts->initial_index;
     if (cursor < 0) cursor = 0;
     if (cursor >= opts->item_count) cursor = opts->item_count - 1;
-    int scroll_top = 0;
+    int scroll_top = opts->visible_start_index;
+    if (scroll_top < 0) scroll_top = 0;
+    if (scroll_top > opts->item_count - max_visible) scroll_top = opts->item_count - max_visible;
+    if (scroll_top < 0) scroll_top = 0;
     bool reorder_mode = false;
     bool running = true;
     bool show_help = false;
@@ -490,18 +508,31 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                     /* Check reorder button */
                     if (opts->reorder_button != AP_BTN_NONE && ev.button == opts->reorder_button) {
                         reorder_mode = !reorder_mode;
+                        break;
                     }
                     /* Check action button */
                     if (opts->action_button != AP_BTN_NONE && ev.button == opts->action_button) {
-                        if (opts->multi_select) {
-                            result->selected_index = cursor;
-                            result->action = AP_ACTION_SELECTED;
-                            running = false;
-                        } else {
-                            result->selected_index = cursor;
-                            result->action = AP_ACTION_CUSTOM;
-                            running = false;
-                        }
+                        result->selected_index = cursor;
+                        result->action = AP_ACTION_TRIGGERED;
+                        running = false;
+                        break;
+                    }
+                    if (opts->secondary_action_button != AP_BTN_NONE && ev.button == opts->secondary_action_button) {
+                        result->selected_index = cursor;
+                        result->action = AP_ACTION_SECONDARY_TRIGGERED;
+                        running = false;
+                        break;
+                    }
+                    if (opts->confirm_button != AP_BTN_NONE && ev.button == opts->confirm_button) {
+                        result->selected_index = cursor;
+                        result->action = AP_ACTION_CONFIRMED;
+                        running = false;
+                        break;
+                    }
+                    if (opts->tertiary_action_button != AP_BTN_NONE && ev.button == opts->tertiary_action_button) {
+                        result->selected_index = cursor;
+                        result->action = AP_ACTION_TERTIARY_TRIGGERED;
+                        running = false;
                     }
                     break;
             }
@@ -678,6 +709,8 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         SDL_Delay(AP__FRAME_DELAY);
     }
 
+    result->visible_start_index = scroll_top;
+
     /* Restore input delay */
     if (saved_delay > 0) {
         ap_set_input_delay(AP_INPUT_DEBOUNCE);
@@ -698,6 +731,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
     result->items = opts->items;
     result->item_count = opts->item_count;
     result->focused_index = 0;
+    result->visible_start_index = 0;
 
     ap_theme *theme = ap_get_theme();
     int screen_w = ap_get_screen_width();
@@ -717,8 +751,14 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
     int max_visible = content_h / (pill_h + item_gap);
     if (max_visible < 1) max_visible = 1;
 
-    int cursor = 0;
-    int scroll_top = 0;
+    int cursor = opts->initial_selected_index;
+    if (cursor < 0) cursor = 0;
+    if (cursor >= opts->item_count) cursor = opts->item_count - 1;
+
+    int scroll_top = opts->visible_start_index;
+    if (scroll_top < 0) scroll_top = 0;
+    if (scroll_top > opts->item_count - max_visible) scroll_top = opts->item_count - max_visible;
+    if (scroll_top < 0) scroll_top = 0;
     bool running = true;
 
     while (running) {
@@ -794,6 +834,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                 }
 
                 case AP_BTN_B:
+                    result->focused_index = cursor;
                     result->action = AP_ACTION_BACK;
                     running = false;
                     break;
@@ -801,7 +842,15 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                 default:
                     if (opts->confirm_button != AP_BTN_NONE && ev.button == opts->confirm_button) {
                         result->focused_index = cursor;
-                        result->action = AP_ACTION_SELECTED;
+                        result->action = AP_ACTION_CONFIRMED;
+                        running = false;
+                    } else if (opts->action_button != AP_BTN_NONE && ev.button == opts->action_button) {
+                        result->focused_index = cursor;
+                        result->action = AP_ACTION_TRIGGERED;
+                        running = false;
+                    } else if (opts->secondary_action_button != AP_BTN_NONE && ev.button == opts->secondary_action_button) {
+                        result->focused_index = cursor;
+                        result->action = AP_ACTION_SECONDARY_TRIGGERED;
                         running = false;
                     }
                     break;
@@ -904,6 +953,8 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
         ap_present();
         SDL_Delay(AP__FRAME_DELAY);
     }
+
+    result->visible_start_index = scroll_top;
 
     return result->action == AP_ACTION_BACK ? AP_CANCELLED : AP_OK;
 }

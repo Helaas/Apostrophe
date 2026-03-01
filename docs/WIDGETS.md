@@ -30,10 +30,11 @@ A scrollable list of items with cursor navigation.
 **Features**:
 - Single select: D-Pad + A to confirm
 - Multi-select: Toggle with A, show checkboxes
-- Reorder: Hold button + D-Pad to move items
+- Reorder: Toggle reorder mode with a button, then D-Pad to move items
 - Images: Optional thumbnail column on the left
 - Text scroll: Long labels auto-scroll horizontally
 - Help overlay: L1 shows scrollable help text
+- Explicit action bindings for Start/Y/Menu via `ap_list_opts` action fields
 
 **Usage**:
 ```c
@@ -42,6 +43,7 @@ ap_list_item items[] = {
     { .label = "Bravo" },
 };
 ap_list_opts opts = ap_list_default_opts("Title", items, 2);
+opts.confirm_button = AP_BTN_START; // Footer hints are visual-only
 ap_list_result result;
 ap_list(&opts, &result);
 ```
@@ -75,6 +77,8 @@ Settings-style list with per-row option values.
 | `AP_OPT_CLICKABLE` | A triggers action |
 | `AP_OPT_COLOR_PICKER` | A opens color picker |
 
+Footer hints are visual-only; configure behavior with `action_button`, `secondary_action_button`, and `confirm_button`.
+
 **Usage**:
 ```c
 ap_option values[] = {
@@ -87,6 +91,7 @@ ap_options_item items[] = {
 };
 ap_options_list_opts opts = {
     .title = "Settings", .items = items, .item_count = 1,
+    .confirm_button = AP_BTN_START,
 };
 ap_options_list_result result;
 ap_options_list(&opts, &result);
@@ -315,7 +320,7 @@ Full-screen scrollable text overlay. Triggered automatically by L1 in widgets th
 │ ║  Navigate with D-Pad  ║   │
 │ ║  Press A to select    ║   │
 │ ║  Press B to go back   ║   │
-│ ║  Hold X to reorder    ║   │
+│ ║  Press X to reorder   ║   │
 │ ║  L1 shows this help   ║   │
 │ ╚═══════════════════════╝   │
 │                             │

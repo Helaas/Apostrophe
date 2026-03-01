@@ -90,7 +90,11 @@ AP_ALIGN_LEFT, AP_ALIGN_CENTER, AP_ALIGN_RIGHT
 ```c
 AP_ACTION_SELECTED  // User pressed confirm
 AP_ACTION_BACK      // User pressed back
-AP_ACTION_CUSTOM    // Custom action button pressed
+AP_ACTION_TRIGGERED
+AP_ACTION_SECONDARY_TRIGGERED
+AP_ACTION_CONFIRMED
+AP_ACTION_TERTIARY_TRIGGERED
+AP_ACTION_CUSTOM    // Alias of AP_ACTION_TRIGGERED (backward compatibility)
 ```
 
 #### `ap_color`
@@ -175,7 +179,7 @@ Shut down completely. Frees all resources, destroys SDL context, stops backgroun
 
 Get the current screen dimensions in pixels.
 
-#### `float ap_get_scale(void)`
+#### `float ap_get_scale_factor(void)`
 
 Get the current scaling factor (screen_width / reference_width, with damping).
 
@@ -193,7 +197,7 @@ int margin = AP_S(20);  // 20px * scale factor
 
 Get a pointer to the current theme. Modifiable.
 
-#### `void ap_theme_set_color(ap_color *target, const char *hex)`
+#### `void ap_set_theme_color(const char *hex)`
 
 Parse a `#RRGGBB` string into a color: `ap_theme_set_color(&theme->accent, "#FF6600");`
 
@@ -211,13 +215,13 @@ Poll for the next input event. Returns `true` if an event was available.
 
 Handles SDL event processing internally: keyboard events, raw joystick buttons/axes/hats (TrimUI), SDL GameController buttons/axes (macOS + recognised gamepads), platform-specific scancodes (my355), and quit events.
 
-#### `bool ap_is_pressed(ap_button btn)`
+#### `void ap_set_input_delay(uint32_t ms)`
 
-Check if a button is currently held down.
+Set input debounce delay in milliseconds.
 
-#### `void ap_input_set_repeat(uint32_t delay_ms, uint32_t rate_ms)`
+#### `void ap_set_input_repeat(uint32_t delay_ms, uint32_t rate_ms)`
 
-Configure directional hold repeat timing.
+Configure directional hold repeat timing for D-pad/arrow/button-mapped directions.
 
 ### Drawing Primitives
 
@@ -229,7 +233,7 @@ Clear the screen to the theme background color (or render bg image if configured
 
 Present the rendered frame. Call after all drawing for the frame.
 
-#### `void ap_draw_bg(void)`
+#### `void ap_draw_background(void)`
 
 Draw the background image/color (called automatically by `ap_clear_screen`).
 
@@ -245,7 +249,7 @@ Render text clipped to a maximum width.
 
 Render multi-line word-wrapped text.
 
-#### `int ap_text_width(TTF_Font *font, const char *text)`
+#### `int ap_measure_text(TTF_Font *font, const char *text)`
 
 Measure text width without rendering.
 
@@ -257,9 +261,9 @@ Draw a filled rectangle.
 
 Draw a filled rounded rectangle using scanline quarter-circle fill (no SDL2_gfx dependency).
 
-#### `void ap_draw_image(const char *path, int x, int y, int w, int h)`
+#### `void ap_draw_image(SDL_Texture *tex, int x, int y, int w, int h)`
 
-Load and draw an image at the given position/size. Uses the internal texture cache.
+Draw a loaded SDL texture at the given position/size.
 
 ### Footer & Status Bar
 
@@ -307,26 +311,36 @@ Flush the entire texture cache and free all textures.
 
 ### Combos
 
-#### `void ap_combo_register(const char *id, ap_button *buttons, int count, uint32_t window_ms, bool sequence, bool strict)`
+#### `int ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t window_ms)`
 
-Register a button combination.
+Register a simultaneous button chord combo.
 
-- `id`: Unique identifier string
-- `buttons`: Array of buttons in the combo
-- `count`: Number of buttons
-- `window_ms`: Time window to complete the combo (ms)
-- `sequence`: `false` = chord (simultaneous), `true` = sequence (ordered)
-- `strict`: For sequences, must buttons be the exact order?
+#### `int ap_register_sequence(const char *id, ap_button *buttons, int count, uint32_t timeout_ms, bool strict)`
 
-#### `bool ap_combo_check(const char *id)`
+Register an ordered button sequence combo.
 
-Check if a registered combo was triggered this frame.
+#### `bool ap_poll_combo(ap_combo_event *event)`
+
+Poll the combo event queue.
 
 ### Logging
 
 #### `void ap_log(const char *fmt, ...)`
 
 Printf-style logging. Writes to stderr and optionally to the configured log file.
+
+#### `void ap_set_log_path(const char *path)`
+
+Set the active log file path. Passing `NULL` disables file logging and keeps stderr logging only.
+
+#### `const char *ap_resolve_log_path(const char *app_name)`
+
+Resolve a standard NextUI-style log path for an app binary name:
+- `LOGS_PATH/<app_name>.txt`
+- `SHARED_USERDATA_PATH/logs/<app_name>.txt`
+- `HOME/.userdata/logs/<app_name>.txt`
+
+Returns `NULL` if no suitable base path is available.
 
 ---
 
@@ -344,11 +358,13 @@ int          ap_list(ap_list_opts *opts, ap_list_result *result);
 Scrollable list with:
 - Single selection (A button)
 - Multi-select mode (checkboxes)
-- Reorder mode (hold button + D-Pad)
+- Reorder mode (toggle reorder button + D-Pad)
 - Image thumbnails
 - Text overflow scrolling
 - Help overlay (L1)
-- Custom action button
+- Explicit action bindings (`action_button`, `secondary_action_button`, `confirm_button`, `tertiary_action_button`)
+
+Footer hints are visual only. Behavior is driven by the action button fields in `ap_list_opts`.
 
 **`ap_list_item`**:
 ```c
@@ -360,6 +376,20 @@ typedef struct {
 } ap_list_item;
 ```
 
+**`ap_list_opts`** (action-related fields):
+```c
+typedef struct {
+    ...
+    ap_button reorder_button;
+    ap_button action_button;
+    ap_button secondary_action_button;
+    ap_button confirm_button;
+    ap_button tertiary_action_button;
+    int       initial_index;
+    int       visible_start_index;
+} ap_list_opts;
+```
+
 **`ap_list_result`**:
 ```c
 typedef struct {
@@ -367,6 +397,7 @@ typedef struct {
     ap_list_action  action;
     ap_list_item   *items;
     int             item_count;
+    int             visible_start_index;
 } ap_list_result;
 ```
 
@@ -384,6 +415,30 @@ Settings-style list where each row has a label and a configurable value area:
 | `AP_OPT_KEYBOARD` | A opens keyboard for text input |
 | `AP_OPT_CLICKABLE` | A triggers a navigation/action callback |
 | `AP_OPT_COLOR_PICKER` | A opens the color picker |
+
+Action buttons are explicit in `ap_options_list_opts` (`action_button`, `secondary_action_button`, `confirm_button`), and footer hints remain visual-only.
+
+**`ap_options_list_opts`** (action/scroll fields):
+```c
+typedef struct {
+    ...
+    int       initial_selected_index;
+    int       visible_start_index;
+    ap_button action_button;
+    ap_button secondary_action_button;
+    ap_button confirm_button;
+} ap_options_list_opts;
+```
+
+**`ap_options_list_result`**:
+```c
+typedef struct {
+    int            focused_index;
+    ap_list_action action;
+    ...
+    int            visible_start_index;
+} ap_options_list_result;
+```
 
 ### Keyboard
 

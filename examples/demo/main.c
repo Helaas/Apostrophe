@@ -78,6 +78,7 @@ static void demo_multi_select(void) {
     opts.multi_select  = true;
     opts.footer        = footer;
     opts.footer_count  = 3;
+    opts.action_button = AP_BTN_START;
 
     ap_list_result result;
     ap_list(&opts, &result);
@@ -104,6 +105,7 @@ static void demo_reorder(void) {
 
     ap_list_opts opts = ap_list_default_opts("Reorder Items", items, count);
     opts.reorder_button = AP_BTN_X;
+    opts.action_button  = AP_BTN_START;
     opts.footer         = footer;
     opts.footer_count   = 3;
 
@@ -174,6 +176,7 @@ static void demo_options_list(void) {
         .item_count   = count,
         .footer       = footer,
         .footer_count = 2,
+        .confirm_button = AP_BTN_START,
     };
 
     ap_options_list_result result;
@@ -375,14 +378,17 @@ int main(int argc, char *argv[]) {
     ap_config cfg = {
         .window_title = "Apostrophe Widget Demo",
         .font_path    = "font.ttf",
+        .log_path     = ap_resolve_log_path("demo"),
         .is_nextui    = AP_PLATFORM_IS_DEVICE,
     };
     if (ap_init(&cfg) != AP_OK) {
         fprintf(stderr, "Failed to initialise Apostrophe\n");
         return 1;
     }
+    ap_log("demo: startup");
 
     int last_index = 0;
+    int last_visible_start = 0;
 
     while (1) {
         /* Build menu items from demo list */
@@ -400,9 +406,11 @@ int main(int argc, char *argv[]) {
         opts.footer        = footer;
         opts.footer_count  = 2;
         opts.initial_index = last_index;
+        opts.visible_start_index = last_visible_start;
 
         ap_list_result result;
         int rc = ap_list(&opts, &result);
+        last_visible_start = result.visible_start_index;
 
         if (rc != AP_OK || result.action == AP_ACTION_BACK) {
             break; /* Quit */

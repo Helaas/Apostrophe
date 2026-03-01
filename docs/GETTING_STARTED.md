@@ -75,6 +75,7 @@ int main(int argc, char *argv[]) {
     ap_config cfg = {
         .window_title = "My Pak",
         .font_path    = "font.ttf",
+        .log_path     = ap_resolve_log_path("myapp"), // optional helper
         .is_nextui    = AP_PLATFORM_IS_DEVICE,
     };
 
@@ -90,6 +91,7 @@ int main(int argc, char *argv[]) {
 ```
 
 `ap_init()` handles everything: SDL initialisation, window/renderer creation, font loading, theme loading (on device), input setup, and screen size detection.
+`ap_resolve_log_path()` maps logs to `LOGS_PATH`, then `SHARED_USERDATA_PATH/logs`, then `HOME/.userdata/logs`.
 
 ## Step 3: Show a Widget
 
@@ -113,6 +115,8 @@ ap_footer_item footer[] = {
 ap_list_opts opts = ap_list_default_opts("Main Menu", items, 3);
 opts.footer       = footer;
 opts.footer_count = 2;
+// Footer hints are visual only; behavior comes from action bindings.
+opts.action_button = AP_BTN_A;  // optional custom trigger
 
 // Show it (blocks until user acts)
 ap_list_result result;
@@ -163,9 +167,29 @@ Every Pak needs a `launch.sh`:
 
 ```bash
 #!/bin/sh
-DIR="$(dirname "$0")"
-cd "$DIR"
-./myapp
+set -eu
+
+APP_BIN="myapp"
+PAK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PAK_NAME=$(basename "$PAK_DIR")
+PAK_NAME=${PAK_NAME%.pak}
+
+cd "$PAK_DIR"
+
+SHARED_USERDATA_ROOT=${SHARED_USERDATA_PATH:-"${HOME:-/tmp}/.userdata/shared"}
+LOG_ROOT=${LOGS_PATH:-"$SHARED_USERDATA_ROOT/logs"}
+mkdir -p "$LOG_ROOT"
+LOG_FILE="$LOG_ROOT/$APP_BIN.txt"
+: >"$LOG_FILE"
+
+exec >>"$LOG_FILE"
+exec 2>&1
+
+echo "=== Launching $PAK_NAME ($APP_BIN) at $(date) ==="
+echo "platform=${PLATFORM:-unknown} device=${DEVICE:-unknown}"
+echo "args: $*"
+
+exec "./$APP_BIN" "$@"
 ```
 
 Make it executable: `chmod +x launch.sh`

@@ -189,14 +189,17 @@ int main(int argc, char *argv[]) {
     ap_config cfg = {
         .window_title = "Download & Status Bar Demo",
         .font_path    = "font.ttf",
+        .log_path     = ap_resolve_log_path("download"),
         .is_nextui    = AP_PLATFORM_IS_DEVICE,
     };
     if (ap_init(&cfg) != AP_OK) {
         fprintf(stderr, "Failed to initialise Apostrophe\n");
         return 1;
     }
+    ap_log("download: startup");
 
     int last_index = 0;
+    int last_visible_start = 0;
 
     while (1) {
         ap_list_item items[DEMO_COUNT];
@@ -213,10 +216,12 @@ int main(int argc, char *argv[]) {
         opts.footer        = footer;
         opts.footer_count  = 2;
         opts.initial_index = last_index;
+        opts.visible_start_index = last_visible_start;
         opts.status_bar    = &status_bar;
 
         ap_list_result result;
         int rc = ap_list(&opts, &result);
+        last_visible_start = result.visible_start_index;
 
         if (rc != AP_OK || result.action == AP_ACTION_BACK) {
             break;

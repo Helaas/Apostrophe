@@ -17,12 +17,14 @@ int main(int argc, char *argv[]) {
     ap_config cfg = {
         .window_title = "Hello Apostrophe",
         .font_path    = "font.ttf",
+        .log_path     = ap_resolve_log_path("hello"),
         .is_nextui    = AP_PLATFORM_IS_DEVICE,
     };
     if (ap_init(&cfg) != AP_OK) {
         fprintf(stderr, "Failed to initialise Apostrophe\n");
         return 1;
     }
+    ap_log("hello: startup");
 
     /* Build a simple list of items */
     ap_list_item items[] = {

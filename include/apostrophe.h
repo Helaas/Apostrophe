@@ -150,7 +150,11 @@ typedef enum {
 typedef enum {
     AP_ACTION_SELECTED = 0,
     AP_ACTION_BACK,
-    AP_ACTION_CUSTOM
+    AP_ACTION_TRIGGERED,
+    AP_ACTION_SECONDARY_TRIGGERED,
+    AP_ACTION_CONFIRMED,
+    AP_ACTION_TERTIARY_TRIGGERED,
+    AP_ACTION_CUSTOM = AP_ACTION_TRIGGERED
 } ap_list_action;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -270,6 +274,8 @@ typedef struct {
     /* Input state */
     bool          face_buttons_flipped;
     uint32_t      input_delay_ms;
+    uint32_t      input_repeat_delay_ms;
+    uint32_t      input_repeat_rate_ms;
     uint32_t      last_input_time;
 
     /* Directional repeat */
@@ -292,6 +298,7 @@ typedef struct {
     /* Button held state for chords */
     bool          buttons_held[AP_BTN_COUNT];
     uint32_t      button_press_time[AP_BTN_COUNT];
+    uint32_t      button_repeat_time[AP_BTN_COUNT];
 
     /* Texture cache */
     ap_texture_cache tex_cache;
@@ -357,6 +364,7 @@ TTF_Font      *ap_get_font(ap_font_tier tier);
 
 bool           ap_poll_input(ap_input_event *event);
 void           ap_set_input_delay(uint32_t ms);
+void           ap_set_input_repeat(uint32_t delay_ms, uint32_t rate_ms);
 void           ap_flip_face_buttons(bool flip);
 const char    *ap_button_name(ap_button btn);
 
@@ -422,6 +430,7 @@ int            ap_get_status_bar_width(ap_status_bar_opts *opts);
 
 void           ap_log(const char *fmt, ...);
 void           ap_set_log_path(const char *path);
+const char    *ap_resolve_log_path(const char *app_name);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public API — Power Button
@@ -578,6 +587,31 @@ void ap_set_log_path(const char *path) {
             fprintf(stderr, "Warning: could not open log file: %s\n", path);
         }
     }
+}
+
+const char *ap_resolve_log_path(const char *app_name) {
+    static char path[1024];
+    if (!app_name || !app_name[0]) return NULL;
+
+    const char *logs = getenv("LOGS_PATH");
+    if (logs && logs[0]) {
+        snprintf(path, sizeof(path), "%s/%s.txt", logs, app_name);
+        return path;
+    }
+
+    const char *shared = getenv("SHARED_USERDATA_PATH");
+    if (shared && shared[0]) {
+        snprintf(path, sizeof(path), "%s/logs/%s.txt", shared, app_name);
+        return path;
+    }
+
+    const char *home = getenv("HOME");
+    if (home && home[0]) {
+        snprintf(path, sizeof(path), "%s/.userdata/logs/%s.txt", home, app_name);
+        return path;
+    }
+
+    return NULL;
 }
 
 /* ─── Error Handling ─────────────────────────────────────────────────────── */
@@ -984,6 +1018,9 @@ static void ap__process_sdl_events(void) {
                     if (b != AP_BTN_NONE) {
                         ap__g.buttons_held[b] = true;
                         ap__g.button_press_time[b] = now;
+                        if (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT) {
+                            ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
+                        }
                     }
                 }
                 break;
@@ -993,6 +1030,7 @@ static void ap__process_sdl_events(void) {
                 ap__input_push(b, false);
                 if (b != AP_BTN_NONE) {
                     ap__g.buttons_held[b] = false;
+                    ap__g.button_repeat_time[b] = 0;
                 }
                 break;
             }
@@ -1004,6 +1042,9 @@ static void ap__process_sdl_events(void) {
                 if (b != AP_BTN_NONE) {
                     ap__g.buttons_held[b] = true;
                     ap__g.button_press_time[b] = now;
+                    if (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT) {
+                        ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
+                    }
                 }
                 break;
             }
@@ -1013,6 +1054,7 @@ static void ap__process_sdl_events(void) {
                 ap__input_push(b, false);
                 if (b != AP_BTN_NONE) {
                     ap__g.buttons_held[b] = false;
+                    ap__g.button_repeat_time[b] = 0;
                 }
                 break;
             }
@@ -1024,6 +1066,9 @@ static void ap__process_sdl_events(void) {
                 if (b != AP_BTN_NONE) {
                     ap__g.buttons_held[b] = true;
                     ap__g.button_press_time[b] = now;
+                    if (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT) {
+                        ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
+                    }
                 }
                 break;
             }
@@ -1033,6 +1078,7 @@ static void ap__process_sdl_events(void) {
                 ap__input_push(b, false);
                 if (b != AP_BTN_NONE) {
                     ap__g.buttons_held[b] = false;
+                    ap__g.button_repeat_time[b] = 0;
                 }
                 break;
             }
@@ -1043,13 +1089,13 @@ static void ap__process_sdl_events(void) {
                     if (ev.caxis.value < -AP_AXIS_DEADZONE) {
                         if (ap__g.axis_held_dir_y != -1) {
                             ap__input_push(AP_BTN_UP, true);
-                            ap__g.axis_repeat_time_y = now + AP_INPUT_REPEAT_DELAY;
+                            ap__g.axis_repeat_time_y = now + ap__g.input_repeat_delay_ms;
                         }
                         ap__g.axis_held_dir_y = -1;
                     } else if (ev.caxis.value > AP_AXIS_DEADZONE) {
                         if (ap__g.axis_held_dir_y != 1) {
                             ap__input_push(AP_BTN_DOWN, true);
-                            ap__g.axis_repeat_time_y = now + AP_INPUT_REPEAT_DELAY;
+                            ap__g.axis_repeat_time_y = now + ap__g.input_repeat_delay_ms;
                         }
                         ap__g.axis_held_dir_y = 1;
                     } else {
@@ -1061,13 +1107,13 @@ static void ap__process_sdl_events(void) {
                     if (ev.caxis.value < -AP_AXIS_DEADZONE) {
                         if (ap__g.axis_held_dir_x != -1) {
                             ap__input_push(AP_BTN_LEFT, true);
-                            ap__g.axis_repeat_time_x = now + AP_INPUT_REPEAT_DELAY;
+                            ap__g.axis_repeat_time_x = now + ap__g.input_repeat_delay_ms;
                         }
                         ap__g.axis_held_dir_x = -1;
                     } else if (ev.caxis.value > AP_AXIS_DEADZONE) {
                         if (ap__g.axis_held_dir_x != 1) {
                             ap__input_push(AP_BTN_RIGHT, true);
-                            ap__g.axis_repeat_time_x = now + AP_INPUT_REPEAT_DELAY;
+                            ap__g.axis_repeat_time_x = now + ap__g.input_repeat_delay_ms;
                         }
                         ap__g.axis_held_dir_x = 1;
                     } else {
@@ -1122,7 +1168,7 @@ static void ap__process_sdl_events(void) {
                     ap__input_push(AP_BTN_RIGHT, true);
 
                 ap__g.hat_held = hat;
-                ap__g.hat_repeat_time = now + AP_INPUT_REPEAT_DELAY;
+                ap__g.hat_repeat_time = now + ap__g.input_repeat_delay_ms;
                 break;
             }
 
@@ -1131,13 +1177,13 @@ static void ap__process_sdl_events(void) {
                     if (ev.jaxis.value < -AP_AXIS_DEADZONE) {
                         if (ap__g.axis_held_dir_y != -1) {
                             ap__input_push(AP_BTN_UP, true);
-                            ap__g.axis_repeat_time_y = now + AP_INPUT_REPEAT_DELAY;
+                            ap__g.axis_repeat_time_y = now + ap__g.input_repeat_delay_ms;
                         }
                         ap__g.axis_held_dir_y = -1;
                     } else if (ev.jaxis.value > AP_AXIS_DEADZONE) {
                         if (ap__g.axis_held_dir_y != 1) {
                             ap__input_push(AP_BTN_DOWN, true);
-                            ap__g.axis_repeat_time_y = now + AP_INPUT_REPEAT_DELAY;
+                            ap__g.axis_repeat_time_y = now + ap__g.input_repeat_delay_ms;
                         }
                         ap__g.axis_held_dir_y = 1;
                     } else {
@@ -1149,13 +1195,13 @@ static void ap__process_sdl_events(void) {
                     if (ev.jaxis.value < -AP_AXIS_DEADZONE) {
                         if (ap__g.axis_held_dir_x != -1) {
                             ap__input_push(AP_BTN_LEFT, true);
-                            ap__g.axis_repeat_time_x = now + AP_INPUT_REPEAT_DELAY;
+                            ap__g.axis_repeat_time_x = now + ap__g.input_repeat_delay_ms;
                         }
                         ap__g.axis_held_dir_x = -1;
                     } else if (ev.jaxis.value > AP_AXIS_DEADZONE) {
                         if (ap__g.axis_held_dir_x != 1) {
                             ap__input_push(AP_BTN_RIGHT, true);
-                            ap__g.axis_repeat_time_x = now + AP_INPUT_REPEAT_DELAY;
+                            ap__g.axis_repeat_time_x = now + ap__g.input_repeat_delay_ms;
                         }
                         ap__g.axis_held_dir_x = 1;
                     } else {
@@ -1169,25 +1215,62 @@ static void ap__process_sdl_events(void) {
         }
     }
 
+    bool repeated_up = false;
+    bool repeated_down = false;
+    bool repeated_left = false;
+    bool repeated_right = false;
+
+    /* Directional hold repeat — digital buttons (keyboard/D-pad/button maps) */
+    if (ap__g.buttons_held[AP_BTN_UP] && now >= ap__g.button_repeat_time[AP_BTN_UP]) {
+        ap__input_push(AP_BTN_UP, true);
+        ap__g.button_repeat_time[AP_BTN_UP] = now + ap__g.input_repeat_rate_ms;
+        repeated_up = true;
+    }
+    if (ap__g.buttons_held[AP_BTN_DOWN] && now >= ap__g.button_repeat_time[AP_BTN_DOWN]) {
+        ap__input_push(AP_BTN_DOWN, true);
+        ap__g.button_repeat_time[AP_BTN_DOWN] = now + ap__g.input_repeat_rate_ms;
+        repeated_down = true;
+    }
+    if (ap__g.buttons_held[AP_BTN_LEFT] && now >= ap__g.button_repeat_time[AP_BTN_LEFT]) {
+        ap__input_push(AP_BTN_LEFT, true);
+        ap__g.button_repeat_time[AP_BTN_LEFT] = now + ap__g.input_repeat_rate_ms;
+        repeated_left = true;
+    }
+    if (ap__g.buttons_held[AP_BTN_RIGHT] && now >= ap__g.button_repeat_time[AP_BTN_RIGHT]) {
+        ap__input_push(AP_BTN_RIGHT, true);
+        ap__g.button_repeat_time[AP_BTN_RIGHT] = now + ap__g.input_repeat_rate_ms;
+        repeated_right = true;
+    }
+
     /* Directional hold repeat — hat */
     if (ap__g.hat_held && now >= ap__g.hat_repeat_time) {
-        if (ap__g.hat_held & SDL_HAT_UP)    ap__input_push(AP_BTN_UP, true);
-        if (ap__g.hat_held & SDL_HAT_DOWN)  ap__input_push(AP_BTN_DOWN, true);
-        if (ap__g.hat_held & SDL_HAT_LEFT)  ap__input_push(AP_BTN_LEFT, true);
-        if (ap__g.hat_held & SDL_HAT_RIGHT) ap__input_push(AP_BTN_RIGHT, true);
-        ap__g.hat_repeat_time = now + AP_INPUT_REPEAT_RATE;
+        if ((ap__g.hat_held & SDL_HAT_UP) && !repeated_up) ap__input_push(AP_BTN_UP, true);
+        if ((ap__g.hat_held & SDL_HAT_DOWN) && !repeated_down) ap__input_push(AP_BTN_DOWN, true);
+        if ((ap__g.hat_held & SDL_HAT_LEFT) && !repeated_left) ap__input_push(AP_BTN_LEFT, true);
+        if ((ap__g.hat_held & SDL_HAT_RIGHT) && !repeated_right) ap__input_push(AP_BTN_RIGHT, true);
+        ap__g.hat_repeat_time = now + ap__g.input_repeat_rate_ms;
     }
 
     /* Directional hold repeat — analog Y */
     if (ap__g.axis_held_dir_y && now >= ap__g.axis_repeat_time_y) {
-        ap__input_push(ap__g.axis_held_dir_y < 0 ? AP_BTN_UP : AP_BTN_DOWN, true);
-        ap__g.axis_repeat_time_y = now + AP_INPUT_REPEAT_RATE;
+        if (ap__g.axis_held_dir_y < 0) {
+            if (!repeated_up) ap__input_push(AP_BTN_UP, true);
+            repeated_up = true;
+        } else {
+            if (!repeated_down) ap__input_push(AP_BTN_DOWN, true);
+            repeated_down = true;
+        }
+        ap__g.axis_repeat_time_y = now + ap__g.input_repeat_rate_ms;
     }
 
     /* Directional hold repeat — analog X */
     if (ap__g.axis_held_dir_x && now >= ap__g.axis_repeat_time_x) {
-        ap__input_push(ap__g.axis_held_dir_x < 0 ? AP_BTN_LEFT : AP_BTN_RIGHT, true);
-        ap__g.axis_repeat_time_x = now + AP_INPUT_REPEAT_RATE;
+        if (ap__g.axis_held_dir_x < 0) {
+            if (!repeated_left) ap__input_push(AP_BTN_LEFT, true);
+        } else {
+            if (!repeated_right) ap__input_push(AP_BTN_RIGHT, true);
+        }
+        ap__g.axis_repeat_time_x = now + ap__g.input_repeat_rate_ms;
     }
 }
 
@@ -1213,6 +1296,11 @@ bool ap_poll_input(ap_input_event *event) {
 
 void ap_set_input_delay(uint32_t ms) {
     ap__g.input_delay_ms = ms;
+}
+
+void ap_set_input_repeat(uint32_t delay_ms, uint32_t rate_ms) {
+    ap__g.input_repeat_delay_ms = delay_ms;
+    ap__g.input_repeat_rate_ms = rate_ms;
 }
 
 void ap_flip_face_buttons(bool flip) {
@@ -1998,6 +2086,8 @@ int ap_init(ap_config *cfg) {
 
     /* Input defaults */
     ap__g.input_delay_ms = AP_INPUT_DEBOUNCE;
+    ap__g.input_repeat_delay_ms = AP_INPUT_REPEAT_DELAY;
+    ap__g.input_repeat_rate_ms = AP_INPUT_REPEAT_RATE;
 
     /* Init SDL2 — include GAMECONTROLLER for macOS / standard gamepads */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) < 0) {
