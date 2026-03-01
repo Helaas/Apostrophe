@@ -30,6 +30,7 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <sys/stat.h>
 
 #ifdef __linux__
 #include <pthread.h>
@@ -556,6 +557,18 @@ static const char *ap__button_names[AP_BTN_COUNT] = {
 
 /* ─── Logging ────────────────────────────────────────────────────────────── */
 
+static bool ap__same_output_file(FILE *a, FILE *b) {
+    if (!a || !b) return false;
+    int a_fd = fileno(a);
+    int b_fd = fileno(b);
+    if (a_fd < 0 || b_fd < 0) return false;
+
+    struct stat a_st, b_st;
+    if (fstat(a_fd, &a_st) != 0) return false;
+    if (fstat(b_fd, &b_st) != 0) return false;
+    return a_st.st_dev == b_st.st_dev && a_st.st_ino == b_st.st_ino;
+}
+
 void ap_log(const char *fmt, ...) {
     char buf[AP_MAX_LOG_LEN];
     va_list args;
@@ -570,7 +583,7 @@ void ap_log(const char *fmt, ...) {
     strftime(ts, sizeof(ts), "%H:%M:%S", t);
 
     fprintf(stderr, "[%s] %s\n", ts, buf);
-    if (ap__g.log_file) {
+    if (ap__g.log_file && !ap__same_output_file(ap__g.log_file, stderr)) {
         fprintf(ap__g.log_file, "[%s] %s\n", ts, buf);
         fflush(ap__g.log_file);
     }
@@ -679,6 +692,18 @@ static const char *ap__json_find_string(const char *json, const char *key) {
     return value_buf;
 }
 
+static bool ap__json_copy_string(const char *json, const char *key, char *out, size_t out_size) {
+    if (!out || out_size == 0) return false;
+    out[0] = '\0';
+    const char *v = ap__json_find_string(json, key);
+    if (!v) return false;
+    size_t n = strlen(v);
+    if (n >= out_size) n = out_size - 1;
+    memcpy(out, v, n);
+    out[n] = '\0';
+    return true;
+}
+
 int ap_theme_load_nextui(void) {
 #if AP_PLATFORM_IS_DEVICE
     /* Look for nextval.elf in the system path */
@@ -722,25 +747,15 @@ int ap_theme_load_nextui(void) {
     json[total] = '\0';
     pclose(fp);
 
-    /* Parse color values: color1..color6, bgcolor */
-    const char *c1 = ap__json_find_string(json, "color1");
-    const char *c2 = ap__json_find_string(json, "color2");
-    const char *c3 = ap__json_find_string(json, "color3");
-    const char *c4 = ap__json_find_string(json, "color4");
-    const char *c5 = ap__json_find_string(json, "color5");
-    const char *c6 = ap__json_find_string(json, "color6");
-    const char *bg = ap__json_find_string(json, "bgcolor");
-
-    /* Need to copy because ap__json_find_string uses a static buffer */
     char c1_buf[32]={0}, c2_buf[32]={0}, c3_buf[32]={0}, c4_buf[32]={0};
     char c5_buf[32]={0}, c6_buf[32]={0}, bg_buf[32]={0};
-    if (c1) strncpy(c1_buf, c1, sizeof(c1_buf)-1);
-    if (c2) strncpy(c2_buf, c2, sizeof(c2_buf)-1);
-    if (c3) strncpy(c3_buf, c3, sizeof(c3_buf)-1);
-    if (c4) strncpy(c4_buf, c4, sizeof(c4_buf)-1);
-    if (c5) strncpy(c5_buf, c5, sizeof(c5_buf)-1);
-    if (c6) strncpy(c6_buf, c6, sizeof(c6_buf)-1);
-    if (bg) strncpy(bg_buf, bg, sizeof(bg_buf)-1);
+    ap__json_copy_string(json, "color1", c1_buf, sizeof(c1_buf));
+    ap__json_copy_string(json, "color2", c2_buf, sizeof(c2_buf));
+    ap__json_copy_string(json, "color3", c3_buf, sizeof(c3_buf));
+    ap__json_copy_string(json, "color4", c4_buf, sizeof(c4_buf));
+    ap__json_copy_string(json, "color5", c5_buf, sizeof(c5_buf));
+    ap__json_copy_string(json, "color6", c6_buf, sizeof(c6_buf));
+    ap__json_copy_string(json, "bgcolor", bg_buf, sizeof(bg_buf));
 
     if (c1_buf[0]) ap__g.theme.highlight        = ap_hex_to_color(c1_buf);
     if (c2_buf[0]) ap__g.theme.accent           = ap_hex_to_color(c2_buf);
@@ -772,23 +787,15 @@ int ap_theme_load_nextui(void) {
     fread(json, 1, sizeof(json) - 1, fp);
     fclose(fp);
 
-    const char *c1 = ap__json_find_string(json, "color1");
-    const char *c2 = ap__json_find_string(json, "color2");
-    const char *c3 = ap__json_find_string(json, "color3");
-    const char *c4 = ap__json_find_string(json, "color4");
-    const char *c5 = ap__json_find_string(json, "color5");
-    const char *c6 = ap__json_find_string(json, "color6");
-    const char *bg = ap__json_find_string(json, "bgcolor");
-
     char c1_buf[32]={0}, c2_buf[32]={0}, c3_buf[32]={0}, c4_buf[32]={0};
     char c5_buf[32]={0}, c6_buf[32]={0}, bg_buf[32]={0};
-    if (c1) strncpy(c1_buf, c1, sizeof(c1_buf)-1);
-    if (c2) strncpy(c2_buf, c2, sizeof(c2_buf)-1);
-    if (c3) strncpy(c3_buf, c3, sizeof(c3_buf)-1);
-    if (c4) strncpy(c4_buf, c4, sizeof(c4_buf)-1);
-    if (c5) strncpy(c5_buf, c5, sizeof(c5_buf)-1);
-    if (c6) strncpy(c6_buf, c6, sizeof(c6_buf)-1);
-    if (bg) strncpy(bg_buf, bg, sizeof(bg_buf)-1);
+    ap__json_copy_string(json, "color1", c1_buf, sizeof(c1_buf));
+    ap__json_copy_string(json, "color2", c2_buf, sizeof(c2_buf));
+    ap__json_copy_string(json, "color3", c3_buf, sizeof(c3_buf));
+    ap__json_copy_string(json, "color4", c4_buf, sizeof(c4_buf));
+    ap__json_copy_string(json, "color5", c5_buf, sizeof(c5_buf));
+    ap__json_copy_string(json, "color6", c6_buf, sizeof(c6_buf));
+    ap__json_copy_string(json, "bgcolor", bg_buf, sizeof(bg_buf));
 
     if (c1_buf[0]) ap__g.theme.highlight        = ap_hex_to_color(c1_buf);
     if (c2_buf[0]) ap__g.theme.accent           = ap_hex_to_color(c2_buf);
