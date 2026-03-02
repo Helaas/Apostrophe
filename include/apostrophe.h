@@ -2101,9 +2101,12 @@ static void *ap__power_thread_func(void *arg) {
 
                 uint32_t held_ms = SDL_GetTicks() - press_start;
                 if (held_ms >= 2000) {
-                    /* Long press: shutdown */
+                    /* Long press: shutdown (NextUI-style signal) */
                     ap_log("Power: long press → shutdown");
-                    ap__run_power_command("shutdown", "/sbin/poweroff");
+                    system("rm -f /tmp/nextui_exec && sync");
+                    system("touch /tmp/poweroff");
+                    sync();
+                    exit(0);
                 } else if (released) {
                     /* Short press: suspend */
                     ap_log("Power: short press → suspend");
