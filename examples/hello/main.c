@@ -16,7 +16,6 @@ int main(int argc, char *argv[]) {
     /* Initialise Apostrophe — auto-detects screen size & loads theme */
     ap_config cfg = {
         .window_title = "Hello Apostrophe",
-        .font_path    = "font.ttf",
         .log_path     = ap_resolve_log_path("hello"),
         .is_nextui    = AP_PLATFORM_IS_DEVICE,
     };

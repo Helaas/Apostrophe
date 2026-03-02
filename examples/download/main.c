@@ -186,7 +186,6 @@ int main(int argc, char *argv[]) {
 
     ap_config cfg = {
         .window_title = "Download & Status Bar Demo",
-        .font_path    = "font.ttf",
         .log_path     = ap_resolve_log_path("download"),
         .is_nextui    = AP_PLATFORM_IS_DEVICE,
     };

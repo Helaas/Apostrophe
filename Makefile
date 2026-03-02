@@ -132,7 +132,6 @@ package: all
 			pak_dir="$(STAGING_DIR)/Tools/$$platform/$${pak_name}.pak"; \
 			mkdir -p "$$pak_dir"; \
 			cp -f "$(BUILD_DIR)/$$platform/$$example/$$example" "$$pak_dir/$$example" 2>/dev/null || true; \
-			cp -f "$(RES_DIR)/font.ttf" "$$pak_dir/font.ttf"; \
 			if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
 				cp -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$pak_dir/launch.sh"; \
 			fi; \
@@ -174,7 +173,6 @@ deploy:
 			if adb shell "[ -d '$$pak_dir' ]" >/dev/null 2>&1; then \
 				echo "Deploying $$example to $$pak_dir..."; \
 				adb push "$(BUILD_DIR)/$$PLATFORM/$$example/$$example" "$$pak_dir/$$example"; \
-				adb push "$(RES_DIR)/font.ttf" "$$pak_dir/font.ttf"; \
 				if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
 					adb push "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$pak_dir/launch.sh"; \
 				fi; \
@@ -191,7 +189,6 @@ deploy:
 			echo "No pak folder found for $$example; creating $$lower_dir"; \
 			adb shell "mkdir -p '$$lower_dir'"; \
 			adb push "$(BUILD_DIR)/$$PLATFORM/$$example/$$example" "$$lower_dir/$$example"; \
-			adb push "$(RES_DIR)/font.ttf" "$$lower_dir/font.ttf"; \
 			if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
 				adb push "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$lower_dir/launch.sh"; \
 			fi; \

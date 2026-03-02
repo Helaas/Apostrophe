@@ -883,7 +883,7 @@ static int ap__load_fonts(const char *user_font_path) {
     /* Determine font path */
     const char *font_path = NULL;
 
-    /* 1. User-specified path */
+    /* 1. User-specified path (allows font override via ap_config.font_path) */
     if (user_font_path && user_font_path[0]) {
         if (access(user_font_path, R_OK) == 0) {
             font_path = user_font_path;
@@ -2040,11 +2040,14 @@ static void ap__blit_status_icon(int src_x, int src_y, int src_w, int src_h,
 
 /* ─── Status bar ─────────────────────────────────────────────────────────── */
 
-/* Icon sizes at 1x (from NextUI spritesheet) — rendered at 2x for visibility */
+/* Icon sizes at 1x logical (from NextUI spritesheet).
+   Actual pixel size = these × status_asset_scale (matched to loaded assets@Nx.png). */
 #define AP__BATTERY_W  17
 #define AP__BATTERY_H  10
 #define AP__WIFI_SIZE  12
-#define AP__ICON_SCALE 2  /* Render icons at 2x their spritesheet size */
+
+/* Helper: icon pixel size using the loaded spritesheet scale (1:1, no GPU upscaling) */
+#define AP__ICON_PX(logical) ((logical) * ap__g.status_asset_scale)
 
 /* Calculate the rendered pixel width of the status bar pill */
 int ap_get_status_bar_width(ap_status_bar_opts *opts) {
@@ -2053,25 +2056,20 @@ int ap_get_status_bar_width(ap_status_bar_opts *opts) {
     TTF_Font *font = ap_get_font(AP_FONT_SMALL);
     if (!font) return 0;
 
+    int s = ap__g.status_asset_scale ? ap__g.status_asset_scale : 2;
     int outer_pad = AP_S(20);
     int icon_spacing = AP_S(8);
     int total_w = 0;
 
-    /* Battery icon (2x) */
+    /* Battery icon (native spritesheet size) */
     if (opts->show_battery) {
-        total_w += AP_S(AP__BATTERY_W * AP__ICON_SCALE);
-        #if AP_PLATFORM_IS_DEVICE
-        /* Extra width for percentage text if enabled in NextUI settings */
-        if (ap__read_nextui_setting_int("batteryperc", 0)) {
-            total_w += AP_S(4) + ap_measure_text(font, "100");
-        }
-        #endif
+        total_w += AP__BATTERY_W * s;
     }
 
-    /* Wifi icon (2x) */
+    /* Wifi icon */
     if (opts->show_wifi) {
         if (total_w > 0) total_w += icon_spacing;
-        total_w += AP_S(AP__WIFI_SIZE * AP__ICON_SCALE);
+        total_w += AP__WIFI_SIZE * s;
     }
 
     /* Clock */
@@ -2097,6 +2095,7 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     TTF_Font *font = ap_get_font(AP_FONT_SMALL);
     if (!font) return;
 
+    int s = ap__g.status_asset_scale ? ap__g.status_asset_scale : 2;
     int outer_pad = AP_S(20);
     int inner_pad_y = AP_S(6);
     int icon_spacing = AP_S(8);
@@ -2131,10 +2130,10 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
         cx -= icon_spacing;
     }
 
-    /* Battery icon (rendered at 2x) */
+    /* Battery icon (1:1 from spritesheet — no GPU upscaling) */
     if (opts->show_battery) {
-        int iw = AP_S(AP__BATTERY_W * AP__ICON_SCALE);
-        int ih = AP_S(AP__BATTERY_H * AP__ICON_SCALE);
+        int iw = AP__BATTERY_W * s;
+        int ih = AP__BATTERY_H * s;
         cx -= iw;
         int iy = pill_y + (pill_h - ih) / 2;
 
@@ -2147,9 +2146,9 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
                 /* Charging: battery outline + bolt overlay */
                 ap__blit_status_icon(47, 51, AP__BATTERY_W, AP__BATTERY_H,
                                      cx, iy, iw, ih, ap__g.theme.hint);
-                int bolt_w = AP_S(12 * AP__ICON_SCALE), bolt_h = AP_S(6 * AP__ICON_SCALE);
+                int bolt_w = 12 * s, bolt_h = 6 * s;
                 ap__blit_status_icon(81, 41, 12, 6,
-                                     cx + AP_S(3 * AP__ICON_SCALE), iy + AP_S(2 * AP__ICON_SCALE),
+                                     cx + 3 * s, iy + 2 * s,
                                      bolt_w, bolt_h, ap__g.theme.hint);
             } else {
                 bool low = (bat >= 0 && bat <= 10);
@@ -2157,13 +2156,18 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
                 ap__blit_status_icon(sx, 51, AP__BATTERY_W, AP__BATTERY_H,
                                      cx, iy, iw, ih, ap__g.theme.hint);
             }
-            /* Battery percentage text */
+            /* Battery percentage text centered inside the icon (NextUI style) */
             if (show_pct && bat >= 0) {
                 char pct_text[8];
                 snprintf(pct_text, sizeof(pct_text), "%d", bat);
-                int tw = ap_measure_text(font, pct_text);
-                cx -= AP_S(4) + tw;
-                ap_draw_text(font, pct_text, cx, pill_y + inner_pad_y, ap__g.theme.hint);
+                /* Use smallest available font for micro text inside icon */
+                TTF_Font *micro = ap_get_font(AP_FONT_MICRO);
+                if (!micro) micro = font;
+                int tw = ap_measure_text(micro, pct_text);
+                int th = TTF_FontHeight(micro);
+                int tx = cx + (iw - tw) / 2 + 1;
+                int ty = iy + (ih - th) / 2 - 1;
+                ap_draw_text(micro, pct_text, tx, ty, ap__g.theme.hint);
             }
         } else
         #endif
@@ -2174,10 +2178,10 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
         cx -= icon_spacing;
     }
 
-    /* Wifi icon (rendered at 2x) */
+    /* Wifi icon (1:1 from spritesheet) */
     if (opts->show_wifi) {
-        int iw = AP_S(AP__WIFI_SIZE * AP__ICON_SCALE);
-        int ih = AP_S(AP__WIFI_SIZE * AP__ICON_SCALE);
+        int iw = AP__WIFI_SIZE * s;
+        int ih = AP__WIFI_SIZE * s;
         cx -= iw;
         int iy = pill_y + (pill_h - ih) / 2;
 
@@ -2222,8 +2226,8 @@ static const char **ap__power_input_paths(void) {
     };
     #elif defined(PLATFORM_MY355)
     static const char *paths[] = {
-        "/dev/input/event1",
         "/dev/input/event2",
+        "/dev/input/event1",
         "/dev/input/event0",
         NULL,
     };
@@ -2294,7 +2298,14 @@ static void *ap__power_thread_func(void *arg) {
             continue;
         }
 
-        if (ev.type == EV_KEY && ev.code == KEY_POWER) {
+        /* my355 reports power button as KEY_HOME (102), others use KEY_POWER (116) */
+        #if defined(PLATFORM_MY355)
+        #define AP__POWER_KEY_CODE 102
+        #else
+        #define AP__POWER_KEY_CODE KEY_POWER
+        #endif
+
+        if (ev.type == EV_KEY && ev.code == AP__POWER_KEY_CODE) {
             if (ev.value == 1) { /* Press */
                 /* Track press time for short/long detection */
                 uint32_t press_start = SDL_GetTicks();
@@ -2302,7 +2313,7 @@ static void *ap__power_thread_func(void *arg) {
 
                 while (ap__g.power_thread_running) {
                     n = read(fd, &ev, sizeof(ev));
-                    if (n == sizeof(ev) && ev.type == EV_KEY && ev.code == KEY_POWER && ev.value == 0) {
+                    if (n == sizeof(ev) && ev.type == EV_KEY && ev.code == AP__POWER_KEY_CODE && ev.value == 0) {
                         released = true;
                         break;
                     }
@@ -2592,9 +2603,12 @@ int ap_init(ap_config *cfg) {
     /* Load NextUI asset spritesheet for status bar icons */
     #if AP_PLATFORM_IS_DEVICE
     {
-        int scale = (int)(ap__g.scale_factor + 0.5f);
-        if (scale < 1) scale = 1;
-        if (scale > 4) scale = 4;
+        /* Use NextUI's FIXED_SCALE for correct spritesheet density (1:1 blit) */
+        #if defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050) || defined(PLATFORM_MY355)
+        int scale = 2;
+        #else
+        int scale = 2;
+        #endif
         char asset_path[256];
         snprintf(asset_path, sizeof(asset_path),
                  "/mnt/SDCARD/.system/res/assets@%dx.png", scale);

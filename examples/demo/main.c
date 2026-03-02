@@ -457,7 +457,6 @@ int main(int argc, char *argv[]) {
 
     ap_config cfg = {
         .window_title = "Apostrophe Widget Demo",
-        .font_path    = "font.ttf",
         .log_path     = ap_resolve_log_path("demo"),
         .is_nextui    = AP_PLATFORM_IS_DEVICE,
     };
