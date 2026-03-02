@@ -10,6 +10,9 @@
 #define AP_WIDGETS_IMPLEMENTATION
 #include "apostrophe_widgets.h"
 
+/* Forward declarations */
+static void demo_detail(void);
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Demo: List (basic)
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -75,13 +78,31 @@ static void demo_multi_select(void) {
     };
 
     ap_list_opts opts = ap_list_default_opts("Pick Fruits", items, count);
-    opts.multi_select  = true;
-    opts.footer        = footer;
-    opts.footer_count  = 3;
-    opts.action_button = AP_BTN_START;
+    opts.multi_select   = true;
+    opts.footer         = footer;
+    opts.footer_count   = 3;
+    opts.confirm_button = AP_BTN_START;
 
     ap_list_result result;
-    ap_list(&opts, &result);
+    int rc = ap_list(&opts, &result);
+
+    if (rc == AP_OK && result.action == AP_ACTION_CONFIRMED) {
+        char msg[512];
+        int off = 0;
+        off += snprintf(msg + off, sizeof(msg) - off, "Selected:");
+        bool any = false;
+        for (int i = 0; i < count; i++) {
+            if (items[i].selected) {
+                off += snprintf(msg + off, sizeof(msg) - off, "\n- %s", items[i].label);
+                any = true;
+            }
+        }
+        if (!any) snprintf(msg, sizeof(msg), "No items selected.");
+        ap_footer_item ok_foot[] = {{ .button = AP_BTN_A, .label = "OK", .is_confirm = true }};
+        ap_message_opts m = { .message = msg, .footer = ok_foot, .footer_count = 1 };
+        ap_confirm_result cr;
+        ap_confirmation(&m, &cr);
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -105,12 +126,24 @@ static void demo_reorder(void) {
 
     ap_list_opts opts = ap_list_default_opts("Reorder Items", items, count);
     opts.reorder_button = AP_BTN_X;
-    opts.action_button  = AP_BTN_START;
+    opts.confirm_button = AP_BTN_START;
     opts.footer         = footer;
     opts.footer_count   = 3;
 
     ap_list_result result;
-    ap_list(&opts, &result);
+    int rc = ap_list(&opts, &result);
+
+    if (rc == AP_OK && result.action == AP_ACTION_CONFIRMED) {
+        char msg[512];
+        int off = snprintf(msg, sizeof(msg), "Final order:");
+        for (int i = 0; i < count; i++) {
+            off += snprintf(msg + off, sizeof(msg) - off, "\n%d. %s", i + 1, items[i].label);
+        }
+        ap_footer_item ok_foot[] = {{ .button = AP_BTN_A, .label = "OK", .is_confirm = true }};
+        ap_message_opts m = { .message = msg, .footer = ok_foot, .footer_count = 1 };
+        ap_confirm_result cr;
+        ap_confirmation(&m, &cr);
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -179,24 +212,71 @@ static void demo_options_list(void) {
         .confirm_button = AP_BTN_START,
     };
 
-    ap_options_list_result result;
-    ap_options_list(&opts, &result);
+    int last_cursor = 0;
+    int last_visible = 0;
+    while (1) {
+        opts.initial_selected_index = last_cursor;
+        opts.visible_start_index = last_visible;
+
+        ap_options_list_result result;
+        int rc = ap_options_list(&opts, &result);
+        last_cursor = result.focused_index;
+        last_visible = result.visible_start_index;
+
+        if (rc == AP_OK && result.action == AP_ACTION_SELECTED && result.focused_index == 3) {
+            /* "About" was clicked — show detail screen */
+            demo_detail();
+            continue;
+        }
+        break;
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Demo: Keyboard
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void demo_keyboard(void) {
-    ap_keyboard_result result;
-    int rc = ap_keyboard("Hello", "Enter your name:", AP_KB_GENERAL, &result);
+    static const struct {
+        const char         *label;
+        const char         *prompt;
+        const char         *initial;
+        ap_keyboard_layout  layout;
+    } modes[] = {
+        { "General",  "Enter your name:",  "Hello",              AP_KB_GENERAL },
+        { "URL",      "Enter a URL:",      "https://",           AP_KB_URL     },
+        { "Numeric",  "Enter a number:",   "42",                 AP_KB_NUMERIC },
+    };
+    int mode_count = sizeof(modes) / sizeof(modes[0]);
 
-    if (rc == AP_OK) {
-        char msg[1100];
-        snprintf(msg, sizeof(msg), "You typed:\n%s", result.text);
-        ap_footer_item ok_foot[] = {{ .button = AP_BTN_A, .label = "OK", .is_confirm = true }};
-        ap_message_opts m = { .message = msg, .footer = ok_foot, .footer_count = 1 };
-        ap_confirm_result cr;
-        ap_confirmation(&m, &cr);
+    ap_list_item items[3];
+    for (int i = 0; i < mode_count; i++)
+        items[i] = (ap_list_item){ .label = modes[i].label };
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B, .label = "Back" },
+        { .button = AP_BTN_A, .label = "Open", .is_confirm = true },
+    };
+
+    ap_list_opts opts = ap_list_default_opts("Keyboard Mode", items, mode_count);
+    opts.footer       = footer;
+    opts.footer_count = 2;
+
+    ap_list_result lr;
+    int rc = ap_list(&opts, &lr);
+
+    if (rc == AP_OK && lr.selected_index >= 0 && lr.selected_index < mode_count) {
+        int idx = lr.selected_index;
+        ap_keyboard_result result;
+        rc = ap_keyboard(modes[idx].initial, modes[idx].prompt, modes[idx].layout, &result);
+
+        if (rc == AP_OK) {
+            char msg[1100];
+            snprintf(msg, sizeof(msg), "Mode: %s\nYou typed:\n%s", modes[idx].label, result.text);
+            ap_footer_item ok_foot[] = {{ .button = AP_BTN_A, .label = "OK", .is_confirm = true }};
+            ap_message_opts m = { .message = msg, .footer = ok_foot, .footer_count = 1 };
+            ap_confirm_result cr;
+            ap_confirmation(&m, &cr);
+        }
     }
 }
 

@@ -1375,7 +1375,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
             {
                 int bw = key_w * 2 + key_spacing;
                 bool sel = (cursor_row == 0 && cursor_col == r0n);
-                AP__KB_DRAW_KEY(cx, row_y, bw, key_h, "DEL", sel, special_font ? special_font : key_font);
+                AP__KB_DRAW_KEY(cx, row_y, bw, key_h, "\xe2\x86\x90", sel, special_font ? special_font : key_font); /* ← */
             }
         }
 
@@ -1406,7 +1406,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
             /* Enter */
             {
                 bool sel = (cursor_row == 2 && cursor_col == r2n);
-                AP__KB_DRAW_KEY(cx, row_y, enter_w, key_h, "RET", sel, special_font ? special_font : key_font);
+                AP__KB_DRAW_KEY(cx, row_y, enter_w, key_h, "\xe2\x86\xb5", sel, special_font ? special_font : key_font); /* ↵ */
             }
         }
 
@@ -1420,8 +1420,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
             /* Shift */
             {
                 bool sel = (cursor_row == 3 && cursor_col == 0);
-                const char *lbl = shift ? "SHIFT" : "SHIFT";
-                AP__KB_DRAW_KEY(cx, row_y, shift_w, key_h, lbl, sel, special_font ? special_font : key_font);
+                AP__KB_DRAW_KEY(cx, row_y, shift_w, key_h, "\xe2\x87\xa7", sel, special_font ? special_font : key_font); /* ⇧ */
                 cx += shift_w + key_spacing;
             }
             /* Character keys */
@@ -1735,7 +1734,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
             }
             if (has_backspace) {
                 bool sel = (cursor_row == sr && cursor_col == cnt);
-                AP__KB_DRAW_KEY2(cx, ry, bksp_w, key_h, "DEL", sel, special_font ? special_font : key_font);
+                AP__KB_DRAW_KEY2(cx, ry, bksp_w, key_h, "\xe2\x86\x90", sel, special_font ? special_font : key_font); /* ← */
             }
             ry += key_h + key_spacing;
         }
@@ -1781,7 +1780,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
             }
             {
                 bool sel = (cursor_row == asdf_row && cursor_col == rn);
-                AP__KB_DRAW_KEY2(cx, ry, enter_w, key_h, "RET", sel, special_font ? special_font : key_font);
+                AP__KB_DRAW_KEY2(cx, ry, enter_w, key_h, "\xe2\x86\xb5", sel, special_font ? special_font : key_font); /* ↵ */
             }
             ry += key_h + key_spacing;
         }
@@ -1795,7 +1794,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
             int cx = (screen_w - row_w) / 2;
             {
                 bool sel = (cursor_row == zxcv_row && cursor_col == 0);
-                AP__KB_DRAW_KEY2(cx, ry, shift_w, key_h, "SHIFT", sel, special_font ? special_font : key_font);
+                AP__KB_DRAW_KEY2(cx, ry, shift_w, key_h, "\xe2\x87\xa7", sel, special_font ? special_font : key_font); /* ⇧ */
                 cx += shift_w + key_spacing;
             }
             for (int i = 0; i < rn; i++) {
