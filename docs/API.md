@@ -314,10 +314,12 @@ Flush the entire texture cache and free all textures.
 #### `int ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t window_ms)`
 
 Register a simultaneous button chord combo.
+Returns `AP_ERROR` when `id` is NULL/empty, `buttons` is NULL, or `count` is outside `1..8`.
 
 #### `int ap_register_sequence(const char *id, ap_button *buttons, int count, uint32_t timeout_ms, bool strict)`
 
 Register an ordered button sequence combo.
+Returns `AP_ERROR` when `id` is NULL/empty, `buttons` is NULL, or `count` is outside `1..8`.
 
 #### `bool ap_poll_combo(ap_combo_event *event)`
 
@@ -417,6 +419,7 @@ Settings-style list where each row has a label and a configurable value area:
 | `AP_OPT_COLOR_PICKER` | A opens the color picker |
 
 Action buttons are explicit in `ap_options_list_opts` (`action_button`, `secondary_action_button`, `confirm_button`), and footer hints remain visual-only.
+When option storage is malformed (`options == NULL` or out-of-range `selected_option`), Apostrophe safely clamps/ignores the invalid value instead of dereferencing invalid memory.
 
 **`ap_options_list_opts`** (action/scroll fields):
 ```c
@@ -537,6 +540,8 @@ Scrollable multi-section view for displaying information. Supports:
 | `AP_SECTION_DESCRIPTION` | Wrapped text block |
 | `AP_SECTION_IMAGE` | Single image |
 | `AP_SECTION_TABLE` | Tabular data |
+
+`AP_SECTION_IMAGE` textures are loaded once when the detail screen opens and reused for each frame until the screen exits.
 ### Download Manager
 
 ```c
@@ -545,6 +550,10 @@ int ap_download_manager(ap_download *downloads, int count,
 ```
 
 Multi-threaded file downloader with per-file progress bars. Requires libcurl (compile with `-DAP_ENABLE_CURL` and link with `-lcurl`).
+
+For Apostrophe device example builds, bundled curl is enabled by default for `EXAMPLE=download` via `USE_BUNDLED_CURL=1`.
+This builds dependencies into `build/third_party/<platform>/...`, stages runtime libs in `build/<platform>/download/lib`,
+and expects pak launchers to include that directory in `LD_LIBRARY_PATH`.
 
 **Features**:
 - Thread pool with configurable concurrency (default 3)

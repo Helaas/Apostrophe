@@ -40,6 +40,7 @@
 #include <dirent.h>
 #include <signal.h>
 #include <errno.h>
+#include <sys/wait.h>
 #endif
 
 #ifdef __APPLE__
@@ -786,8 +787,13 @@ int ap_theme_load_nextui(void) {
     }
 
     char json[4096] = {0};
-    fread(json, 1, sizeof(json) - 1, fp);
+    size_t nread = fread(json, 1, sizeof(json) - 1, fp);
     fclose(fp);
+    if (nread == 0) {
+        ap_log("Theme file empty or unreadable: %s", path);
+        return AP_ERROR;
+    }
+    json[nread] = '\0';
 
     char c1_buf[32]={0}, c2_buf[32]={0}, c3_buf[32]={0}, c4_buf[32]={0};
     char c5_buf[32]={0}, c6_buf[32]={0}, bg_buf[32]={0};
@@ -1328,13 +1334,15 @@ const char *ap_button_name(ap_button btn) {
 /* ─── Combo System ───────────────────────────────────────────────────────── */
 
 int ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t window_ms) {
+    if (!id || !id[0] || !buttons) return AP_ERROR;
+    if (count < 1 || count > 8) return AP_ERROR;
     if (ap__g.combo_count >= AP_MAX_COMBOS) return AP_ERROR;
-    if (count > 8) return AP_ERROR;
 
     ap_combo *c = &ap__g.combos[ap__g.combo_count++];
+    size_t button_bytes = (size_t)count * sizeof(ap_button);
     memset(c, 0, sizeof(*c));
     strncpy(c->id, id, sizeof(c->id) - 1);
-    memcpy(c->buttons, buttons, count * sizeof(ap_button));
+    memcpy(c->buttons, buttons, button_bytes);
     c->button_count = count;
     c->window_ms = window_ms > 0 ? window_ms : 100;
     c->is_sequence = false;
@@ -1343,13 +1351,15 @@ int ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t wi
 }
 
 int ap_register_sequence(const char *id, ap_button *buttons, int count, uint32_t timeout_ms, bool strict) {
+    if (!id || !id[0] || !buttons) return AP_ERROR;
+    if (count < 1 || count > 8) return AP_ERROR;
     if (ap__g.combo_count >= AP_MAX_COMBOS) return AP_ERROR;
-    if (count > 8) return AP_ERROR;
 
     ap_combo *c = &ap__g.combos[ap__g.combo_count++];
+    size_t button_bytes = (size_t)count * sizeof(ap_button);
     memset(c, 0, sizeof(*c));
     strncpy(c->id, id, sizeof(c->id) - 1);
-    memcpy(c->buttons, buttons, count * sizeof(ap_button));
+    memcpy(c->buttons, buttons, button_bytes);
     c->button_count = count;
     c->window_ms = timeout_ms > 0 ? timeout_ms : 500;
     c->is_sequence = true;
@@ -1984,26 +1994,85 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
 /* ─── Power Button Handler ───────────────────────────────────────────────── */
 
 #if AP_PLATFORM_IS_DEVICE
-static void *ap__power_thread_func(void *arg) {
-    (void)arg;
-
-    /* Try to find the power button input device */
-    const char *input_paths[] = {
+static const char **ap__power_input_paths(void) {
+    #if defined(PLATFORM_TG5040)
+    static const char *paths[] = {
         "/dev/input/event1",
+        "/dev/input/event0",
         "/dev/input/event2",
         NULL,
     };
+    #elif defined(PLATFORM_TG5050)
+    static const char *paths[] = {
+        "/dev/input/event2",
+        "/dev/input/event1",
+        "/dev/input/event0",
+        NULL,
+    };
+    #elif defined(PLATFORM_MY355)
+    static const char *paths[] = {
+        "/dev/input/event1",
+        "/dev/input/event2",
+        "/dev/input/event0",
+        NULL,
+    };
+    #else
+    static const char *paths[] = {
+        "/dev/input/event1",
+        "/dev/input/event2",
+        "/dev/input/event0",
+        NULL,
+    };
+    #endif
+    return paths;
+}
+
+static int ap__run_power_command(const char *action, const char *command) {
+    errno = 0;
+    int rc = system(command);
+    int saved_errno = errno;
+
+    if (rc == -1) {
+        ap_log("Power: %s command launch failed: cmd='%s' errno=%d (%s)",
+               action, command, saved_errno, strerror(saved_errno));
+        return rc;
+    }
+
+    if (WIFEXITED(rc)) {
+        int exit_code = WEXITSTATUS(rc);
+        ap_log("Power: %s command exited: cmd='%s' exit=%d", action, command, exit_code);
+        return exit_code;
+    }
+
+    if (WIFSIGNALED(rc)) {
+        ap_log("Power: %s command signaled: cmd='%s' signal=%d", action, command, WTERMSIG(rc));
+        return rc;
+    }
+
+    ap_log("Power: %s command returned status=%d: cmd='%s'", action, rc, command);
+    return rc;
+}
+
+static void *ap__power_thread_func(void *arg) {
+    (void)arg;
+
+    const char **input_paths = ap__power_input_paths();
+    const char *opened_path = NULL;
 
     int fd = -1;
     for (int i = 0; input_paths[i]; i++) {
         fd = open(input_paths[i], O_RDONLY | O_NONBLOCK);
-        if (fd >= 0) break;
+        if (fd >= 0) {
+            opened_path = input_paths[i];
+            break;
+        }
     }
 
     if (fd < 0) {
         ap_log("Power handler: could not open input device");
         return NULL;
     }
+    ap_log("Power handler: listening on %s", opened_path ? opened_path : "unknown");
     ap__g.power_fd = fd;
 
     while (ap__g.power_thread_running) {
@@ -2034,22 +2103,16 @@ static void *ap__power_thread_func(void *arg) {
                 if (held_ms >= 2000) {
                     /* Long press: shutdown */
                     ap_log("Power: long press → shutdown");
-                    #if defined(PLATFORM_TG5040)
-                    system("/mnt/SDCARD/.system/tg5040/bin/shutdown.sh");
-                    #elif defined(PLATFORM_TG5050)
-                    system("/mnt/SDCARD/.system/tg5050/bin/shutdown.sh");
-                    #elif defined(PLATFORM_MY355)
-                    system("poweroff");
-                    #endif
+                    ap__run_power_command("shutdown", "/sbin/poweroff");
                 } else if (released) {
                     /* Short press: suspend */
                     ap_log("Power: short press → suspend");
                     #if defined(PLATFORM_TG5040)
-                    system("/mnt/SDCARD/.system/tg5040/bin/suspend.sh");
+                    ap__run_power_command("suspend", "/mnt/SDCARD/.system/tg5040/bin/suspend");
                     #elif defined(PLATFORM_TG5050)
-                    system("/mnt/SDCARD/.system/tg5050/bin/suspend.sh");
+                    ap__run_power_command("suspend", "/mnt/SDCARD/.system/tg5050/bin/suspend");
                     #elif defined(PLATFORM_MY355)
-                    system("echo mem > /sys/power/state");
+                    ap__run_power_command("suspend", "echo mem > /sys/power/state");
                     #endif
                 }
             }
@@ -2078,9 +2141,9 @@ void ap_set_power_handler(bool enabled) {
     } else if (!enabled && ap__g.power_thread_running) {
         ap_log("Power handler: stopping thread");
         ap__g.power_thread_running = false;
-        int fd_to_close = ap__g.power_fd;
-        ap__g.power_fd = -1;
-        if (fd_to_close >= 0) close(fd_to_close);
+        /* Thread uses non-blocking reads with a 10ms poll loop, so it will
+           notice the flag change quickly.  Let the thread close its own fd
+           to avoid racing with a concurrent read(). */
         pthread_join(ap__g.power_thread, NULL);
         ap_log("Power handler: thread stopped");
     }

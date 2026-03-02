@@ -128,13 +128,17 @@ package: all
 	@for example in $(EXAMPLES); do \
 		echo "Packaging $$example..."; \
 		for platform in tg5040 tg5050 my355; do \
-			pak_name=$$(echo "$$example" | sed 's/.*/\u&/'); \
+			pak_name=$$(printf '%s' "$$example" | awk '{print toupper(substr($$0,1,1)) substr($$0,2)}'); \
 			pak_dir="$(STAGING_DIR)/Tools/$$platform/$${pak_name}.pak"; \
 			mkdir -p "$$pak_dir"; \
 			cp -f "$(BUILD_DIR)/$$platform/$$example/$$example" "$$pak_dir/$$example" 2>/dev/null || true; \
 			cp -f "$(RES_DIR)/font.ttf" "$$pak_dir/font.ttf"; \
 			if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
 				cp -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$pak_dir/launch.sh"; \
+			fi; \
+			if [ -d "$(BUILD_DIR)/$$platform/$$example/lib" ]; then \
+				mkdir -p "$$pak_dir/lib"; \
+				cp -a "$(BUILD_DIR)/$$platform/$$example/lib/." "$$pak_dir/lib/"; \
 			fi; \
 		done; \
 		cd $(STAGING_DIR) && zip -r "$(CURDIR)/$(DIST_DIR)/$${example}.pakz" . && cd $(CURDIR); \
@@ -174,6 +178,12 @@ deploy:
 				if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
 					adb push "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$pak_dir/launch.sh"; \
 				fi; \
+				if [ -d "$(BUILD_DIR)/$$PLATFORM/$$example/lib" ]; then \
+					adb shell "mkdir -p '$$pak_dir/lib'"; \
+					adb push "$(BUILD_DIR)/$$PLATFORM/$$example/lib/." "$$pak_dir/lib/"; \
+				else \
+					adb shell "rm -rf '$$pak_dir/lib'"; \
+				fi; \
 				deployed=1; \
 			fi; \
 		done; \
@@ -184,6 +194,10 @@ deploy:
 			adb push "$(RES_DIR)/font.ttf" "$$lower_dir/font.ttf"; \
 			if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
 				adb push "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$lower_dir/launch.sh"; \
+			fi; \
+			if [ -d "$(BUILD_DIR)/$$PLATFORM/$$example/lib" ]; then \
+				adb shell "mkdir -p '$$lower_dir/lib'"; \
+				adb push "$(BUILD_DIR)/$$PLATFORM/$$example/lib/." "$$lower_dir/lib/"; \
 			fi; \
 		fi; \
 	done

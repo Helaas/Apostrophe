@@ -8,6 +8,14 @@ PAK_NAME=${PAK_NAME%.pak}
 
 cd "$PAK_DIR"
 
+if [ -d "$PAK_DIR/lib" ]; then
+    export LD_LIBRARY_PATH="$PAK_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    # Point OpenSSL/curl to bundled CA certificates for SSL verification
+    if [ -f "$PAK_DIR/lib/cacert.pem" ]; then
+        export SSL_CERT_FILE="$PAK_DIR/lib/cacert.pem"
+    fi
+fi
+
 SHARED_USERDATA_ROOT=${SHARED_USERDATA_PATH:-"${HOME:-/tmp}/.userdata/shared"}
 LOG_ROOT=${LOGS_PATH:-"$SHARED_USERDATA_ROOT/logs"}
 mkdir -p "$LOG_ROOT"

@@ -7,6 +7,8 @@
 CROSS_COMPILE ?= aarch64-nextui-linux-gnu-
 CC      := $(CROSS_COMPILE)gcc
 SYSROOT := /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr
+PLATFORM_ID := tg5050
+THIRD_PARTY_SCRIPT := /workspace/scripts/build_third_party.sh
 
 PKG_CONFIG := pkg-config
 # NOTE: SDL2_ttf.pc and SDL2_image.pc are missing from the Docker toolchain
@@ -14,20 +16,27 @@ PKG_CONFIG := pkg-config
 SDL_CFLAGS  := $(shell $(PKG_CONFIG) --cflags sdl2)
 SDL_LDFLAGS := $(shell $(PKG_CONFIG) --libs sdl2) -lSDL2_ttf -lSDL2_image
 
-# libcurl (optional — enable with CURL=1 or auto-detect)
-CURL ?= $(shell $(PKG_CONFIG) --exists libcurl 2>/dev/null && echo 1 || echo 0)
-ifeq ($(CURL),1)
-CURL_CFLAGS := $(shell $(PKG_CONFIG) --cflags libcurl) -DAP_ENABLE_CURL
-CURL_LDFLAGS := $(shell $(PKG_CONFIG) --libs libcurl)
-else
-CURL_CFLAGS :=
-CURL_LDFLAGS :=
-endif
-
 EXAMPLE   ?= hello
 BUILD_DIR ?= /workspace/build/tg5050/$(EXAMPLE)
 SRC       := /workspace/examples/$(EXAMPLE)/main.c
 DEPS      := /workspace/include/apostrophe.h /workspace/include/apostrophe_widgets.h
+USE_BUNDLED_CURL ?= $(if $(filter download,$(EXAMPLE)),1,0)
+
+CURL_CFLAGS :=
+CURL_LDFLAGS :=
+
+ifeq ($(USE_BUNDLED_CURL),1)
+CURL_PREFIX := /workspace/build/third_party/$(PLATFORM_ID)/curl/install
+OPENSSL_PREFIX := /workspace/build/third_party/$(PLATFORM_ID)/openssl/install
+CURL_STAMP  := $(CURL_PREFIX)/.stamp-curl-8.7.1
+DEPS += $(CURL_STAMP)
+CURL_CFLAGS += -I$(CURL_PREFIX)/include -DAP_ENABLE_CURL
+CURL_LDFLAGS += -Wl,--no-as-needed \
+	-L$(CURL_PREFIX)/lib -L$(OPENSSL_PREFIX)/lib \
+	-Wl,-rpath-link,$(CURL_PREFIX)/lib -Wl,-rpath-link,$(OPENSSL_PREFIX)/lib \
+	-lcurl -lssl -lcrypto -lz \
+	-Wl,--as-needed
+endif
 
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter \
 	-mcpu=cortex-a55 -mtune=cortex-a55 \
@@ -41,9 +50,19 @@ LDFLAGS := $(SDL_LDFLAGS) $(CURL_LDFLAGS) -lpthread -ldl -lm
 
 all: $(BUILD_DIR)/$(EXAMPLE)
 
+ifeq ($(USE_BUNDLED_CURL),1)
+$(CURL_STAMP): /workspace/scripts/build_third_party.sh
+	$(THIRD_PARTY_SCRIPT) ensure-curl $(PLATFORM_ID)
+endif
+
 $(BUILD_DIR)/$(EXAMPLE): $(SRC) $(DEPS)
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+	@if [ "$(USE_BUNDLED_CURL)" = "1" ]; then \
+		$(THIRD_PARTY_SCRIPT) stage-runtime-libs $(PLATFORM_ID) "$@" "$(BUILD_DIR)/lib"; \
+	else \
+		rm -rf "$(BUILD_DIR)/lib"; \
+	fi
 
 clean:
 	rm -rf $(BUILD_DIR)

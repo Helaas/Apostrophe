@@ -21,6 +21,24 @@ brew install --cask docker
 
 You need Docker installed and running. The build system automatically pulls the correct toolchain image for each platform.
 
+### Device Download Manager (Bundled curl)
+
+`ap_download_manager` on device builds uses a bundled libcurl toolchain flow.
+
+- Default behavior: `EXAMPLE=download` enables `USE_BUNDLED_CURL=1` automatically.
+- Sources are downloaded once and cached in `build/third_party/sources`.
+- Built dependencies are stored per-platform under `build/third_party/<platform>/...`.
+- Device targets automatically build OpenSSL first, then curl (TLS-enabled).
+- Runtime shared libraries are staged into `build/<platform>/download/lib` and packaged into the pak.
+
+You can force-enable it explicitly:
+
+```bash
+make tg5040-download USE_BUNDLED_CURL=1
+make tg5050-download USE_BUNDLED_CURL=1
+make my355-download USE_BUNDLED_CURL=1
+```
+
 ## Project Structure
 
 A typical Apostrophe project looks like this:
@@ -175,6 +193,11 @@ PAK_NAME=$(basename "$PAK_DIR")
 PAK_NAME=${PAK_NAME%.pak}
 
 cd "$PAK_DIR"
+
+# Optional: include pak-local shared libraries (used by bundled curl on device)
+if [ -d "$PAK_DIR/lib" ]; then
+    export LD_LIBRARY_PATH="$PAK_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 
 SHARED_USERDATA_ROOT=${SHARED_USERDATA_PATH:-"${HOME:-/tmp}/.userdata/shared"}
 LOG_ROOT=${LOGS_PATH:-"$SHARED_USERDATA_ROOT/logs"}

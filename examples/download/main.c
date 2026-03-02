@@ -85,9 +85,9 @@ static void demo_downloads(void) {
     /* libcurl not available — show informational message */
     ap_footer_item ok_foot[] = {{ .button = AP_BTN_A, .label = "OK", .is_confirm = true }};
     ap_message_opts m = {
-        .message      = "Download Manager requires libcurl.\n\n"
-                        "Rebuild with:\n  make mac CURL=1\n\n"
-                        "or install libcurl:\n  brew install curl",
+        .message      = "Download Manager is unavailable in this build.\n\n"
+                        "Enable bundled curl support and rebuild:\n"
+                        "  make <platform>-download USE_BUNDLED_CURL=1",
         .footer       = ok_foot,
         .footer_count = 1,
     };

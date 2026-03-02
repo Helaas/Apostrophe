@@ -723,6 +723,15 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
  * OPTIONS LIST Implementation
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+static int ap__options_valid_index(ap_options_item *item) {
+    if (!item || item->option_count <= 0 || !item->options) return -1;
+    if (item->selected_option < 0) item->selected_option = 0;
+    if (item->selected_option >= item->option_count) {
+        item->selected_option = item->option_count - 1;
+    }
+    return item->selected_option;
+}
+
 int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) {
     if (!opts || !result) return AP_ERROR;
     if (!opts->items || opts->item_count <= 0) return AP_ERROR;
@@ -778,20 +787,22 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
 
                 case AP_BTN_LEFT: {
                     ap_options_item *item = &opts->items[cursor];
-                    if (item->type == AP_OPT_STANDARD && item->option_count > 0) {
-                        item->selected_option--;
-                        if (item->selected_option < 0)
-                            item->selected_option = item->option_count - 1;
+                    int sel = ap__options_valid_index(item);
+                    if (item->type == AP_OPT_STANDARD && sel >= 0) {
+                        sel--;
+                        if (sel < 0) sel = item->option_count - 1;
+                        item->selected_option = sel;
                     }
                     break;
                 }
 
                 case AP_BTN_RIGHT: {
                     ap_options_item *item = &opts->items[cursor];
-                    if (item->type == AP_OPT_STANDARD && item->option_count > 0) {
-                        item->selected_option++;
-                        if (item->selected_option >= item->option_count)
-                            item->selected_option = 0;
+                    int sel = ap__options_valid_index(item);
+                    if (item->type == AP_OPT_STANDARD && sel >= 0) {
+                        sel++;
+                        if (sel >= item->option_count) sel = 0;
+                        item->selected_option = sel;
                     }
                     break;
                 }
@@ -806,15 +817,16 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                         /* Open keyboard for this item */
                         ap_keyboard_result kb_result;
                         const char *initial = "";
-                        if (item->option_count > 0 && item->options[item->selected_option].value) {
-                            initial = item->options[item->selected_option].value;
+                        int sel = ap__options_valid_index(item);
+                        if (sel >= 0 && item->options[sel].value) {
+                            initial = item->options[sel].value;
                         }
                         int kb_ret = ap_keyboard(initial, "B: Cancel", AP_KB_GENERAL, &kb_result);
                         if (kb_ret == AP_OK) {
                             /* Update the option value — caller must manage memory */
-                            if (item->option_count > 0) {
-                                item->options[item->selected_option].value = strdup(kb_result.text);
-                                item->options[item->selected_option].label = strdup(kb_result.text);
+                            if (sel >= 0) {
+                                item->options[sel].value = strdup(kb_result.text);
+                                item->options[sel].label = strdup(kb_result.text);
                             }
                         }
                     } else if (item->type == AP_OPT_COLOR_PICKER) {
@@ -824,11 +836,14 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                             /* Store color as hex string */
                             /* Caller handles this via result */
                         }
-                    } else if (item->type == AP_OPT_STANDARD && item->option_count > 0) {
+                    } else if (item->type == AP_OPT_STANDARD) {
                         /* Cycle forward on A for standard options */
-                        item->selected_option++;
-                        if (item->selected_option >= item->option_count)
-                            item->selected_option = 0;
+                        int sel = ap__options_valid_index(item);
+                        if (sel >= 0) {
+                            sel++;
+                            if (sel >= item->option_count) sel = 0;
+                            item->selected_option = sel;
+                        }
                     }
                     break;
                 }
@@ -877,9 +892,10 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
 
             const char *label = item->label ? item->label : "";
             const char *value = "";
-            if (item->option_count > 0 && item->selected_option >= 0 && item->selected_option < item->option_count) {
-                value = item->options[item->selected_option].label;
-                if (!value) value = item->options[item->selected_option].value;
+            int valid_opt = ap__options_valid_index(item);
+            if (valid_opt >= 0) {
+                value = item->options[valid_opt].label;
+                if (!value) value = item->options[valid_opt].value;
                 if (!value) value = "";
             }
 
@@ -897,7 +913,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                     available_w / 2);
 
                 /* Value on right with arrows for standard options */
-                if (item->type == AP_OPT_STANDARD && item->option_count > 1) {
+                if (item->type == AP_OPT_STANDARD && valid_opt >= 0 && item->option_count > 1) {
                     int right_x = margin + available_w - pill_pad - value_w - arrow_w * 2;
                     ap_draw_text(value_font, "<",
                         right_x,
@@ -2011,12 +2027,16 @@ typedef struct {
     void          *userdata;
     int            result;
     bool           done;
+    pthread_mutex_t mutex;
 } ap__process_thread_data;
 
 static void *ap__process_worker(void *arg) {
     ap__process_thread_data *d = (ap__process_thread_data *)arg;
-    d->result = d->fn(d->userdata);
+    int worker_result = d->fn(d->userdata);
+    pthread_mutex_lock(&d->mutex);
+    d->result = worker_result;
     d->done = true;
+    pthread_mutex_unlock(&d->mutex);
     return NULL;
 }
 
@@ -2038,9 +2058,13 @@ int ap_process_message(ap_process_opts *opts, ap_process_fn fn, void *userdata) 
         .result = 0,
         .done = false,
     };
+    if (pthread_mutex_init(&thread_data.mutex, NULL) != 0) {
+        return AP_ERROR;
+    }
 
     pthread_t worker;
     if (pthread_create(&worker, NULL, ap__process_worker, &thread_data) != 0) {
+        pthread_mutex_destroy(&thread_data.mutex);
         return AP_ERROR;
     }
 
@@ -2051,7 +2075,11 @@ int ap_process_message(ap_process_opts *opts, ap_process_fn fn, void *userdata) 
     bool running = true;
     while (running) {
         /* Check if worker is done */
-        if (thread_data.done) {
+        bool worker_done = false;
+        pthread_mutex_lock(&thread_data.mutex);
+        worker_done = thread_data.done;
+        pthread_mutex_unlock(&thread_data.mutex);
+        if (worker_done) {
             running = false;
             break;
         }
@@ -2130,8 +2158,13 @@ int ap_process_message(ap_process_opts *opts, ap_process_fn fn, void *userdata) 
 
     /* Wait for thread to finish */
     pthread_join(worker, NULL);
+    int final_result = 0;
+    pthread_mutex_lock(&thread_data.mutex);
+    final_result = thread_data.result;
+    pthread_mutex_unlock(&thread_data.mutex);
+    pthread_mutex_destroy(&thread_data.mutex);
 
-    return thread_data.result;
+    return final_result;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2156,6 +2189,34 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
     int section_gap = AP_S(24);
     int line_h = TTF_FontLineSkip(body_font);
 
+    SDL_Texture **section_images = NULL;
+    int *section_image_w = NULL;
+    int *section_image_h = NULL;
+    if (opts->section_count > 0) {
+        size_t section_count = (size_t)opts->section_count;
+        section_images = (SDL_Texture **)calloc(section_count, sizeof(*section_images));
+        section_image_w = (int *)calloc(section_count, sizeof(*section_image_w));
+        section_image_h = (int *)calloc(section_count, sizeof(*section_image_h));
+        if (!section_images || !section_image_w || !section_image_h) {
+            free(section_images);
+            free(section_image_w);
+            free(section_image_h);
+            return AP_ERROR;
+        }
+
+        for (int s = 0; s < opts->section_count; s++) {
+            ap_detail_section *sec = &opts->sections[s];
+            if (sec->type != AP_SECTION_IMAGE) continue;
+            if (!sec->image_path || !sec->image_path[0]) continue;
+
+            section_images[s] = ap_load_image(sec->image_path);
+            if (section_images[s]) {
+                section_image_w[s] = sec->image_w > 0 ? sec->image_w : AP_S(300);
+                section_image_h[s] = sec->image_h > 0 ? sec->image_h : AP_S(200);
+            }
+        }
+    }
+
     /* Calculate total content height for scrolling */
     int total_content_h = 0;
     for (int s = 0; s < opts->section_count; s++) {
@@ -2175,7 +2236,9 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                 }
                 break;
             case AP_SECTION_IMAGE:
-                total_content_h += sec->image_h > 0 ? sec->image_h : AP_S(200);
+                if (section_images && section_images[s]) {
+                    total_content_h += section_image_h[s];
+                }
                 break;
             case AP_SECTION_TABLE:
                 total_content_h += (sec->table_rows_count + 1) * (line_h + AP_S(4));
@@ -2271,12 +2334,11 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                     break;
 
                 case AP_SECTION_IMAGE: {
-                    SDL_Texture *img = ap_load_image(sec->image_path);
+                    SDL_Texture *img = (section_images) ? section_images[s] : NULL;
                     if (img) {
-                        int iw = sec->image_w > 0 ? sec->image_w : AP_S(300);
-                        int ih = sec->image_h > 0 ? sec->image_h : AP_S(200);
+                        int iw = section_image_w[s];
+                        int ih = section_image_h[s];
                         ap_draw_image(img, (screen_w - iw) / 2, draw_y, iw, ih);
-                        SDL_DestroyTexture(img);
                         draw_y += ih;
                     }
                     break;
@@ -2330,7 +2392,17 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
         SDL_Delay(AP__FRAME_DELAY);
     }
 
-    return result->action == AP_DETAIL_BACK ? AP_CANCELLED : AP_OK;
+    int rc = (result->action == AP_DETAIL_BACK) ? AP_CANCELLED : AP_OK;
+    if (section_images) {
+        for (int s = 0; s < opts->section_count; s++) {
+            if (section_images[s]) SDL_DestroyTexture(section_images[s]);
+        }
+    }
+    free(section_images);
+    free(section_image_w);
+    free(section_image_h);
+
+    return rc;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2541,6 +2613,8 @@ typedef struct {
     int               completed;      /* Finished (success + fail) */
     bool              cancel;         /* Set by UI to abort */
     pthread_mutex_t   mutex;
+    pthread_t         threads[16];    /* Joinable worker thread IDs */
+    int               thread_count;
 } ap__dl_context;
 
 /* Per-download thread data */
@@ -2548,6 +2622,14 @@ typedef struct {
     ap_download    *dl;
     ap__dl_context *ctx;
 } ap__dl_thread_data;
+
+typedef struct {
+    ap_download_status status;
+    float              progress;
+    double             speed_bps;
+    int                http_code;
+    char               error[256];
+} ap__dl_snapshot;
 
 /* libcurl progress callback */
 static int ap__dl_progress_cb(void *clientp,
@@ -2559,13 +2641,14 @@ static int ap__dl_progress_cb(void *clientp,
     /* Check cancellation */
     pthread_mutex_lock(&td->ctx->mutex);
     bool cancel = td->ctx->cancel;
+    if (!cancel) {
+        if (dltotal > 0.0) {
+            td->dl->progress = (float)(dlnow / dltotal);
+        }
+        td->dl->speed_bps = dlnow; /* Will be divided by elapsed time later */
+    }
     pthread_mutex_unlock(&td->ctx->mutex);
     if (cancel) return 1; /* Abort transfer */
-
-    if (dltotal > 0.0) {
-        td->dl->progress = (float)(dlnow / dltotal);
-    }
-    td->dl->speed_bps = dlnow; /* Will be divided by elapsed time later */
     return 0;
 }
 
@@ -2580,20 +2663,33 @@ static void *ap__dl_worker(void *arg) {
     ap__dl_thread_data *td = (ap__dl_thread_data *)arg;
     ap_download *dl = td->dl;
 
+    pthread_mutex_lock(&td->ctx->mutex);
     dl->status = AP_DL_DOWNLOADING;
     dl->progress = 0.0f;
+    dl->speed_bps = 0.0;
+    dl->http_code = 0;
+    dl->error[0] = '\0';
+    pthread_mutex_unlock(&td->ctx->mutex);
 
     FILE *fp = fopen(dl->dest_path, "wb");
     if (!fp) {
-        snprintf(dl->error, sizeof(dl->error), "Cannot open: %s", dl->dest_path);
+        char err[256];
+        snprintf(err, sizeof(err), "Cannot open: %s", dl->dest_path);
+        pthread_mutex_lock(&td->ctx->mutex);
+        snprintf(dl->error, sizeof(dl->error), "%s", err);
         dl->status = AP_DL_FAILED;
+        pthread_mutex_unlock(&td->ctx->mutex);
+        ap_log("download: %s failed: %s", dl->label ? dl->label : dl->url, err);
         goto done;
     }
 
     CURL *curl = curl_easy_init();
     if (!curl) {
+        pthread_mutex_lock(&td->ctx->mutex);
         snprintf(dl->error, sizeof(dl->error), "curl_easy_init failed");
         dl->status = AP_DL_FAILED;
+        pthread_mutex_unlock(&td->ctx->mutex);
+        ap_log("download: %s failed: curl_easy_init failed", dl->label ? dl->label : dl->url);
         fclose(fp);
         goto done;
     }
@@ -2613,6 +2709,9 @@ static void *ap__dl_worker(void *arg) {
     if (td->ctx->opts && td->ctx->opts->skip_ssl_verify) {
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    } else {
+        const char *ca = getenv("SSL_CERT_FILE");
+        if (ca) curl_easy_setopt(curl, CURLOPT_CAINFO, ca);
     }
 
     /* Custom headers */
@@ -2628,32 +2727,49 @@ static void *ap__dl_worker(void *arg) {
 
     long http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-    dl->http_code = (int)http_code;
 
     /* Get final speed */
     double speed = 0;
     curl_easy_getinfo(curl, CURLINFO_SPEED_DOWNLOAD, &speed);
+    pthread_mutex_lock(&td->ctx->mutex);
+    dl->http_code = (int)http_code;
     dl->speed_bps = speed;
+    pthread_mutex_unlock(&td->ctx->mutex);
 
     if (hdrs) curl_slist_free_all(hdrs);
     curl_easy_cleanup(curl);
     fclose(fp);
 
     if (res == CURLE_ABORTED_BY_CALLBACK) {
+        pthread_mutex_lock(&td->ctx->mutex);
         dl->status = AP_DL_FAILED;
         snprintf(dl->error, sizeof(dl->error), "Cancelled");
+        pthread_mutex_unlock(&td->ctx->mutex);
         remove(dl->dest_path);
+        ap_log("download: %s cancelled", dl->label ? dl->label : dl->url);
     } else if (res != CURLE_OK) {
+        const char *curl_err = curl_easy_strerror(res);
+        pthread_mutex_lock(&td->ctx->mutex);
         dl->status = AP_DL_FAILED;
-        snprintf(dl->error, sizeof(dl->error), "%s", curl_easy_strerror(res));
+        snprintf(dl->error, sizeof(dl->error), "%s", curl_err);
+        pthread_mutex_unlock(&td->ctx->mutex);
         remove(dl->dest_path);
+        ap_log("download: %s failed: %s", dl->label ? dl->label : dl->url, curl_err);
     } else if (http_code >= 400) {
+        char err[256];
+        snprintf(err, sizeof(err), "HTTP %d", (int)http_code);
+        pthread_mutex_lock(&td->ctx->mutex);
         dl->status = AP_DL_FAILED;
-        snprintf(dl->error, sizeof(dl->error), "HTTP %d", (int)http_code);
+        snprintf(dl->error, sizeof(dl->error), "%s", err);
+        pthread_mutex_unlock(&td->ctx->mutex);
         remove(dl->dest_path);
+        ap_log("download: %s failed: %s", dl->label ? dl->label : dl->url, err);
     } else {
+        pthread_mutex_lock(&td->ctx->mutex);
         dl->status = AP_DL_COMPLETE;
         dl->progress = 1.0f;
+        dl->error[0] = '\0';
+        pthread_mutex_unlock(&td->ctx->mutex);
     }
 
 done:
@@ -2692,8 +2808,10 @@ static void ap__dl_dispatch(ap__dl_context *ctx) {
             dl->status = AP_DL_FAILED;
             snprintf(dl->error, sizeof(dl->error), "Thread creation failed");
             ctx->completed++;
+        } else if (ctx->thread_count < 16) {
+            ctx->threads[ctx->thread_count++] = thr;
         } else {
-            pthread_detach(thr);
+            pthread_detach(thr); /* fallback: more threads than slots */
         }
     }
     pthread_mutex_unlock(&ctx->mutex);
@@ -2735,6 +2853,13 @@ int ap_download_manager(ap_download *downloads, int count,
     ctx.opts = opts;
     pthread_mutex_init(&ctx.mutex, NULL);
 
+    ap__dl_snapshot *snapshots = (ap__dl_snapshot *)calloc((size_t)count, sizeof(*snapshots));
+    if (!snapshots) {
+        pthread_mutex_destroy(&ctx.mutex);
+        curl_global_cleanup();
+        return AP_ERROR;
+    }
+
     ap_theme *theme = ap_get_theme();
     int screen_w = ap_get_screen_width();
     int screen_h = ap_get_screen_height();
@@ -2768,21 +2893,31 @@ int ap_download_manager(ap_download *downloads, int count,
         ap__dl_dispatch(&ctx);
 
         /* Check overall status */
+        int active_count = 0;
         pthread_mutex_lock(&ctx.mutex);
         int done_count = ctx.completed;
         bool cancelled = ctx.cancel;
+        active_count = ctx.active;
+        for (int i = 0; i < count; i++) {
+            snapshots[i].status = downloads[i].status;
+            snapshots[i].progress = downloads[i].progress;
+            snapshots[i].speed_bps = downloads[i].speed_bps;
+            snapshots[i].http_code = downloads[i].http_code;
+            strncpy(snapshots[i].error, downloads[i].error, sizeof(snapshots[i].error) - 1);
+            snapshots[i].error[sizeof(snapshots[i].error) - 1] = '\0';
+        }
         pthread_mutex_unlock(&ctx.mutex);
 
         int comp_ok = 0, comp_fail = 0;
         for (int i = 0; i < count; i++) {
-            if (downloads[i].status == AP_DL_COMPLETE) comp_ok++;
-            if (downloads[i].status == AP_DL_FAILED) comp_fail++;
+            if (snapshots[i].status == AP_DL_COMPLETE) comp_ok++;
+            if (snapshots[i].status == AP_DL_FAILED) comp_fail++;
         }
         result->completed = comp_ok;
         result->failed = comp_fail;
 
         if (done_count >= count) all_done = true;
-        if (cancelled && ctx.active <= 0) { all_done = true; result->cancelled = true; }
+        if (cancelled && active_count <= 0) { all_done = true; result->cancelled = true; }
 
         /* Input */
         ap_input_event ev;
@@ -2818,7 +2953,7 @@ int ap_download_manager(ap_download *downloads, int count,
         /* Auto-scroll to show active downloads */
         if (!all_done) {
             for (int i = count - 1; i >= 0; i--) {
-                if (downloads[i].status == AP_DL_DOWNLOADING) {
+                if (snapshots[i].status == AP_DL_DOWNLOADING) {
                     if (i >= scroll + max_visible) scroll = i - max_visible + 1;
                     if (i < scroll) scroll = i;
                     break;
@@ -2845,13 +2980,14 @@ int ap_download_manager(ap_download *downloads, int count,
         for (int vi = 0; vi < max_visible && vi + scroll < count; vi++) {
             int i = vi + scroll;
             ap_download *dl = &downloads[i];
+            ap__dl_snapshot *dls = &snapshots[i];
             int iy = content_y + vi * (item_h + item_gap);
 
             /* Label */
             const char *lbl = dl->label ? dl->label : dl->url;
             ap_color lbl_color = theme->text;
-            if (dl->status == AP_DL_COMPLETE) lbl_color = (ap_color){100, 255, 100, 255};
-            if (dl->status == AP_DL_FAILED) lbl_color = (ap_color){255, 100, 100, 255};
+            if (dls->status == AP_DL_COMPLETE) lbl_color = (ap_color){100, 255, 100, 255};
+            if (dls->status == AP_DL_FAILED) lbl_color = (ap_color){255, 100, 100, 255};
 
             if (label_font) {
                 ap_draw_text_clipped(label_font, lbl, bar_x, iy, lbl_color, bar_w);
@@ -2862,12 +2998,12 @@ int ap_download_manager(ap_download *downloads, int count,
             ap_color bar_bg = {40, 40, 50, 255};
             ap_draw_rounded_rect(bar_x, bar_y, bar_w, bar_h, bar_r, bar_bg);
 
-            if (dl->progress > 0.001f) {
-                int fill_w = (int)(dl->progress * bar_w);
+            if (dls->progress > 0.001f) {
+                int fill_w = (int)(dls->progress * bar_w);
                 if (fill_w < bar_h) fill_w = bar_h; /* Minimum for rounding */
                 ap_color fill_c;
-                if (dl->status == AP_DL_COMPLETE) fill_c = (ap_color){80, 200, 80, 255};
-                else if (dl->status == AP_DL_FAILED) fill_c = (ap_color){200, 80, 80, 255};
+                if (dls->status == AP_DL_COMPLETE) fill_c = (ap_color){80, 200, 80, 255};
+                else if (dls->status == AP_DL_FAILED) fill_c = (ap_color){200, 80, 80, 255};
                 else fill_c = theme->highlight;
                 ap_draw_rounded_rect(bar_x, bar_y, fill_w, bar_h, bar_r, fill_c);
             }
@@ -2876,15 +3012,15 @@ int ap_download_manager(ap_download *downloads, int count,
             if (show_speed && speed_font) {
                 int sy = bar_y + bar_h + AP_S(2);
                 char speed_buf[64];
-                if (dl->status == AP_DL_DOWNLOADING) {
-                    ap__dl_format_speed(dl->speed_bps, speed_buf, sizeof(speed_buf));
+                if (dls->status == AP_DL_DOWNLOADING) {
+                    ap__dl_format_speed(dls->speed_bps, speed_buf, sizeof(speed_buf));
                     char pct_buf[80];
-                    snprintf(pct_buf, sizeof(pct_buf), "%.0f%% — %s", dl->progress * 100.0f, speed_buf);
+                    snprintf(pct_buf, sizeof(pct_buf), "%.0f%% — %s", dls->progress * 100.0f, speed_buf);
                     ap_draw_text(speed_font, pct_buf, bar_x, sy, theme->hint);
-                } else if (dl->status == AP_DL_COMPLETE) {
+                } else if (dls->status == AP_DL_COMPLETE) {
                     ap_draw_text(speed_font, "Complete", bar_x, sy, (ap_color){100,255,100,255});
-                } else if (dl->status == AP_DL_FAILED) {
-                    ap_draw_text_clipped(speed_font, dl->error, bar_x, sy,
+                } else if (dls->status == AP_DL_FAILED) {
+                    ap_draw_text_clipped(speed_font, dls->error, bar_x, sy,
                         (ap_color){255,100,100,255}, bar_w);
                 } else {
                     ap_draw_text(speed_font, "Pending...", bar_x, sy, theme->hint);
@@ -2915,8 +3051,11 @@ int ap_download_manager(ap_download *downloads, int count,
     }
 
 dm_exit:
+    for (int i = 0; i < ctx.thread_count; i++)
+        pthread_join(ctx.threads[i], NULL);
     pthread_mutex_destroy(&ctx.mutex);
     curl_global_cleanup();
+    free(snapshots);
 
     if (result->cancelled) return AP_CANCELLED;
     if (result->failed > 0 && result->completed == 0) return AP_ERROR;

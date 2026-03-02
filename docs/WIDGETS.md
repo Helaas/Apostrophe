@@ -78,6 +78,7 @@ Settings-style list with per-row option values.
 | `AP_OPT_COLOR_PICKER` | A opens color picker |
 
 Footer hints are visual-only; configure behavior with `action_button`, `secondary_action_button`, and `confirm_button`.
+If an item has invalid option storage (`options == NULL` or an out-of-range `selected_option`), the widget clamps/ignores it safely.
 
 **Usage**:
 ```c
@@ -279,6 +280,8 @@ Scrollable multi-section information view.
 
 **Section types**: Info (key-value), Description (text), Image, Table
 
+Image sections are loaded once per detail-screen session and reused every frame for better performance.
+
 ---
 
 ## Color Picker (`ap_color_picker`)
@@ -338,6 +341,11 @@ ap_show_help_overlay("Navigate with D-Pad.\nPress A to select.\nPress B to go ba
 ## Download Manager (`ap_download_manager`)
 
 Multi-threaded file downloader with per-file progress bars. Requires libcurl.
+
+Device builds use a bundled curl flow (`USE_BUNDLED_CURL=1`), which caches sources in
+`build/third_party/sources`, builds per-platform artifacts under `build/third_party/<platform>/...`,
+and stages pak runtime libs into `build/<platform>/download/lib`. Ensure the pak launcher prepends
+`$PAK_DIR/lib` to `LD_LIBRARY_PATH`.
 
 ```
 ┌───────────────────────────────────────┐
