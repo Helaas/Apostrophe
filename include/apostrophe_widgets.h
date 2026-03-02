@@ -335,7 +335,7 @@ static void ap__draw_title(const char *title) {
     if (!font) return;
 
     int margin = AP_S(30);   /* Gabagool: Margins.Left(20) + 10 = 30 */
-    int title_y = AP_S(10);  /* Match NextUI PADDING */
+    int title_y = 0;
     ap_draw_text(font, title, margin, title_y, ap_get_theme()->text);
 }
 
@@ -346,7 +346,7 @@ static void ap__draw_title_clipped(const char *title, int status_bar_w) {
     if (!font) return;
 
     int margin = AP_S(30);
-    int title_y = AP_S(10);  /* Match NextUI PADDING */
+    int title_y = 0;
     int max_w = ap_get_screen_width() - margin * 2 - status_bar_w;
     ap_draw_text_clipped(font, title, margin, title_y, ap_get_theme()->text, max_w);
 }

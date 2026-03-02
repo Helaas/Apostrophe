@@ -41,8 +41,8 @@ CURL_ARCHIVE="curl-${CURL_VERSION}.tar.xz"
 CURL_URL="https://curl.se/download/${CURL_ARCHIVE}"
 CURL_SHA256="6fea2aac6a4610fbd0400afb0bcddbe7258a64c63f1f68e5855ebc0c659710cd"
 
-CACERT_URL="https://curl.se/ca/cacert-2025-02-25.pem"
-CACERT_FILE="cacert-2025-02-25.pem"
+CACERT_URL="https://curl.se/ca/cacert-2025-12-02.pem"
+CACERT_FILE="cacert-2025-12-02.pem"
 CACERT_SHA256="f1407d974c5ed87d544bd931a278232e13925177e239fca370619aba63c757b4"
 
 OPENSSL_VERSION="3.3.2"
