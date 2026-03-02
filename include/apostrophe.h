@@ -313,6 +313,10 @@ typedef struct {
     SDL_Texture  *status_assets;
     int           status_asset_scale;  /* 1–4, matches loaded spritesheet */
 
+    /* Integer device scale matching NextUI's FIXED_SCALE (for pixel-perfect bars) */
+    int           device_scale;   /* typically 2 (handheld) or 3 (brick) */
+    int           device_padding; /* NextUI's PADDING constant (unscaled) */
+
     /* Power button handling */
     bool          power_handler_enabled;
     #if AP_PLATFORM_IS_DEVICE
@@ -331,6 +335,15 @@ typedef struct {
 
 /* Scale a design-space value to screen space */
 #define AP_S(base) ((int)((base) * ap__g.scale_factor))
+
+/* Scale using integer device scale (matches NextUI's SCALE1 macro for bar sizing) */
+#define AP_DS(base) ((base) * ap__g.device_scale)
+
+/* NextUI bar layout constants (all unscaled, multiply by device_scale) */
+#define AP__PILL_SIZE       30  /* Height of status/footer pill */
+#define AP__BUTTON_SIZE     20  /* Button circle size inside footer */
+#define AP__BUTTON_MARGIN    5  /* Margin between pill edge and button / inter-element gap */
+#define AP__BUTTON_PADDING  12  /* Padding between pill edge and content */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public API — Lifecycle
@@ -1833,34 +1846,41 @@ void ap_cache_clear(void) {
 /* ─── Footer & Status Bar ────────────────────────────────────────────────── */
 
 int ap_get_footer_height(void) {
-    return AP_S(80);
+    /* padding + pill_size, matching NextUI: SCALE1(PADDING + PILL_SIZE) */
+    return AP_DS(ap__g.device_padding + AP__PILL_SIZE);
 }
 
 void ap_draw_footer(ap_footer_item *items, int count) {
     if (!items || count <= 0) return;
 
-    /* Match Gabagool v2 footer sizing: base 60px outer pill, SmallFont (34px),
-     * 20px bottom padding between pill and screen edge. */
+    /* Match NextUI GFX_blitButtonGroup layout:
+     * outer pill = PILL_SIZE high, inner buttons = BUTTON_SIZE high,
+     * inset by BUTTON_MARGIN, positioned PADDING from screen edges. */
     TTF_Font *font = ap_get_font(AP_FONT_SMALL);
     if (!font) return;
 
-    int margin     = AP_S(20);                         /* screen-edge margin */
-    int outer_h    = AP_S(60);                         /* outer pill height */
-    int inner_marg = AP_S(6);                          /* inset from outer → inner */
-    int inner_h    = outer_h - inner_marg * 2;         /* inner button pill height */
-    int pill_y     = ap__g.screen_h - AP_S(20) - outer_h; /* 20px gap from bottom */
-    int pad_after_btn = AP_S(10);                      /* gap after inner pill before label */
-    int item_gap   = AP_S(20);                         /* gap between items inside outer pill */
-    int outer_pad  = AP_S(10);                         /* padding at start/end of outer pill */
+    int padding    = AP_DS(ap__g.device_padding);      /* screen-edge padding (NextUI PADDING) */
+    int outer_h    = AP_DS(AP__PILL_SIZE);              /* outer pill height */
+    int btn_margin = AP_DS(AP__BUTTON_MARGIN);          /* inset from outer → inner + inter-element */
+    int inner_h    = AP_DS(AP__BUTTON_SIZE);             /* inner button pill height */
+    int pill_y     = ap__g.screen_h - AP_DS(ap__g.device_padding + AP__PILL_SIZE); /* NextUI: screen_h - SCALE1(PADDING + PILL_SIZE) */
+    int pad_after_btn = btn_margin;                     /* gap after inner pill before label */
+    int item_gap   = btn_margin;                        /* gap between items */
+    int outer_pad  = btn_margin;                        /* padding at start/end of outer pill */
     int font_h     = TTF_FontHeight(font);
 
     /* ── Helper: measure total inner width for a group of items ── */
-    /* Each item: [inner_pill] + pad_after_btn + label_w, separated by item_gap */
+    /* Matches NextUI GFX_getButtonWidth: single-char → BUTTON_SIZE circle,
+       multi-char → BUTTON_SIZE/2 + text_width pill. Then + BUTTON_MARGIN + hint_text + BUTTON_MARGIN. */
     #define AP__FOOTER_ITEM_W(btn_name, label) \
         ({ int _bw = ap_measure_text(font, btn_name); \
-           int _bpw = (_bw < inner_h - AP_S(4)) ? inner_h : _bw + AP_S(12); \
+           int _btn_w; \
+           if (strlen(btn_name) == 1) \
+               _btn_w = AP_DS(AP__BUTTON_SIZE); \
+           else \
+               _btn_w = AP_DS(AP__BUTTON_SIZE) / 2 + _bw; \
            int _lw = ap_measure_text(font, label); \
-           _bpw + pad_after_btn + _lw; })
+           _btn_w + btn_margin + _lw + btn_margin; })
 
     /* ── Left group (non-confirm items) ── */
     int left_count = 0;
@@ -1873,32 +1893,37 @@ void ap_draw_footer(ap_footer_item *items, int count) {
     }
 
     if (left_count > 0) {
-        int outer_w = outer_pad * 2 + left_total_inner;
-        ap_draw_pill(margin, pill_y, outer_w, outer_h, ap__g.theme.accent);
+        int outer_w = outer_pad + left_total_inner + outer_pad;
+        ap_draw_pill(padding, pill_y, outer_w, outer_h, ap__g.theme.accent);
 
-        int cx = margin + outer_pad;
+        int cx = padding + outer_pad;
+        int btn_y = pill_y + btn_margin; /* buttons inset by BUTTON_MARGIN from pill top */
         for (int i = 0; i < count; i++) {
             if (items[i].is_confirm) continue;
 
             const char *btn_name = ap_button_name(items[i].button);
             int btn_tw = ap_measure_text(font, btn_name);
-            int btn_pill_w = (btn_tw < inner_h - AP_S(4)) ? inner_h : btn_tw + AP_S(12);
-            int btn_pill_y = pill_y + inner_marg;
+            int btn_pill_w;
+            if (strlen(btn_name) == 1) {
+                btn_pill_w = AP_DS(AP__BUTTON_SIZE);
+            } else {
+                btn_pill_w = AP_DS(AP__BUTTON_SIZE) / 2 + btn_tw;
+            }
 
             /* Inner button pill */
-            ap_draw_pill(cx, btn_pill_y, btn_pill_w, inner_h, ap__g.theme.highlight);
+            ap_draw_pill(cx, btn_y, btn_pill_w, inner_h, ap__g.theme.highlight);
             ap_draw_text(font, btn_name,
                          cx + (btn_pill_w - btn_tw) / 2,
-                         btn_pill_y + (inner_h - font_h) / 2,
+                         btn_y + (inner_h - font_h) / 2,
                          ap__g.theme.button_label);
 
-            /* Label text */
-            cx += btn_pill_w + pad_after_btn;
+            /* Label text — vertically centered against BUTTON_SIZE */
+            cx += btn_pill_w + btn_margin;
             ap_draw_text(font, items[i].label,
                          cx,
-                         pill_y + (outer_h - font_h) / 2,
+                         btn_y + (inner_h - font_h) / 2,
                          ap__g.theme.hint);
-            cx += ap_measure_text(font, items[i].label) + item_gap;
+            cx += ap_measure_text(font, items[i].label) + btn_margin;
         }
     }
 
@@ -1913,33 +1938,38 @@ void ap_draw_footer(ap_footer_item *items, int count) {
     }
 
     if (right_count > 0) {
-        int outer_w = outer_pad * 2 + right_total_inner;
-        int rx = ap__g.screen_w - margin - outer_w;
+        int outer_w = outer_pad + right_total_inner + outer_pad;
+        int rx = ap__g.screen_w - padding - outer_w;
         ap_draw_pill(rx, pill_y, outer_w, outer_h, ap__g.theme.accent);
 
         int cx = rx + outer_pad;
+        int btn_y = pill_y + btn_margin;
         for (int i = 0; i < count; i++) {
             if (!items[i].is_confirm) continue;
 
             const char *btn_name = ap_button_name(items[i].button);
             int btn_tw = ap_measure_text(font, btn_name);
-            int btn_pill_w = (btn_tw < inner_h - AP_S(4)) ? inner_h : btn_tw + AP_S(12);
-            int btn_pill_y = pill_y + inner_marg;
+            int btn_pill_w;
+            if (strlen(btn_name) == 1) {
+                btn_pill_w = AP_DS(AP__BUTTON_SIZE);
+            } else {
+                btn_pill_w = AP_DS(AP__BUTTON_SIZE) / 2 + btn_tw;
+            }
 
             /* Inner button pill */
-            ap_draw_pill(cx, btn_pill_y, btn_pill_w, inner_h, ap__g.theme.highlight);
+            ap_draw_pill(cx, btn_y, btn_pill_w, inner_h, ap__g.theme.highlight);
             ap_draw_text(font, btn_name,
                          cx + (btn_pill_w - btn_tw) / 2,
-                         btn_pill_y + (inner_h - font_h) / 2,
+                         btn_y + (inner_h - font_h) / 2,
                          ap__g.theme.button_label);
 
             /* Label text */
-            cx += btn_pill_w + pad_after_btn;
+            cx += btn_pill_w + btn_margin;
             ap_draw_text(font, items[i].label,
                          cx,
-                         pill_y + (outer_h - font_h) / 2,
+                         btn_y + (inner_h - font_h) / 2,
                          ap__g.theme.hint);
-            cx += ap_measure_text(font, items[i].label) + item_gap;
+            cx += ap_measure_text(font, items[i].label) + btn_margin;
         }
     }
 
@@ -1947,7 +1977,8 @@ void ap_draw_footer(ap_footer_item *items, int count) {
 }
 
 int ap_get_status_bar_height(void) {
-    return AP_S(50);
+    /* padding + pill_size, matching NextUI */
+    return AP_DS(ap__g.device_padding + AP__PILL_SIZE);
 }
 
 /* ─── Device status helpers ──────────────────────────────────────────────── */
@@ -1984,40 +2015,39 @@ static bool ap__is_charging(void) {
     return (charger == 1) && (ttf > 0);
 }
 
-/* Returns wifi signal strength: 0=off, 1=low, 2=med, 3=high */
+/* Returns wifi signal strength: 0=off, 1=low, 2=med, 3=high
+   Uses 'iw dev wlan0 link' matching NextUI's PLAT_connectionStrength(). */
 static int ap__get_wifi_strength(void) {
     /* Check if interface is up */
     FILE *f = fopen("/sys/class/net/wlan0/operstate", "r");
     if (!f) return 0;
     char state[16] = {0};
     if (fgets(state, sizeof(state), f)) {
-        /* trim newline */
         char *nl = strchr(state, '\n');
         if (nl) *nl = '\0';
     }
     fclose(f);
     if (strcmp(state, "up") != 0) return 0;
 
-    /* Read signal level from /proc/net/wireless */
-    f = fopen("/proc/net/wireless", "r");
+    /* Read signal level via iw (same method as NextUI) */
+    f = popen("iw dev wlan0 link 2>/dev/null", "r");
     if (!f) return 1; /* up but can't read signal */
     char line[256];
-    int rssi = -100;
-    /* Skip two header lines */
-    if (fgets(line, sizeof(line), f) && fgets(line, sizeof(line), f)) {
-        if (fgets(line, sizeof(line), f)) {
-            /* Format: "wlan0: SSSS   LLLL.  NNNN. ..." where LLLL is link quality */
-            float level = 0;
-            if (sscanf(line, "%*s %*d %*f %f", &level) == 1) {
-                rssi = (int)level;
-            }
+    int rssi = 0; /* 0 = connected but no signal reading (disconnected icon) */
+    while (fgets(line, sizeof(line), f)) {
+        /* Look for "signal: -XX dBm" */
+        int val;
+        if (sscanf(line, " signal: %d dBm", &val) == 1) {
+            rssi = val;
+            break;
         }
     }
-    fclose(f);
+    pclose(f);
 
     /* Map to strength levels matching NextUI thresholds */
-    if (rssi >= -60) return 3; /* high */
-    if (rssi >= -70) return 2; /* med */
+    if (rssi == 0)    return 0; /* connected, no signal reading → disconnected/off icon */
+    if (rssi >= -60)  return 3; /* high */
+    if (rssi >= -70)  return 2; /* med */
     return 1; /* low */
 }
 #endif /* AP_PLATFORM_IS_DEVICE */
@@ -2049,44 +2079,52 @@ static void ap__blit_status_icon(int src_x, int src_y, int src_w, int src_h,
 /* Helper: icon pixel size using the loaded spritesheet scale (1:1, no GPU upscaling) */
 #define AP__ICON_PX(logical) ((logical) * ap__g.status_asset_scale)
 
-/* Calculate the rendered pixel width of the status bar pill */
+/* Calculate the rendered pixel width of the status bar pill.
+   Layout matches NextUI's GFX_blitHardwareGroup: BUTTON_MARGIN between each element. */
 int ap_get_status_bar_width(ap_status_bar_opts *opts) {
     if (!opts) return 0;
 
-    TTF_Font *font = ap_get_font(AP_FONT_SMALL);
-    if (!font) return 0;
-
-    int s = ap__g.status_asset_scale ? ap__g.status_asset_scale : 2;
-    int outer_pad = AP_S(20);
-    int icon_spacing = AP_S(8);
-    int total_w = 0;
-
-    /* Battery icon (native spritesheet size) */
-    if (opts->show_battery) {
-        total_w += AP__BATTERY_W * s;
-    }
+    int s = ap__g.device_scale ? ap__g.device_scale : 2;
+    int margin = AP_DS(AP__BUTTON_MARGIN); /* inter-element spacing */
+    int total_w = margin; /* left inset inside pill */
+    bool has_any = false;
 
     /* Wifi icon */
     if (opts->show_wifi) {
-        if (total_w > 0) total_w += icon_spacing;
-        total_w += AP__WIFI_SIZE * s;
+        total_w += AP__WIFI_SIZE * s + margin;
+        has_any = true;
+    }
+
+    /* Battery icon */
+    if (opts->show_battery) {
+        total_w += AP__BATTERY_W * s + margin;
+        has_any = true;
     }
 
     /* Clock */
     if (opts->show_clock) {
-        char clock_text[32];
-        time_t now = time(NULL);
-        struct tm *t = localtime(&now);
-        if (opts->use_24h)
-            strftime(clock_text, sizeof(clock_text), "%H:%M", t);
-        else
-            strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
-        if (total_w > 0) total_w += icon_spacing;
-        total_w += ap_measure_text(font, clock_text);
+        TTF_Font *font = ap_get_font(AP_FONT_SMALL);
+        if (font) {
+            char clock_text[32];
+            time_t now = time(NULL);
+            struct tm *t = localtime(&now);
+            if (opts->use_24h)
+                strftime(clock_text, sizeof(clock_text), "%H:%M", t);
+            else
+                strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
+            total_w += ap_measure_text(font, clock_text) + margin;
+            has_any = true;
+        }
     }
 
-    if (total_w <= 0) return 0;
-    return total_w + outer_pad * 2;
+    if (!has_any) return 0;
+
+    /* If only battery and no other elements, return square pill */
+    if (!opts->show_wifi && !opts->show_clock) {
+        return AP_DS(AP__PILL_SIZE);
+    }
+
+    return total_w;
 }
 
 void ap_draw_status_bar(ap_status_bar_opts *opts) {
@@ -2095,47 +2133,84 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     TTF_Font *font = ap_get_font(AP_FONT_SMALL);
     if (!font) return;
 
-    int s = ap__g.status_asset_scale ? ap__g.status_asset_scale : 2;
-    int outer_pad = AP_S(20);
-    int inner_pad_y = AP_S(6);
-    int icon_spacing = AP_S(8);
-    int margin = AP_S(20);
-    int font_h = TTF_FontHeight(font);
+    int s = ap__g.device_scale ? ap__g.device_scale : 2;
+    int padding = AP_DS(ap__g.device_padding); /* outer UI padding */
+    int margin = AP_DS(AP__BUTTON_MARGIN);     /* inter-element gap inside pill */
 
     int pill_w = ap_get_status_bar_width(opts);
     if (pill_w <= 0) return;
 
-    int pill_h = font_h + inner_pad_y * 2;
-    int pill_y = 0;
-    int pill_x = ap__g.screen_w - margin - pill_w;
-    int pill_r = pill_h / 2;
+    int pill_h = AP_DS(AP__PILL_SIZE);
+    int pill_y = padding;
+    int pill_x = ap__g.screen_w - padding - pill_w;
 
-    ap_draw_rounded_rect(pill_x, pill_y, pill_w, pill_h, pill_r, ap__g.theme.accent);
+    ap_draw_pill(pill_x, pill_y, pill_w, pill_h, ap__g.theme.accent);
 
-    /* Render elements right-to-left inside the pill */
-    int cx = pill_x + pill_w - outer_pad;
-
-    /* Clock (rightmost) */
-    if (opts->show_clock) {
-        char clock_text[32];
-        time_t now = time(NULL);
-        struct tm *t = localtime(&now);
-        if (opts->use_24h)
-            strftime(clock_text, sizeof(clock_text), "%H:%M", t);
-        else
-            strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
-        int tw = ap_measure_text(font, clock_text);
-        cx -= tw;
-        ap_draw_text(font, clock_text, cx, pill_y + inner_pad_y, ap__g.theme.hint);
-        cx -= icon_spacing;
+    /* Battery-only mode: center battery in a square pill */
+    if (!opts->show_wifi && !opts->show_clock && opts->show_battery) {
+        int iw = AP__BATTERY_W * s;
+        int ih = AP__BATTERY_H * s;
+        int bx = pill_x + (pill_h - (iw + s)) / 2; /* NextUI centers with +FIXED_SCALE fudge */
+        int by = pill_y + (pill_h - ih) / 2;
+        #if AP_PLATFORM_IS_DEVICE
+        if (ap__g.status_assets) {
+            int bat = ap__get_battery_percent();
+            bool charging = ap__is_charging();
+            if (charging) {
+                ap__blit_status_icon(47, 51, AP__BATTERY_W, AP__BATTERY_H,
+                                     bx, by, iw, ih, ap__g.theme.hint);
+                int bolt_w = 12 * s, bolt_h = 6 * s;
+                ap__blit_status_icon(81, 41, 12, 6,
+                                     bx + 3 * s, by + 2 * s,
+                                     bolt_w, bolt_h, ap__g.theme.hint);
+            } else {
+                bool low = (bat >= 0 && bat <= 10);
+                ap__blit_status_icon(low ? 66 : 47, 51, AP__BATTERY_W, AP__BATTERY_H,
+                                     bx, by, iw, ih, ap__g.theme.hint);
+            }
+        } else
+        #endif
+        {
+            ap_draw_text(font, "BAT", pill_x + margin, pill_y + (pill_h - TTF_FontHeight(font)) / 2, ap__g.theme.hint);
+        }
+        return;
     }
 
-    /* Battery icon (1:1 from spritesheet — no GPU upscaling) */
+    /* Multi-element mode: render left-to-right matching NextUI order */
+    int cx = pill_x + margin;
+    int cy = pill_y;
+
+    /* Wifi icon */
+    if (opts->show_wifi) {
+        int iw = AP__WIFI_SIZE * s;
+        int ih = AP__WIFI_SIZE * s;
+        int iy = cy + (pill_h - ih) / 2;
+
+        #if AP_PLATFORM_IS_DEVICE
+        if (ap__g.status_assets) {
+            int strength = ap__get_wifi_strength();
+            int sx;
+            switch (strength) {
+                case 3:  sx = 1;  break;  /* high */
+                case 2:  sx = 14; break;  /* med */
+                case 1:  sx = 27; break;  /* low */
+                default: sx = 40; break;  /* off/disconnected */
+            }
+            ap__blit_status_icon(sx, 104, AP__WIFI_SIZE, AP__WIFI_SIZE,
+                                 cx, iy, iw, ih, ap__g.theme.hint);
+        } else
+        #endif
+        {
+            ap_draw_text(font, "WiFi", cx, cy + (pill_h - TTF_FontHeight(font)) / 2, ap__g.theme.hint);
+        }
+        cx += iw + margin;
+    }
+
+    /* Battery icon */
     if (opts->show_battery) {
         int iw = AP__BATTERY_W * s;
         int ih = AP__BATTERY_H * s;
-        cx -= iw;
-        int iy = pill_y + (pill_h - ih) / 2;
+        int iy = cy + (pill_h - ih) / 2;
 
         #if AP_PLATFORM_IS_DEVICE
         if (ap__g.status_assets) {
@@ -2143,7 +2218,6 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
             bool charging = ap__is_charging();
             bool show_pct = ap__read_nextui_setting_int("batteryperc", 0) && !charging;
             if (charging) {
-                /* Charging: battery outline + bolt overlay */
                 ap__blit_status_icon(47, 51, AP__BATTERY_W, AP__BATTERY_H,
                                      cx, iy, iw, ih, ap__g.theme.hint);
                 int bolt_w = 12 * s, bolt_h = 6 * s;
@@ -2152,15 +2226,12 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
                                      bolt_w, bolt_h, ap__g.theme.hint);
             } else {
                 bool low = (bat >= 0 && bat <= 10);
-                int sx = low ? 66 : 47;
-                ap__blit_status_icon(sx, 51, AP__BATTERY_W, AP__BATTERY_H,
+                ap__blit_status_icon(low ? 66 : 47, 51, AP__BATTERY_W, AP__BATTERY_H,
                                      cx, iy, iw, ih, ap__g.theme.hint);
             }
-            /* Battery percentage text centered inside the icon (NextUI style) */
             if (show_pct && bat >= 0) {
                 char pct_text[8];
                 snprintf(pct_text, sizeof(pct_text), "%d", bat);
-                /* Use smallest available font for micro text inside icon */
                 TTF_Font *micro = ap_get_font(AP_FONT_MICRO);
                 if (!micro) micro = font;
                 int tw = ap_measure_text(micro, pct_text);
@@ -2172,37 +2243,23 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
         } else
         #endif
         {
-            /* Text fallback */
-            ap_draw_text(font, "BAT", cx, pill_y + inner_pad_y, ap__g.theme.hint);
+            ap_draw_text(font, "BAT", cx, cy + (pill_h - TTF_FontHeight(font)) / 2, ap__g.theme.hint);
         }
-        cx -= icon_spacing;
+        cx += iw + margin;
     }
 
-    /* Wifi icon (1:1 from spritesheet) */
-    if (opts->show_wifi) {
-        int iw = AP__WIFI_SIZE * s;
-        int ih = AP__WIFI_SIZE * s;
-        cx -= iw;
-        int iy = pill_y + (pill_h - ih) / 2;
-
-        #if AP_PLATFORM_IS_DEVICE
-        if (ap__g.status_assets) {
-            int strength = ap__get_wifi_strength();
-            /* Spritesheet x offsets at 1x: high=1, med=14, low=27, off=40 */
-            int sx;
-            switch (strength) {
-                case 3:  sx = 1;  break;
-                case 2:  sx = 14; break;
-                case 1:  sx = 27; break;
-                default: sx = 40; break;
-            }
-            ap__blit_status_icon(sx, 104, AP__WIFI_SIZE, AP__WIFI_SIZE,
-                                 cx, iy, iw, ih, ap__g.theme.hint);
-        } else
-        #endif
-        {
-            ap_draw_text(font, "WiFi", cx, pill_y + inner_pad_y, ap__g.theme.hint);
-        }
+    /* Clock (rightmost) */
+    if (opts->show_clock) {
+        char clock_text[32];
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        if (opts->use_24h)
+            strftime(clock_text, sizeof(clock_text), "%H:%M", t);
+        else
+            strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
+        int th = TTF_FontHeight(font);
+        int ty = cy + (pill_h - th) / 2;
+        ap_draw_text(font, clock_text, cx, ty, ap__g.theme.hint);
     }
 }
 
@@ -2600,15 +2657,39 @@ int ap_init(ap_config *cfg) {
         }
     }
 
+    /* Compute device scale & padding matching NextUI's FIXED_SCALE / PADDING */
+    #if AP_PLATFORM_IS_DEVICE
+    {
+        #if defined(PLATFORM_TG5040)
+        /* TG5040 brick: 1024×768 scale=3 padding=5, handheld: 1280×720 scale=2 padding=10 */
+        if (ap__g.screen_w <= 1024 && ap__g.screen_h >= 768) {
+            ap__g.device_scale = 3;
+            ap__g.device_padding = 5;
+        } else {
+            ap__g.device_scale = 2;
+            ap__g.device_padding = 10;
+        }
+        #elif defined(PLATFORM_TG5050)
+        ap__g.device_scale = 2;
+        ap__g.device_padding = 10;
+        #elif defined(PLATFORM_MY355)
+        ap__g.device_scale = 2;
+        ap__g.device_padding = 10;
+        #else
+        ap__g.device_scale = 2;
+        ap__g.device_padding = 10;
+        #endif
+    }
+    #else
+    /* Non-device (macOS / desktop): use scale 2 as reasonable default */
+    ap__g.device_scale = 2;
+    ap__g.device_padding = 10;
+    #endif
+
     /* Load NextUI asset spritesheet for status bar icons */
     #if AP_PLATFORM_IS_DEVICE
     {
-        /* Use NextUI's FIXED_SCALE for correct spritesheet density (1:1 blit) */
-        #if defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050) || defined(PLATFORM_MY355)
-        int scale = 2;
-        #else
-        int scale = 2;
-        #endif
+        int scale = ap__g.device_scale;
         char asset_path[256];
         snprintf(asset_path, sizeof(asset_path),
                  "/mnt/SDCARD/.system/res/assets@%dx.png", scale);
