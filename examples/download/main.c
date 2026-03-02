@@ -15,13 +15,11 @@
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Status bar configuration (shared across screens)
  * ═══════════════════════════════════════════════════════════════════════════ */
-static const char *status_icons[] = { "\xe2\x87\xa9", "\xe2\x98\x85" }; /* ⇩ ★ */
-
 static ap_status_bar_opts status_bar = {
-    .show_clock  = true,
-    .use_24h     = true,
-    .icons       = status_icons,
-    .icon_count  = 2,
+    .show_clock   = true,
+    .use_24h      = true,
+    .show_battery = true,
+    .show_wifi    = true,
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════

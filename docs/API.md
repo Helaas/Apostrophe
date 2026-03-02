@@ -126,7 +126,7 @@ typedef struct {
     const char *bg_image_path;     // Background image, NULL = none
     const char *log_path;          // Log file, NULL = stderr only
     const char *primary_color_hex; // Override accent "#RRGGBB"
-    bool        show_background;   // Render bg image behind UI
+    bool        disable_background; // Set true to skip bg.png
     bool        is_nextui;         // Load theme from nextval.elf
 } ap_config;
 ```
@@ -154,12 +154,14 @@ typedef struct {
 
 ```c
 typedef struct {
-    bool         show_clock;
-    bool         use_24h;
-    const char **icons;
-    int          icon_count;
+    bool show_clock;
+    bool use_24h;
+    bool show_battery;   // Show battery icon (device only)
+    bool show_wifi;      // Show wifi icon (device only)
 } ap_status_bar_opts;
 ```
+
+On device builds, battery and wifi icons are rendered from the NextUI asset spritesheet (`/mnt/SDCARD/.system/res/assets@Nx.png`). On macOS dev builds, these fields are silently ignored when the spritesheet is not available.
 
 ### Lifecycle
 
@@ -279,7 +281,7 @@ Get the footer height in pixels (scaled).
 
 #### `void ap_draw_status_bar(ap_status_bar_opts *opts)`
 
-Draw a status bar at the top of the screen (clock, icons). Uses SmallFont (34px base), renders icons right-to-left in a pill at `pillY=20` (unscaled).
+Draw a status bar pill at the top-right of the screen. Shows clock, battery, and wifi status. On device, battery and wifi icons come from the NextUI asset spritesheet. Position matches NextUI's `PADDING` offset (10px unscaled).
 
 #### `int ap_get_status_bar_width(ap_status_bar_opts *opts)`
 

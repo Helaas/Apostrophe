@@ -205,8 +205,8 @@ typedef struct {
 typedef struct {
     bool         show_clock;
     bool         use_24h;
-    const char **icons;       /* Unicode icon strings (e.g., Material Design) */
-    int          icon_count;
+    bool         show_battery;  /* Show battery icon from device sysfs */
+    bool         show_wifi;     /* Show wifi icon from device sysfs */
 } ap_status_bar_opts;
 
 /* Texture cache entry */
@@ -247,7 +247,7 @@ typedef struct {
     const char *bg_image_path;    /* Background image path, NULL = none */
     const char *log_path;         /* Log file path, NULL = stderr only */
     const char *primary_color_hex;/* Override accent color "#RRGGBB", NULL = theme default */
-    bool        show_background;  /* Render background image behind UI */
+    bool        disable_background;  /* Set true to skip bg.png rendering */
     bool        is_nextui;        /* Load theme from NextUI's nextval.elf */
 } ap_config;
 
@@ -308,6 +308,10 @@ typedef struct {
 
     /* Logging */
     FILE         *log_file;
+
+    /* Status bar assets (NextUI spritesheet) */
+    SDL_Texture  *status_assets;
+    int           status_asset_scale;  /* 1–4, matches loaded spritesheet */
 
     /* Power button handling */
     bool          power_handler_enabled;
@@ -1905,21 +1909,121 @@ int ap_get_status_bar_height(void) {
     return AP_S(50);
 }
 
-/* Calculate the rendered pixel width of the status bar pill (for title width reduction) */
+/* ─── Device status helpers ──────────────────────────────────────────────── */
+
+#if AP_PLATFORM_IS_DEVICE
+static int ap__read_sysfs_int(const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    int val = -1;
+    if (fscanf(f, "%d", &val) != 1) val = -1;
+    fclose(f);
+    return val;
+}
+
+static int ap__get_battery_percent(void) {
+    int cap;
+    #if defined(PLATFORM_MY355)
+    cap = ap__read_sysfs_int("/sys/class/power_supply/battery/capacity");
+    #else /* tg5040, tg5050 */
+    cap = ap__read_sysfs_int("/sys/class/power_supply/axp2202-battery/capacity");
+    #endif
+    return (cap >= 0 && cap <= 100) ? cap : -1;
+}
+
+static bool ap__is_charging(void) {
+    int charger, ttf;
+    #if defined(PLATFORM_MY355)
+    charger = ap__read_sysfs_int("/sys/class/power_supply/ac/online");
+    ttf     = ap__read_sysfs_int("/sys/class/power_supply/battery/time_to_full_now");
+    #else
+    charger = ap__read_sysfs_int("/sys/class/power_supply/axp2202-usb/online");
+    ttf     = ap__read_sysfs_int("/sys/class/power_supply/axp2202-battery/time_to_full_now");
+    #endif
+    return (charger == 1) && (ttf > 0);
+}
+
+/* Returns wifi signal strength: 0=off, 1=low, 2=med, 3=high */
+static int ap__get_wifi_strength(void) {
+    /* Check if interface is up */
+    FILE *f = fopen("/sys/class/net/wlan0/operstate", "r");
+    if (!f) return 0;
+    char state[16] = {0};
+    if (fgets(state, sizeof(state), f)) {
+        /* trim newline */
+        char *nl = strchr(state, '\n');
+        if (nl) *nl = '\0';
+    }
+    fclose(f);
+    if (strcmp(state, "up") != 0) return 0;
+
+    /* Read signal level from /proc/net/wireless */
+    f = fopen("/proc/net/wireless", "r");
+    if (!f) return 1; /* up but can't read signal */
+    char line[256];
+    int rssi = -100;
+    /* Skip two header lines */
+    if (fgets(line, sizeof(line), f) && fgets(line, sizeof(line), f)) {
+        if (fgets(line, sizeof(line), f)) {
+            /* Format: "wlan0: SSSS   LLLL.  NNNN. ..." where LLLL is link quality */
+            float level = 0;
+            if (sscanf(line, "%*s %*d %*f %f", &level) == 1) {
+                rssi = (int)level;
+            }
+        }
+    }
+    fclose(f);
+
+    /* Map to strength levels matching NextUI thresholds */
+    if (rssi >= -60) return 3; /* high */
+    if (rssi >= -70) return 2; /* med */
+    return 1; /* low */
+}
+#endif /* AP_PLATFORM_IS_DEVICE */
+
+/* ─── Status bar icon blitting ───────────────────────────────────────────── */
+
+/* Blit a colored icon from the NextUI asset spritesheet.
+   src_x/y/w/h are at 1x scale; they are multiplied by status_asset_scale. */
+static void ap__blit_status_icon(int src_x, int src_y, int src_w, int src_h,
+                                  int dst_x, int dst_y, int dst_w, int dst_h,
+                                  ap_color tint) {
+    if (!ap__g.status_assets) return;
+    int s = ap__g.status_asset_scale;
+    SDL_Rect src = { src_x * s, src_y * s, src_w * s, src_h * s };
+    SDL_Rect dst = { dst_x, dst_y, dst_w, dst_h };
+    SDL_SetTextureColorMod(ap__g.status_assets, tint.r, tint.g, tint.b);
+    SDL_SetTextureAlphaMod(ap__g.status_assets, tint.a);
+    SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &src, &dst);
+}
+
+/* ─── Status bar ─────────────────────────────────────────────────────────── */
+
+/* Icon sizes at 1x (from NextUI spritesheet) */
+#define AP__BATTERY_W  17
+#define AP__BATTERY_H  10
+#define AP__WIFI_SIZE  12
+
+/* Calculate the rendered pixel width of the status bar pill */
 int ap_get_status_bar_width(ap_status_bar_opts *opts) {
     if (!opts) return 0;
 
     TTF_Font *font = ap_get_font(AP_FONT_SMALL);
     if (!font) return 0;
 
-    int outer_pad = AP_S(20);   /* padding inside pill at sides */
+    int outer_pad = AP_S(20);
     int icon_spacing = AP_S(8);
     int total_w = 0;
 
-    /* Icons */
-    for (int i = 0; i < opts->icon_count && opts->icons; i++) {
-        if (i > 0) total_w += icon_spacing;
-        total_w += ap_measure_text(font, opts->icons[i]);
+    /* Battery icon */
+    if (opts->show_battery) {
+        total_w += AP_S(AP__BATTERY_W);
+    }
+
+    /* Wifi icon */
+    if (opts->show_wifi) {
+        if (total_w > 0) total_w += icon_spacing;
+        total_w += AP_S(AP__WIFI_SIZE);
     }
 
     /* Clock */
@@ -1936,36 +2040,33 @@ int ap_get_status_bar_width(ap_status_bar_opts *opts) {
     }
 
     if (total_w <= 0) return 0;
-    return total_w + outer_pad * 2;  /* pill width */
+    return total_w + outer_pad * 2;
 }
 
 void ap_draw_status_bar(ap_status_bar_opts *opts) {
     if (!opts) return;
 
-    /* Match Gabagool: SmallFont (34px base), accent pill, hint text,
-     * positioned at Y=20 (aligning with title), right-aligned. */
     TTF_Font *font = ap_get_font(AP_FONT_SMALL);
     if (!font) return;
 
-    int outer_pad = AP_S(20);      /* Gabagool outerPadding */
-    int inner_pad_y = AP_S(6);     /* Gabagool innerPaddingY */
-    int icon_spacing = AP_S(8);    /* Gabagool iconSpacing */
+    int outer_pad = AP_S(20);
+    int inner_pad_y = AP_S(6);
+    int icon_spacing = AP_S(8);
     int margin = AP_S(20);
     int font_h = TTF_FontHeight(font);
 
-    /* Calculate pill width so we know its position */
     int pill_w = ap_get_status_bar_width(opts);
     if (pill_w <= 0) return;
 
     int pill_h = font_h + inner_pad_y * 2;
-    int pill_y = AP_S(0);   /* Flush to top, matching title */
+    int pill_y = AP_S(10);  /* Match NextUI PADDING */
     int pill_x = ap__g.screen_w - margin - pill_w;
     int pill_r = pill_h / 2;
 
     ap_draw_rounded_rect(pill_x, pill_y, pill_w, pill_h, pill_r, ap__g.theme.accent);
 
-    /* Render each element right-to-left inside the pill */
-    int cx = pill_x + pill_w - outer_pad;  /* start from right */
+    /* Render elements right-to-left inside the pill */
+    int cx = pill_x + pill_w - outer_pad;
 
     /* Clock (rightmost) */
     if (opts->show_clock) {
@@ -1982,12 +2083,54 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
         cx -= icon_spacing;
     }
 
-    /* Icons (right-to-left, from last to first) */
-    for (int i = opts->icon_count - 1; i >= 0 && opts->icons; i--) {
-        int tw = ap_measure_text(font, opts->icons[i]);
-        cx -= tw;
-        ap_draw_text(font, opts->icons[i], cx, pill_y + inner_pad_y, ap__g.theme.hint);
-        if (i > 0) cx -= icon_spacing;
+    /* Battery icon */
+    if (opts->show_battery) {
+        int iw = AP_S(AP__BATTERY_W);
+        int ih = AP_S(AP__BATTERY_H);
+        cx -= iw;
+        int iy = pill_y + (pill_h - ih) / 2;
+
+        #if AP_PLATFORM_IS_DEVICE
+        if (ap__g.status_assets) {
+            int bat = ap__get_battery_percent();
+            bool low = (bat >= 0 && bat <= 10);
+            int sx = low ? 66 : 47;
+            ap__blit_status_icon(sx, 51, AP__BATTERY_W, AP__BATTERY_H,
+                                 cx, iy, iw, ih, ap__g.theme.hint);
+        } else
+        #endif
+        {
+            /* Text fallback */
+            ap_draw_text(font, "BAT", cx, pill_y + inner_pad_y, ap__g.theme.hint);
+        }
+        cx -= icon_spacing;
+    }
+
+    /* Wifi icon */
+    if (opts->show_wifi) {
+        int iw = AP_S(AP__WIFI_SIZE);
+        int ih = AP_S(AP__WIFI_SIZE);
+        cx -= iw;
+        int iy = pill_y + (pill_h - ih) / 2;
+
+        #if AP_PLATFORM_IS_DEVICE
+        if (ap__g.status_assets) {
+            int strength = ap__get_wifi_strength();
+            /* Spritesheet x offsets at 1x: high=1, med=14, low=27, off=40 */
+            int sx;
+            switch (strength) {
+                case 3:  sx = 1;  break;
+                case 2:  sx = 14; break;
+                case 1:  sx = 27; break;
+                default: sx = 40; break;
+            }
+            ap__blit_status_icon(sx, 104, AP__WIFI_SIZE, AP__WIFI_SIZE,
+                                 cx, iy, iw, ih, ap__g.theme.hint);
+        } else
+        #endif
+        {
+            ap_draw_text(font, "WiFi", cx, pill_y + inner_pad_y, ap__g.theme.hint);
+        }
     }
 }
 
@@ -2356,11 +2499,10 @@ int ap_init(ap_config *cfg) {
         return AP_ERROR;
     }
 
-    /* Load background image if specified */
-    if (cfg && cfg->show_background) {
-        const char *bg_path = cfg->bg_image_path;
+    /* Load background image (on by default unless disabled) */
+    if (!cfg || !cfg->disable_background) {
+        const char *bg_path = (cfg && cfg->bg_image_path) ? cfg->bg_image_path : NULL;
         if (!bg_path || !bg_path[0]) {
-            /* Try NextUI default background */
             #if AP_PLATFORM_IS_DEVICE
             bg_path = "/mnt/SDCARD/bg.png";
             #else
@@ -2378,6 +2520,28 @@ int ap_init(ap_config *cfg) {
             }
         }
     }
+
+    /* Load NextUI asset spritesheet for status bar icons */
+    #if AP_PLATFORM_IS_DEVICE
+    {
+        int scale = (int)(ap__g.scale_factor + 0.5f);
+        if (scale < 1) scale = 1;
+        if (scale > 4) scale = 4;
+        char asset_path[256];
+        snprintf(asset_path, sizeof(asset_path),
+                 "/mnt/SDCARD/.system/res/assets@%dx.png", scale);
+        SDL_Surface *surf = IMG_Load(asset_path);
+        if (surf) {
+            ap__g.status_assets = SDL_CreateTextureFromSurface(ap__g.renderer, surf);
+            ap__g.status_asset_scale = scale;
+            SDL_SetTextureBlendMode(ap__g.status_assets, SDL_BLENDMODE_BLEND);
+            SDL_FreeSurface(surf);
+            ap_log("Loaded status assets: %s", asset_path);
+        } else {
+            ap_log("Warning: could not load status assets: %s", asset_path);
+        }
+    }
+    #endif
 
     /* Start power handler on device if NextUI mode */
     if (cfg && cfg->is_nextui) {
@@ -2405,6 +2569,12 @@ void ap_quit(void) {
     if (ap__g.bg_texture) {
         SDL_DestroyTexture(ap__g.bg_texture);
         ap__g.bg_texture = NULL;
+    }
+
+    /* Destroy status assets */
+    if (ap__g.status_assets) {
+        SDL_DestroyTexture(ap__g.status_assets);
+        ap__g.status_assets = NULL;
     }
 
     /* Close fonts */

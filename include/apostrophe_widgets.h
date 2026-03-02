@@ -335,7 +335,7 @@ static void ap__draw_title(const char *title) {
     if (!font) return;
 
     int margin = AP_S(30);   /* Gabagool: Margins.Left(20) + 10 = 30 */
-    int title_y = AP_S(0);   /* Flush to top of screen */
+    int title_y = AP_S(10);  /* Match NextUI PADDING */
     ap_draw_text(font, title, margin, title_y, ap_get_theme()->text);
 }
 
@@ -346,7 +346,7 @@ static void ap__draw_title_clipped(const char *title, int status_bar_w) {
     if (!font) return;
 
     int margin = AP_S(30);
-    int title_y = AP_S(0);
+    int title_y = AP_S(10);  /* Match NextUI PADDING */
     int max_w = ap_get_screen_width() - margin * 2 - status_bar_w;
     ap_draw_text_clipped(font, title, margin, title_y, ap_get_theme()->text, max_w);
 }
@@ -621,10 +621,8 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                     int cb_size = AP_S(20);
                     ap_color cb_color = theme->highlighted_text;
                     if (opts->items[idx].selected) {
-                        ap_draw_rect(cb_x, cb_y, cb_size, cb_size, cb_color);
-                        /* Check mark ─ simple "X" shape */
-                        ap_color check = theme->highlight;
-                        ap_draw_text(item_font, "✓", cb_x + AP_S(2), cb_y - AP_S(2), check);
+                        ap_draw_rect(cb_x, cb_y, cb_size, cb_size, theme->accent);
+                        ap_draw_text(item_font, "✓", cb_x + AP_S(2), cb_y - AP_S(2), theme->highlighted_text);
                     } else {
                         /* Empty box */
                         SDL_SetRenderDrawColor(ap_get_renderer(), cb_color.r, cb_color.g, cb_color.b, cb_color.a);
