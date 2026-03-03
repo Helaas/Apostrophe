@@ -1322,12 +1322,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
         ap_draw_background();
 
         /* Text input field */
-        ap_color input_bg = {50, 50, 60, 255};
-        ap_color input_border = {200, 200, 200, 255};
-        ap_draw_rounded_rect(input_x, input_y, input_w, input_h, AP_S(8), input_bg);
-        /* Border — draw slightly larger rounded rect behind */
-        ap_draw_rounded_rect(input_x - 1, input_y - 1, input_w + 2, input_h + 2, AP_S(8), input_border);
-        ap_draw_rounded_rect(input_x, input_y, input_w, input_h, AP_S(8), input_bg);
+        ap_draw_rounded_rect(input_x, input_y, input_w, input_h, AP_S(8), theme->highlight);
 
         {
             int ty = input_y + (input_h - TTF_FontHeight(text_font)) / 2;
@@ -1344,8 +1339,8 @@ int ap_keyboard(const char *initial_text, const char *help_text,
         }
 
         /* ── Key rendering ── */
-        ap_color key_bg_normal  = {50, 50, 60, 255};
-        ap_color key_bg_sel     = {100, 100, 240, 255};
+        ap_color key_bg_normal  = theme->accent;
+        ap_color key_bg_sel     = theme->highlight;
         ap_color key_fg_normal  = theme->hint;
         ap_color key_fg_sel     = theme->highlighted_text;
 
@@ -1679,9 +1674,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
         ap_draw_background();
 
         /* Input field */
-        ap_color url_input_bg = {50, 50, 60, 255};
-        ap_draw_rounded_rect(input_x - 1, input_y - 1, input_w + 2, input_h + 2, AP_S(8), (ap_color){200,200,200,255});
-        ap_draw_rounded_rect(input_x, input_y, input_w, input_h, AP_S(8), url_input_bg);
+        ap_draw_rounded_rect(input_x, input_y, input_w, input_h, AP_S(8), theme->highlight);
         {
             int ty = input_y + (input_h - TTF_FontHeight(text_font)) / 2;
             int tx = input_x + AP_S(16);
@@ -1695,8 +1688,8 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
             }
         }
 
-        ap_color key_bg_normal = {50, 50, 60, 255};
-        ap_color key_bg_sel    = {100, 100, 240, 255};
+        ap_color key_bg_normal = theme->accent;
+        ap_color key_bg_sel    = theme->highlight;
         ap_color key_fg_normal = theme->hint;
         ap_color key_fg_sel    = theme->highlighted_text;
 

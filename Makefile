@@ -217,53 +217,57 @@ package: all
 
 deploy:
 	@echo "Detecting platform..."
-	@PLATFORM=$$(adb shell ' \
-		if [ -f /tmp/minui_platform ]; then \
-			cat /tmp/minui_platform; \
-		elif [ -d /mnt/SDCARD/Tools/tg5040 ]; then \
-			echo tg5040; \
-		elif [ -d /mnt/SDCARD/Tools/tg5050 ]; then \
-			echo tg5050; \
-		elif [ -d /mnt/SDCARD/Tools/my355 ]; then \
-			echo my355; \
-		fi' 2>/dev/null | tr -d '\r\n'); \
-	if [ -z "$$PLATFORM" ]; then \
-		echo "Error: Could not detect platform. Is device connected via adb?"; \
+	@SERIAL=$$(adb devices | awk 'NR>1 && $$2=="device" {print $$1; exit}'); \
+	if [ -z "$$SERIAL" ]; then \
+		echo "Error: No online adb device found."; \
 		exit 1; \
 	fi; \
+	ADB="adb -s $$SERIAL"; \
+	FINGERPRINT=$$($$ADB shell ' \
+		cat /proc/device-tree/compatible 2>/dev/null; \
+		echo; \
+		cat /proc/device-tree/model 2>/dev/null; \
+		echo; \
+		uname -a 2>/dev/null' 2>/dev/null | tr '\000' '\n' | tr -d '\r'); \
+	case "$$FINGERPRINT" in \
+		*rk3566*|*miyoo-355*) PLATFORM=my355 ;; \
+		*allwinner,a523*|*sun55iw3*) PLATFORM=tg5050 ;; \
+		*allwinner,a133*|*sun50iw*) PLATFORM=tg5040 ;; \
+		*allwinner*) \
+			if printf '%s' "$$FINGERPRINT" | grep -qi 'a523'; then \
+				PLATFORM=tg5050; \
+			else \
+				PLATFORM=tg5040; \
+			fi \
+			;; \
+		*) \
+			echo "Error: Could not detect a supported platform from adb fingerprint."; \
+			echo "  Serial: $$SERIAL"; \
+			echo "  Fingerprint snippet: $$(printf '%s' "$$FINGERPRINT" | head -c 240)"; \
+			echo "Please report this fingerprint and add a mapping in Makefile deploy detection."; \
+			exit 1; \
+			;; \
+	esac; \
+	if [ -z "$$PLATFORM" ]; then \
+		echo "Error: Platform detection failed for adb serial $$SERIAL."; \
+		exit 1; \
+	fi; \
+	echo "Detected adb serial: $$SERIAL"; \
 	echo "Detected platform: $$PLATFORM"; \
 	for example in $(EXAMPLES); do \
 		upper_name=$$(printf '%s' "$$example" | awk '{print toupper(substr($$0,1,1)) substr($$0,2)}'); \
-		lower_dir="/mnt/SDCARD/Tools/$$PLATFORM/u$${example}.pak"; \
-		upper_dir="/mnt/SDCARD/Tools/$$PLATFORM/$${upper_name}.pak"; \
-		deployed=0; \
-		for pak_dir in "$$lower_dir" "$$upper_dir"; do \
-			if adb shell "[ -d '$$pak_dir' ]" >/dev/null 2>&1; then \
-				echo "Deploying $$example to $$pak_dir..."; \
-				adb push "$(BUILD_DIR)/$$PLATFORM/$$example/$$example" "$$pak_dir/$$example"; \
-				if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
-					adb push "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$pak_dir/launch.sh"; \
-				fi; \
-				if [ -d "$(BUILD_DIR)/$$PLATFORM/$$example/lib" ]; then \
-					adb shell "mkdir -p '$$pak_dir/lib'"; \
-					adb push "$(BUILD_DIR)/$$PLATFORM/$$example/lib/." "$$pak_dir/lib/"; \
-				else \
-					adb shell "rm -rf '$$pak_dir/lib'"; \
-				fi; \
-				deployed=1; \
-			fi; \
-		done; \
-		if [ "$$deployed" -eq 0 ]; then \
-			echo "No pak folder found for $$example; creating $$lower_dir"; \
-			adb shell "mkdir -p '$$lower_dir'"; \
-			adb push "$(BUILD_DIR)/$$PLATFORM/$$example/$$example" "$$lower_dir/$$example"; \
-			if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
-				adb push "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$lower_dir/launch.sh"; \
-			fi; \
-			if [ -d "$(BUILD_DIR)/$$PLATFORM/$$example/lib" ]; then \
-				adb shell "mkdir -p '$$lower_dir/lib'"; \
-				adb push "$(BUILD_DIR)/$$PLATFORM/$$example/lib/." "$$lower_dir/lib/"; \
-			fi; \
+		pak_dir="/mnt/SDCARD/Tools/$$PLATFORM/$${upper_name}.pak"; \
+		echo "Deploying $$example to $$pak_dir..."; \
+		$$ADB shell "mkdir -p '$$pak_dir'"; \
+		$$ADB push "$(BUILD_DIR)/$$PLATFORM/$$example/$$example" "$$pak_dir/$$example"; \
+		if [ -f "$(EXAMPLES_DIR)/$$example/pak/launch.sh" ]; then \
+			$$ADB push "$(EXAMPLES_DIR)/$$example/pak/launch.sh" "$$pak_dir/launch.sh"; \
+		fi; \
+		if [ -d "$(BUILD_DIR)/$$PLATFORM/$$example/lib" ]; then \
+			$$ADB shell "mkdir -p '$$pak_dir/lib'"; \
+			$$ADB push "$(BUILD_DIR)/$$PLATFORM/$$example/lib/." "$$pak_dir/lib/"; \
+		else \
+			$$ADB shell "rm -rf '$$pak_dir/lib'"; \
 		fi; \
 	done
 	@echo "Deploy complete."

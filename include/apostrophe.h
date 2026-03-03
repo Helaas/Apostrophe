@@ -774,24 +774,25 @@ static bool ap__json_copy_string(const char *json, const char *key, char *out, s
 
 int ap_theme_load_nextui(void) {
 #if AP_PLATFORM_IS_DEVICE
-    /* Look for nextval.elf in the system path */
-    const char *nextval_paths[] = {
-    #if defined(PLATFORM_TG5040)
-        "/mnt/SDCARD/.system/tg5040/bin/nextval.elf",
-    #elif defined(PLATFORM_TG5050)
-        "/mnt/SDCARD/.system/tg5050/bin/nextval.elf",
-    #elif defined(PLATFORM_MY355)
-        "/mnt/SDCARD/.system/my355/bin/nextval.elf",
-    #endif
-        NULL,
-    };
-
+    /* Look for nextval.elf — prefer SYSTEM_PATH env var, fall back to hardcoded path */
     const char *nextval_path = NULL;
-    for (int i = 0; nextval_paths[i]; i++) {
-        if (access(nextval_paths[i], X_OK) == 0) {
-            nextval_path = nextval_paths[i];
-            break;
-        }
+    char nextval_env_buf[256] = {0};
+    const char *system_path_env = getenv("SYSTEM_PATH");
+    if (system_path_env && system_path_env[0]) {
+        snprintf(nextval_env_buf, sizeof(nextval_env_buf), "%s/bin/nextval.elf", system_path_env);
+        if (access(nextval_env_buf, X_OK) == 0) nextval_path = nextval_env_buf;
+    }
+    if (!nextval_path) {
+    #if defined(PLATFORM_TG5040)
+        if (access("/mnt/SDCARD/.system/tg5040/bin/nextval.elf", X_OK) == 0)
+            nextval_path = "/mnt/SDCARD/.system/tg5040/bin/nextval.elf";
+    #elif defined(PLATFORM_TG5050)
+        if (access("/mnt/SDCARD/.system/tg5050/bin/nextval.elf", X_OK) == 0)
+            nextval_path = "/mnt/SDCARD/.system/tg5050/bin/nextval.elf";
+    #elif defined(PLATFORM_MY355)
+        if (access("/mnt/SDCARD/.system/my355/bin/nextval.elf", X_OK) == 0)
+            nextval_path = "/mnt/SDCARD/.system/my355/bin/nextval.elf";
+    #endif
     }
 
     if (!nextval_path) {
@@ -911,7 +912,11 @@ static void ap__compute_scale_factor(void) {
 /* Read an integer setting from NextUI's minuisettings.txt.
    Returns the value, or default_val if key is not found or file is missing. */
 static int ap__read_nextui_setting_int(const char *key, int default_val) {
-    FILE *f = fopen("/mnt/SDCARD/.userdata/shared/minuisettings.txt", "r");
+    const char *shared = getenv("SHARED_USERDATA_PATH");
+    if (!shared || !shared[0]) shared = "/mnt/SDCARD/.userdata/shared";
+    char settings_path[256];
+    snprintf(settings_path, sizeof(settings_path), "%s/minuisettings.txt", shared);
+    FILE *f = fopen(settings_path, "r");
     if (!f) return default_val;
     char line[256];
     size_t klen = strlen(key);
@@ -952,8 +957,12 @@ static int ap__load_fonts(const char *user_font_path) {
     if (!font_path) {
         static char nextui_font_buf[256];
         int font_id = ap__read_nextui_setting_int("font", 1);
-        snprintf(nextui_font_buf, sizeof(nextui_font_buf),
-                 "/mnt/SDCARD/.system/res/font%d.ttf", font_id);
+        {
+            const char *sdcard = getenv("SDCARD_PATH");
+            if (!sdcard || !sdcard[0]) sdcard = "/mnt/SDCARD";
+            snprintf(nextui_font_buf, sizeof(nextui_font_buf),
+                     "%s/.system/res/font%d.ttf", sdcard, font_id);
+        }
         if (access(nextui_font_buf, R_OK) == 0) {
             font_path = nextui_font_buf;
         }
@@ -1908,7 +1917,6 @@ void ap_draw_footer(ap_footer_item *items, int count) {
     int btn_margin = AP_DS(AP__BUTTON_MARGIN);          /* inset from outer → inner + inter-element */
     int inner_h    = AP_DS(AP__BUTTON_SIZE);             /* inner button pill height */
     int pill_y     = ap__g.screen_h - AP_DS(ap__g.device_padding + AP__PILL_SIZE); /* NextUI: screen_h - SCALE1(PADDING + PILL_SIZE) */
-    int pad_after_btn = btn_margin;                     /* gap after inner pill before label */
     int item_gap   = btn_margin;                        /* gap between items */
     int outer_pad  = btn_margin;                        /* padding at start/end of outer pill */
     int font_h     = TTF_FontHeight(font);
@@ -2312,33 +2320,13 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
 #if AP_PLATFORM_IS_DEVICE
 static const char **ap__power_input_paths(void) {
     #if defined(PLATFORM_TG5040)
-    static const char *paths[] = {
-        "/dev/input/event1",
-        "/dev/input/event0",
-        "/dev/input/event2",
-        NULL,
-    };
+    static const char *paths[] = { "/dev/input/event1", NULL };
     #elif defined(PLATFORM_TG5050)
-    static const char *paths[] = {
-        "/dev/input/event2",
-        "/dev/input/event1",
-        "/dev/input/event0",
-        NULL,
-    };
+    static const char *paths[] = { "/dev/input/event2", NULL };
     #elif defined(PLATFORM_MY355)
-    static const char *paths[] = {
-        "/dev/input/event2",
-        "/dev/input/event1",
-        "/dev/input/event0",
-        NULL,
-    };
+    static const char *paths[] = { "/dev/input/event2", NULL };
     #else
-    static const char *paths[] = {
-        "/dev/input/event1",
-        "/dev/input/event2",
-        "/dev/input/event0",
-        NULL,
-    };
+    static const char *paths[] = { "/dev/input/event1", NULL };
     #endif
     return paths;
 }
@@ -2433,12 +2421,21 @@ static void *ap__power_thread_func(void *arg) {
                 } else if (released) {
                     /* Short press: suspend */
                     ap_log("Power: short press → suspend");
-                    #if defined(PLATFORM_TG5040)
-                    ap__run_power_command("suspend", "/mnt/SDCARD/.system/tg5040/bin/suspend");
-                    #elif defined(PLATFORM_TG5050)
-                    ap__run_power_command("suspend", "/mnt/SDCARD/.system/tg5050/bin/suspend");
-                    #elif defined(PLATFORM_MY355)
+                    #if defined(PLATFORM_MY355)
                     ap__run_power_command("suspend", "echo mem > /sys/power/state");
+                    #elif defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050)
+                    {
+                        const char *sp = getenv("SYSTEM_PATH");
+                        char suspend_cmd[256];
+                        #if defined(PLATFORM_TG5040)
+                        snprintf(suspend_cmd, sizeof(suspend_cmd), "%s/bin/suspend",
+                                 (sp && sp[0]) ? sp : "/mnt/SDCARD/.system/tg5040");
+                        #else
+                        snprintf(suspend_cmd, sizeof(suspend_cmd), "%s/bin/suspend",
+                                 (sp && sp[0]) ? sp : "/mnt/SDCARD/.system/tg5050");
+                        #endif
+                        ap__run_power_command("suspend", suspend_cmd);
+                    }
                     #endif
                 }
             }
@@ -2735,8 +2732,12 @@ int ap_init(ap_config *cfg) {
     {
         int scale = ap__g.device_scale;
         char asset_path[256];
-        snprintf(asset_path, sizeof(asset_path),
-                 "/mnt/SDCARD/.system/res/assets@%dx.png", scale);
+        {
+            const char *sdcard = getenv("SDCARD_PATH");
+            if (!sdcard || !sdcard[0]) sdcard = "/mnt/SDCARD";
+            snprintf(asset_path, sizeof(asset_path),
+                     "%s/.system/res/assets@%dx.png", sdcard, scale);
+        }
         SDL_Surface *surf = IMG_Load(asset_path);
         if (surf) {
             ap__g.status_assets = SDL_CreateTextureFromSurface(ap__g.renderer, surf);
