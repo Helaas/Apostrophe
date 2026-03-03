@@ -182,6 +182,8 @@ On device builds, battery and wifi icons are rendered from the NextUI asset spri
 
 Initialise Apostrophe. Creates SDL window/renderer, loads fonts, detects screen size, loads theme (if `is_nextui`), sets up input, starts power button handler (on device).
 
+On my355 device builds, raw power handling listens for `KEY_POWER` from Linux input devices. A short press triggers suspend, and a long press (>= 1000ms) triggers shutdown orchestration (`/tmp/poweroff`). Suspend first attempts `echo mem > /sys/power/state` and falls back to `echo freeze > /sys/power/state` if needed. After resume, power-key events are ignored for 1000ms to avoid immediate re-suspend from wake events (matching NextUI behavior).
+
 Returns `AP_OK` on success, `AP_ERROR` on failure.
 
 #### `void ap_quit(void)`

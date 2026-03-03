@@ -2502,27 +2502,20 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
 /* ─── Power Button Handler ───────────────────────────────────────────────── */
 
 #if AP_PLATFORM_IS_DEVICE
+#if !defined(PLATFORM_MY355)
 static const char **ap__power_input_paths(void) {
     #if defined(PLATFORM_TG5040)
     static const char *paths[] = { "/dev/input/event1", NULL };
     #elif defined(PLATFORM_TG5050)
     static const char *paths[] = { "/dev/input/event2", NULL };
-    #elif defined(PLATFORM_MY355)
-    /* Try multiple event devices in case firmware assigns power button differently */
-    static const char *paths[] = {
-        "/dev/input/event2",
-        "/dev/input/event0",
-        "/dev/input/event1",
-        "/dev/input/event3",
-        NULL
-    };
     #else
     static const char *paths[] = { "/dev/input/event1", NULL };
     #endif
     return paths;
 }
+#endif
 
-/* MY355: scan all /dev/input/event* devices for the one that has KEY_HOME (102).
+/* MY355: scan all /dev/input/event* devices for the one that has KEY_POWER.
    Returns an open fd on success, -1 if no matching device found.
    Uses EVIOCGBIT to query key capabilities, matching the Linux input API. */
 #if defined(PLATFORM_MY355)
@@ -2535,18 +2528,39 @@ static int ap__open_power_device_by_capability(void) {
         if (fd < 0) continue;
         memset(key_bits, 0, sizeof(key_bits));
         if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) >= 0) {
-            /* KEY_HOME = 102: check bit 102 */
-            if (key_bits[102 / 8] & (1 << (102 % 8))) {
-                ap_log("Power: found KEY_HOME on /dev/input/event%d", i);
+            /* KEY_POWER capability bit */
+            if (key_bits[KEY_POWER / 8] & (1 << (KEY_POWER % 8))) {
+                ap_log("Power: selected input device %s (KEY_POWER capability)", path);
                 return fd;
             }
         }
         close(fd);
     }
-    ap_log("Power: no /dev/input/event* device has KEY_HOME capability");
+    ap_log("Power: no /dev/input/event* device has KEY_POWER capability");
     return -1;
 }
 #endif
+
+#if defined(PLATFORM_MY355)
+static bool ap__is_power_key_code(int code) {
+    /* Compatibility: some stacks may still expose power as 102. */
+    return code == KEY_POWER || code == 102;
+}
+#else
+static bool ap__is_power_key_code(int code) {
+    return code == KEY_POWER;
+}
+#endif
+
+static void ap__drain_power_events(int fd) {
+    if (fd < 0) return;
+    struct input_event ev;
+    while (read(fd, &ev, sizeof(ev)) == sizeof(ev)) {
+        if (ev.type == EV_KEY && ap__is_power_key_code((int)ev.code)) {
+            ap_log("Power: draining queued key event code=%d value=%d", (int)ev.code, (int)ev.value);
+        }
+    }
+}
 
 static int ap__run_power_command(const char *action, const char *command) {
     errno = 0;
@@ -2580,7 +2594,7 @@ static void *ap__power_thread_func(void *arg) {
     int fd = -1;
 
 #if defined(PLATFORM_MY355)
-    /* Use EVIOCGBIT capability scan to find the device that actually has KEY_HOME */
+    /* Use EVIOCGBIT capability scan to find the device that actually has KEY_POWER */
     fd = ap__open_power_device_by_capability();
 #else
     const char **input_paths = ap__power_input_paths();
@@ -2602,6 +2616,7 @@ static void *ap__power_thread_func(void *arg) {
     }
     ap_log("Power handler: ready (fd=%d)", fd);
     ap__g.power_fd = fd;
+    uint32_t ignore_power_until = 0;
 
     while (ap__g.power_thread_running) {
         struct input_event ev;
@@ -2611,14 +2626,14 @@ static void *ap__power_thread_func(void *arg) {
             continue;
         }
 
-        /* my355 reports power button as KEY_HOME (102), others use KEY_POWER (116) */
-        #if defined(PLATFORM_MY355)
-        #define AP__POWER_KEY_CODE 102
-        #else
-        #define AP__POWER_KEY_CODE KEY_POWER
-        #endif
-
-        if (ev.type == EV_KEY && ev.code == AP__POWER_KEY_CODE) {
+        if (ev.type == EV_KEY && ap__is_power_key_code((int)ev.code)) {
+            uint32_t now = SDL_GetTicks();
+            if (ignore_power_until && now < ignore_power_until) {
+                ap_log("Power: ignoring key event during post-resume guard code=%d value=%d ms_left=%u",
+                       (int)ev.code, (int)ev.value, (unsigned)(ignore_power_until - now));
+                continue;
+            }
+            ap_log("Power: key event code=%d value=%d", (int)ev.code, (int)ev.value);
             if (ev.value == 1) { /* Press */
                 /* Track press time for short/long detection */
                 uint32_t press_start = SDL_GetTicks();
@@ -2626,16 +2641,18 @@ static void *ap__power_thread_func(void *arg) {
 
                 while (ap__g.power_thread_running) {
                     n = read(fd, &ev, sizeof(ev));
-                    if (n == sizeof(ev) && ev.type == EV_KEY && ev.code == AP__POWER_KEY_CODE && ev.value == 0) {
+                    if (n == sizeof(ev) && ev.type == EV_KEY &&
+                        ap__is_power_key_code((int)ev.code) && ev.value == 0) {
+                        ap_log("Power: key release code=%d", (int)ev.code);
                         released = true;
                         break;
                     }
-                    if (SDL_GetTicks() - press_start > 2000) break;
+                    if (SDL_GetTicks() - press_start > 1000) break;
                     SDL_Delay(10);
                 }
 
                 uint32_t held_ms = SDL_GetTicks() - press_start;
-                if (held_ms >= 2000) {
+                if (held_ms >= 1000) {
                     /* Long press: shutdown (NextUI-style signal) */
                     ap_log("Power: long press → shutdown");
                     system("rm -f /tmp/nextui_exec && sync");
@@ -2646,7 +2663,11 @@ static void *ap__power_thread_func(void *arg) {
                     /* Short press: suspend */
                     ap_log("Power: short press → suspend");
                     #if defined(PLATFORM_MY355)
-                    ap__run_power_command("suspend", "echo mem > /sys/power/state");
+                    int rc = ap__run_power_command("suspend", "echo mem > /sys/power/state");
+                    if (rc != 0) {
+                        ap_log("Power: suspend mem failed, trying freeze fallback");
+                        ap__run_power_command("suspend-fallback", "echo freeze > /sys/power/state");
+                    }
                     #elif defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050)
                     {
                         const char *sp = getenv("SYSTEM_PATH");
@@ -2661,6 +2682,12 @@ static void *ap__power_thread_func(void *arg) {
                         ap__run_power_command("suspend", suspend_cmd);
                     }
                     #endif
+
+                    /* Match NextUI behavior: ignore power key for a short time after resume
+                       to avoid immediate re-suspend from wake button events. */
+                    ap__drain_power_events(fd);
+                    ignore_power_until = SDL_GetTicks() + 1000;
+                    ap_log("Power: resume guard active for 1000ms");
                 }
             }
         }
