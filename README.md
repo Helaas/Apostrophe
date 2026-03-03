@@ -1,6 +1,6 @@
 # Apostrophe (')
 
-A header-only C UI toolkit for building graphical tools (Paks) on retro gaming handhelds running [NextUI](https://github.com/nickvon/NextUI).
+A header-only C UI toolkit for building graphical tools (Paks) on retro gaming handhelds running [NextUI](https://github.com/LoveRetro/NextUI).
 
 Inspired by [Gabagool](https://github.com/BrandonKowalski/gabagool) (Go). Its framework design directly informed the structure of this project, and this C port would not have been feasible without that foundation.
 

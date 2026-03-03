@@ -3,7 +3,10 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # Targets:
+#   make native       — Build examples for the current host OS (auto-detect)
 #   make mac          — Build examples natively for macOS
+#   make linux        — Build examples natively for Linux
+#   make windows      — Build examples natively for Windows (MSYS2/MinGW)
 #   make tg5040       — Cross-compile for TrimUI Brick/Smart Pro
 #   make tg5050       — Cross-compile for TrimUI Smart Pro S
 #   make my355        — Cross-compile for Miyoo Mini Flip
@@ -16,6 +19,16 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 SHELL := /bin/bash
+
+# Host platform auto-detection
+UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
+ifeq ($(UNAME_S),Darwin)
+    NATIVE_PLATFORM := mac
+else ifeq ($(UNAME_S),Linux)
+    NATIVE_PLATFORM := linux
+else
+    NATIVE_PLATFORM := windows
+endif
 
 # Docker toolchain images
 TG5040_TOOLCHAIN := ghcr.io/loveretro/tg5040-toolchain:latest
@@ -35,7 +48,12 @@ EXAMPLES := hello demo download
 
 # ─── Phony targets ───────────────────────────────────────────────────────
 
-.PHONY: all mac tg5040 tg5050 my355 package deploy clean help
+.PHONY: all native mac linux windows tg5040 tg5050 my355 package deploy clean help
+
+# ─── Native (auto-detect host OS) ─────────────────────────────────────
+
+native: $(NATIVE_PLATFORM)
+run-native: run-$(NATIVE_PLATFORM)
 
 all: tg5040 tg5050 my355
 
@@ -73,6 +91,56 @@ run-mac-%: mac-%
 	@cd $(BUILD_DIR)/mac/$* && ./$*
 
 run-mac: run-mac-hello
+
+# ─── Linux (native) ───────────────────────────────────────────────────
+
+linux: $(EXAMPLES:%=linux-%)
+
+linux-%:
+	@echo "════════ Building $* for Linux ════════"
+	@mkdir -p $(BUILD_DIR)/linux/$*
+	cc -std=gnu11 -O0 -g \
+		-DPLATFORM_LINUX \
+		-I$(INCLUDE_DIR) \
+		$(shell pkg-config --cflags sdl2 SDL2_ttf SDL2_image) \
+		$(CURL_CFLAGS) \
+		-o $(BUILD_DIR)/linux/$*/$* \
+		$(EXAMPLES_DIR)/$*/main.c \
+		$(shell pkg-config --libs sdl2 SDL2_ttf SDL2_image) \
+		$(CURL_LDFLAGS) \
+		-lm -lpthread
+	@cp -f $(RES_DIR)/font.ttf $(BUILD_DIR)/linux/$*/font.ttf
+	@echo "→ $(BUILD_DIR)/linux/$*/$*"
+
+run-linux-%: linux-%
+	@cd $(BUILD_DIR)/linux/$* && ./$*
+
+run-linux: run-linux-hello
+
+# ─── Windows (MSYS2/MinGW) ────────────────────────────────────────────
+
+windows: $(EXAMPLES:%=windows-%)
+
+windows-%:
+	@echo "════════ Building $* for Windows ════════"
+	@mkdir -p $(BUILD_DIR)/windows/$*
+	gcc -std=gnu11 -O0 -g \
+		-DPLATFORM_WINDOWS \
+		-I$(INCLUDE_DIR) \
+		$(shell pkg-config --cflags sdl2 SDL2_ttf SDL2_image) \
+		$(CURL_CFLAGS) \
+		-o $(BUILD_DIR)/windows/$*/$*.exe \
+		$(EXAMPLES_DIR)/$*/main.c \
+		$(shell pkg-config --libs sdl2 SDL2_ttf SDL2_image) \
+		$(CURL_LDFLAGS) \
+		-lm
+	@cp -f $(RES_DIR)/font.ttf $(BUILD_DIR)/windows/$*/font.ttf
+	@echo "→ $(BUILD_DIR)/windows/$*/$*.exe"
+
+run-windows-%: windows-%
+	@cd $(BUILD_DIR)/windows/$* && ./$*.exe
+
+run-windows: run-windows-hello
 
 # ─── TG5040 (TrimUI Brick / Smart Pro) via Docker ──────────────────────
 
@@ -212,17 +280,25 @@ help:
 	@echo "Apostrophe Build System"
 	@echo "══════════════════════════════════════"
 	@echo ""
-	@echo "  make mac            Build examples for macOS (native)"
-	@echo "  make run-mac        Build + run hello example on macOS"
-	@echo "  make run-mac-demo   Build + run demo example on macOS"
+	@echo "  Development (native):"
+	@echo "  make native         Build for current host OS (detected: $(NATIVE_PLATFORM))"
+	@echo "  make run-native     Build + run hello on current host OS"
+	@echo "  make mac            Build examples for macOS"
+	@echo "  make linux          Build examples for Linux"
+	@echo "  make windows        Build examples for Windows (MSYS2/MinGW)"
+	@echo ""
+	@echo "  Device (cross-compile via Docker):"
 	@echo "  make tg5040         Cross-compile for TrimUI Brick/Smart Pro"
 	@echo "  make tg5050         Cross-compile for TrimUI Smart Pro S"
 	@echo "  make my355          Cross-compile for Miyoo Mini Flip"
 	@echo "  make all            Build for all device platforms"
 	@echo "  make package        Build all + create .pakz packages"
 	@echo "  make deploy         Deploy to connected device via adb"
+	@echo ""
+	@echo "  Other:"
 	@echo "  make clean          Remove build artifacts"
 	@echo ""
 	@echo "Examples: $(EXAMPLES)"
-	@echo "Platforms: tg5040, tg5050, my355, mac"
+	@echo "Dev platforms: mac, linux, windows"
+	@echo "Device platforms: tg5040, tg5050, my355"
 	@echo ""

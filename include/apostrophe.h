@@ -9,7 +9,7 @@
  *
  * Dependencies: SDL2, SDL2_ttf, SDL2_image, C standard library, pthreads
  * Platforms:    tg5040 (TrimUI Brick/Smart Pro), tg5050 (TrimUI Smart Pro S),
- *               my355 (Miyoo Mini Flip), macOS (dev/testing)
+ *               my355 (Miyoo Mini Flip), macOS, Linux, Windows (dev/testing)
  *
  * License: MIT
  * https://github.com/LoveRetro/Apostrophe
@@ -36,16 +36,34 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <linux/input.h>
 #include <dirent.h>
 #include <signal.h>
 #include <errno.h>
 #include <sys/wait.h>
+#if defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050) || defined(PLATFORM_MY355)
+#include <linux/input.h>
+#endif
 #endif
 
 #ifdef __APPLE__
 #include <pthread.h>
 #include <unistd.h>
+#endif
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <direct.h>
+#include <io.h>
+#ifndef R_OK
+#define R_OK 4
+#endif
+#ifndef X_OK
+#define X_OK 0  /* X_OK not meaningful on Windows; fall back to existence check */
+#endif
+#ifndef access
+#define access _access
+#endif
 #endif
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -66,6 +84,18 @@
     #define AP_PLATFORM_IS_DEVICE 0
     #ifndef PLATFORM_MAC
         #define PLATFORM_MAC
+    #endif
+#elif defined(PLATFORM_WINDOWS) || defined(_WIN32)
+    #define AP_PLATFORM_NAME "windows"
+    #define AP_PLATFORM_IS_DEVICE 0
+    #ifndef PLATFORM_WINDOWS
+        #define PLATFORM_WINDOWS
+    #endif
+#elif defined(PLATFORM_LINUX) || defined(__linux__)
+    #define AP_PLATFORM_NAME "linux"
+    #define AP_PLATFORM_IS_DEVICE 0
+    #ifndef PLATFORM_LINUX
+        #define PLATFORM_LINUX
     #endif
 #else
     #define AP_PLATFORM_NAME "unknown"
@@ -535,6 +565,13 @@ static const char *ap__font_search_paths[] = {
 #elif defined(PLATFORM_MAC)
     "/System/Library/Fonts/Helvetica.ttc",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+#elif defined(PLATFORM_LINUX)
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+#elif defined(PLATFORM_WINDOWS)
+    "C:\\Windows\\Fonts\\segoeui.ttf",
+    "C:\\Windows\\Fonts\\arial.ttf",
 #endif
     NULL,
 };
@@ -583,6 +620,12 @@ static const char *ap__button_names[AP_BTN_COUNT] = {
 
 static bool ap__same_output_file(FILE *a, FILE *b) {
     if (!a || !b) return false;
+#ifdef _WIN32
+    int a_fd = _fileno(a);
+    int b_fd = _fileno(b);
+    if (a_fd < 0 || b_fd < 0) return false;
+    return a_fd == b_fd;
+#else
     int a_fd = fileno(a);
     int b_fd = fileno(b);
     if (a_fd < 0 || b_fd < 0) return false;
@@ -591,6 +634,7 @@ static bool ap__same_output_file(FILE *a, FILE *b) {
     if (fstat(a_fd, &a_st) != 0) return false;
     if (fstat(b_fd, &b_st) != 0) return false;
     return a_st.st_dev == b_st.st_dev && a_st.st_ino == b_st.st_ino;
+#endif
 }
 
 void ap_log(const char *fmt, ...) {

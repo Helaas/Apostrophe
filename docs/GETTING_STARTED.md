@@ -17,6 +17,43 @@ brew install curl
 brew install --cask docker
 ```
 
+### Linux (Development)
+
+```bash
+# Debian/Ubuntu
+sudo apt install libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
+
+# Optional: libcurl for the Download Manager widget
+sudo apt install libcurl4-openssl-dev
+
+# Fedora
+sudo dnf install SDL2-devel SDL2_ttf-devel SDL2_image-devel
+
+# Arch
+sudo pacman -S sdl2 sdl2_ttf sdl2_image
+
+# Optional: Docker for cross-compiling to device
+# Follow Docker's official install instructions for your distro
+```
+
+### Windows (Development)
+
+Requires [MSYS2](https://www.msys2.org/). Run these commands in an MSYS2 MinGW64 shell:
+
+```bash
+# x86_64
+pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_ttf mingw-w64-x86_64-SDL2_image mingw-w64-x86_64-pkg-config make
+
+# ARM64 (use CLANGARM64 shell instead)
+pacman -S mingw-w64-clang-aarch64-gcc mingw-w64-clang-aarch64-SDL2 mingw-w64-clang-aarch64-SDL2_ttf mingw-w64-clang-aarch64-SDL2_image mingw-w64-clang-aarch64-pkg-config make
+
+# Optional: libcurl for the Download Manager widget
+pacman -S mingw-w64-x86_64-curl  # or mingw-w64-clang-aarch64-curl
+
+# Optional: Docker for cross-compiling to device
+# Install Docker Desktop for Windows
+```
+
 ### Device Cross-Compilation
 
 You need Docker installed and running. The build system automatically pulls the correct toolchain image for each platform.
@@ -149,6 +186,13 @@ if (rc == AP_OK) {
 
 ## Step 4: Build & Run
 
+### Any platform (auto-detect)
+
+```bash
+make native
+make run-native
+```
+
 ### macOS
 
 ```bash
@@ -156,9 +200,23 @@ make mac
 make run-mac
 ```
 
-### macOS Keyboard Controls
+### Linux
 
-When running on macOS, keyboard keys are mapped to controller buttons matching [Gabagool's `DefaultInputMapping()`](https://github.com/BrandonKowalski/gabagool):
+```bash
+make linux
+make run-linux
+```
+
+### Windows (MSYS2 MinGW shell)
+
+```bash
+make windows
+make run-windows
+```
+
+### Keyboard Controls
+
+When running on desktop (macOS, Linux, or Windows), keyboard keys are mapped to controller buttons matching [Gabagool's `DefaultInputMapping()`](https://github.com/BrandonKowalski/gabagool):
 
 | Key | Button | | Key | Button |
 |-----|--------|-|-----|--------|
