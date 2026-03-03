@@ -153,13 +153,26 @@ typedef struct {
 #### `ap_status_bar_opts`
 
 ```c
+// Clock display mode constants
+#define AP_CLOCK_AUTO  0  // Follow NextUI showclock setting (default)
+#define AP_CLOCK_SHOW  1  // Always show, regardless of device settings
+#define AP_CLOCK_HIDE  2  // Always hide, regardless of device settings
+
 typedef struct {
-    bool show_clock;
-    bool use_24h;
+    int  show_clock;     // AP_CLOCK_AUTO (default), AP_CLOCK_SHOW, or AP_CLOCK_HIDE
+    bool use_24h;        // Only used when show_clock == AP_CLOCK_SHOW
     bool show_battery;   // Show battery icon (device only)
     bool show_wifi;      // Show wifi icon (device only)
 } ap_status_bar_opts;
 ```
+
+**Clock behaviour:** By default (`show_clock` left at 0 / `AP_CLOCK_AUTO`), the clock
+visibility and format are read from the NextUI device settings (`showclock` and `clock24h`
+in `minuisettings.txt`). On desktop builds, auto mode means the clock is never shown (no
+settings file). Use `AP_CLOCK_SHOW` to force the clock visible regardless of device
+settings, or `AP_CLOCK_HIDE` to always suppress it. When using `AP_CLOCK_SHOW`, the
+`use_24h` field controls the time format; in auto mode, `clock24h` from device settings
+is used instead.
 
 On device builds, battery and wifi icons are rendered from the NextUI asset spritesheet (`/mnt/SDCARD/.system/res/assets@Nx.png`). On macOS dev builds, these fields are silently ignored when the spritesheet is not available.
 

@@ -34,8 +34,8 @@ static void demo_list(void) {
     int count = sizeof(items) / sizeof(items[0]);
 
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "Back" },
-        { .button = AP_BTN_A, .label = "Select", .is_confirm = true },
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "SELECT", .is_confirm = true },
     };
 
     ap_list_opts opts = ap_list_default_opts("NATO Alphabet", items, count);
@@ -72,9 +72,9 @@ static void demo_multi_select(void) {
     int count = sizeof(items) / sizeof(items[0]);
 
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "Back" },
-        { .button = AP_BTN_A, .label = "Toggle" },
-        { .button = AP_BTN_START, .label = "Done", .is_confirm = true },
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "TOGGLE" },
+        { .button = AP_BTN_START, .label = "DONE", .is_confirm = true },
     };
 
     ap_list_opts opts = ap_list_default_opts("Pick Fruits", items, count);
@@ -119,9 +119,9 @@ static void demo_reorder(void) {
     int count = sizeof(items) / sizeof(items[0]);
 
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B,     .label = "Back" },
-        { .button = AP_BTN_X,     .label = "Reorder" },
-        { .button = AP_BTN_START, .label = "Done", .is_confirm = true },
+        { .button = AP_BTN_B,     .label = "BACK" },
+        { .button = AP_BTN_X,     .label = "REORDER" },
+        { .button = AP_BTN_START, .label = "DONE", .is_confirm = true },
     };
 
     ap_list_opts opts = ap_list_default_opts("Reorder Items", items, count);
@@ -199,8 +199,8 @@ static void demo_options_list(void) {
     int count = sizeof(settings) / sizeof(settings[0]);
 
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B,     .label = "Back" },
-        { .button = AP_BTN_START, .label = "Save", .is_confirm = true },
+        { .button = AP_BTN_B,     .label = "BACK" },
+        { .button = AP_BTN_START, .label = "SAVE", .is_confirm = true },
     };
 
     ap_options_list_opts opts = {
@@ -253,8 +253,8 @@ static void demo_keyboard(void) {
         items[i] = (ap_list_item){ .label = modes[i].label };
 
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "Back" },
-        { .button = AP_BTN_A, .label = "Open", .is_confirm = true },
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "OPEN", .is_confirm = true },
     };
 
     ap_list_opts opts = ap_list_default_opts("Keyboard Mode", items, mode_count);
@@ -285,8 +285,8 @@ static void demo_keyboard(void) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void demo_confirmation(void) {
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "No" },
-        { .button = AP_BTN_A, .label = "Yes", .is_confirm = true },
+        { .button = AP_BTN_B, .label = "NO" },
+        { .button = AP_BTN_A, .label = "YES", .is_confirm = true },
     };
 
     ap_message_opts opts = {
@@ -319,8 +319,8 @@ static void demo_selection(void) {
     };
 
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "Cancel" },
-        { .button = AP_BTN_A, .label = "Choose", .is_confirm = true },
+        { .button = AP_BTN_B, .label = "CANCEL" },
+        { .button = AP_BTN_A, .label = "CHOOSE", .is_confirm = true },
     };
 
     ap_selection_result result;
@@ -395,7 +395,7 @@ static void demo_detail(void) {
     };
 
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "Back" },
+        { .button = AP_BTN_B, .label = "BACK" },
     };
 
     ap_detail_opts opts = {
@@ -477,8 +477,8 @@ int main(int argc, char *argv[]) {
         }
 
         ap_footer_item footer[] = {
-            { .button = AP_BTN_B, .label = "Quit" },
-            { .button = AP_BTN_A, .label = "Open", .is_confirm = true },
+            { .button = AP_BTN_B, .label = "QUIT" },
+            { .button = AP_BTN_A, .label = "OPEN", .is_confirm = true },
         };
 
         ap_list_opts opts = ap_list_default_opts("Widget Demo", items, DEMO_COUNT);

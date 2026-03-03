@@ -35,8 +35,8 @@ int main(int argc, char *argv[]) {
 
     /* Define footer hints */
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "Back" },
-        { .button = AP_BTN_A, .label = "Select", .is_confirm = true },
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "SELECT", .is_confirm = true },
     };
 
     /* Configure and show the list */

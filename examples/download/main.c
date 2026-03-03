@@ -16,8 +16,7 @@
  *  Status bar configuration (shared across screens)
  * ═══════════════════════════════════════════════════════════════════════════ */
 static ap_status_bar_opts status_bar = {
-    .show_clock   = true,
-    .use_24h      = true,
+    /* show_clock not set → AP_CLOCK_AUTO: follows NextUI showclock/clock24h settings */
     .show_battery = true,
     .show_wifi    = true,
 };
@@ -108,8 +107,8 @@ static void demo_status_bar_list(void) {
     int count = sizeof(items) / sizeof(items[0]);
 
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "Back" },
-        { .button = AP_BTN_A, .label = "Select", .is_confirm = true },
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "SELECT", .is_confirm = true },
     };
 
     ap_list_opts opts = ap_list_default_opts("Status Bar Demo", items, count);
@@ -149,7 +148,7 @@ static void demo_status_bar_detail(void) {
     };
 
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "Back" },
+        { .button = AP_BTN_B, .label = "BACK" },
     };
 
     ap_detail_opts opts = {
@@ -205,8 +204,8 @@ int main(int argc, char *argv[]) {
         }
 
         ap_footer_item footer[] = {
-            { .button = AP_BTN_B, .label = "Quit" },
-            { .button = AP_BTN_A, .label = "Open", .is_confirm = true },
+            { .button = AP_BTN_B, .label = "QUIT" },
+            { .button = AP_BTN_A, .label = "OPEN", .is_confirm = true },
         };
 
         ap_list_opts opts = ap_list_default_opts("Downloads", items, DEMO_COUNT);

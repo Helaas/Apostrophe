@@ -1453,7 +1453,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
         /* Footer: single centered "Menu: Help" hint */
         if (help_text) {
             ap_footer_item kb_footer[] = {
-                {AP_BTN_MENU, "Help", false},
+                {AP_BTN_MENU, "HELP", false},
             };
             ap_draw_footer(kb_footer, 1);
         }
@@ -1801,7 +1801,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
 
         /* Footer */
         if (help_text) {
-            ap_footer_item kb_footer[] = {{AP_BTN_MENU, "Help", false}};
+            ap_footer_item kb_footer[] = {{AP_BTN_MENU, "HELP", false}};
             ap_draw_footer(kb_footer, 1);
         }
 
@@ -3026,12 +3026,12 @@ int ap_download_manager(ap_download *downloads, int count,
 
         /* Footer */
         if (all_done) {
-            ap_footer_item dm_footer[] = {{AP_BTN_A, "Close", true}};
+            ap_footer_item dm_footer[] = {{AP_BTN_A, "CLOSE", true}};
             ap_draw_footer(dm_footer, 1);
         } else {
             ap_footer_item dm_footer[] = {
-                {AP_BTN_Y, "Cancel", false},
-                {AP_BTN_X, show_speed ? "Hide Speed" : "Show Speed", false},
+                {AP_BTN_Y, "CANCEL", false},
+                {AP_BTN_X, show_speed ? "HIDE SPEED" : "SHOW SPEED", false},
             };
             ap_draw_footer(dm_footer, 2);
         }

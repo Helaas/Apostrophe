@@ -231,10 +231,15 @@ typedef struct {
     bool         is_confirm;  /* true = right-aligned confirm group */
 } ap_footer_item;
 
+/* Clock display mode for ap_status_bar_opts.show_clock */
+#define AP_CLOCK_AUTO  0  /* Follow NextUI showclock setting (default) */
+#define AP_CLOCK_SHOW  1  /* Always show, regardless of NextUI setting  */
+#define AP_CLOCK_HIDE  2  /* Always hide, regardless of NextUI setting  */
+
 /* Status bar options */
 typedef struct {
-    bool         show_clock;
-    bool         use_24h;
+    int          show_clock;    /* AP_CLOCK_AUTO/SHOW/HIDE (default: AP_CLOCK_AUTO) */
+    bool         use_24h;       /* Ignored in AUTO mode; NextUI clock24h used instead */
     bool         show_battery;  /* Show battery icon from device sysfs */
     bool         show_wifi;     /* Show wifi icon from device sysfs */
 } ap_status_bar_opts;
@@ -610,10 +615,10 @@ static const char *ap__font_search_paths[] = {
 
 /* Virtual button names */
 static const char *ap__button_names[AP_BTN_COUNT] = {
-    "None", "Up", "Down", "Left", "Right",
+    "NONE", "UP", "DOWN", "LEFT", "RIGHT",
     "A", "B", "X", "Y",
     "L1", "L2", "R1", "R2",
-    "Start", "Select", "Menu", "Power"
+    "START", "SELECT", "MENU", "POWER"
 };
 
 /* ─── Logging ────────────────────────────────────────────────────────────── */
@@ -938,6 +943,7 @@ static int ap__read_nextui_setting_int(const char *key, int default_val) {
 
 static TTF_Font *ap__open_font(const char *path, int size) {
     TTF_Font *f = TTF_OpenFont(path, size);
+    if (f) TTF_SetFontStyle(f, TTF_STYLE_BOLD); /* match NextUI: all fonts loaded bold */
     return f;
 }
 
@@ -1903,14 +1909,20 @@ int ap_get_footer_height(void) {
     return AP_DS(ap__g.device_padding + AP__PILL_SIZE);
 }
 
+static TTF_Font *ap__footer_button_font(const char *btn_name) {
+    if (!btn_name || !btn_name[0]) return ap_get_font(AP_FONT_SMALL);
+    if (strlen(btn_name) == 1) return ap_get_font(AP_FONT_MEDIUM); /* NextUI: single-char button label */
+    return ap_get_font(AP_FONT_TINY); /* NextUI: multi-char button label */
+}
+
 void ap_draw_footer(ap_footer_item *items, int count) {
     if (!items || count <= 0) return;
 
     /* Match NextUI GFX_blitButtonGroup layout:
      * outer pill = PILL_SIZE high, inner buttons = BUTTON_SIZE high,
      * inset by BUTTON_MARGIN, positioned PADDING from screen edges. */
-    TTF_Font *font = ap_get_font(AP_FONT_SMALL);
-    if (!font) return;
+    TTF_Font *hint_font = ap_get_font(AP_FONT_SMALL); /* NextUI: hint text font.small */
+    if (!hint_font) return;
 
     int padding    = AP_DS(ap__g.device_padding);      /* screen-edge padding (NextUI PADDING) */
     int outer_h    = AP_DS(AP__PILL_SIZE);              /* outer pill height */
@@ -1919,19 +1931,21 @@ void ap_draw_footer(ap_footer_item *items, int count) {
     int pill_y     = ap__g.screen_h - AP_DS(ap__g.device_padding + AP__PILL_SIZE); /* NextUI: screen_h - SCALE1(PADDING + PILL_SIZE) */
     int item_gap   = btn_margin;                        /* gap between items */
     int outer_pad  = btn_margin;                        /* padding at start/end of outer pill */
-    int font_h     = TTF_FontHeight(font);
+    int hint_font_h = TTF_FontHeight(hint_font);
 
     /* ── Helper: measure total inner width for a group of items ── */
     /* Matches NextUI GFX_getButtonWidth: single-char → BUTTON_SIZE circle,
        multi-char → BUTTON_SIZE/2 + text_width pill. Then + BUTTON_MARGIN + hint_text + BUTTON_MARGIN. */
     #define AP__FOOTER_ITEM_W(btn_name, label) \
-        ({ int _bw = ap_measure_text(font, btn_name); \
+        ({ TTF_Font *_btn_font = ap__footer_button_font(btn_name); \
+           if (!_btn_font) _btn_font = hint_font; \
+           int _bw = ap_measure_text(_btn_font, btn_name); \
            int _btn_w; \
            if (strlen(btn_name) == 1) \
                _btn_w = AP_DS(AP__BUTTON_SIZE); \
            else \
                _btn_w = AP_DS(AP__BUTTON_SIZE) / 2 + _bw; \
-           int _lw = ap_measure_text(font, label); \
+           int _lw = ap_measure_text(hint_font, label); \
            _btn_w + btn_margin + _lw + btn_margin; })
 
     /* ── Left group (non-confirm items) ── */
@@ -1954,7 +1968,11 @@ void ap_draw_footer(ap_footer_item *items, int count) {
             if (items[i].is_confirm) continue;
 
             const char *btn_name = ap_button_name(items[i].button);
-            int btn_tw = ap_measure_text(font, btn_name);
+            const char *label = items[i].label ? items[i].label : "";
+            TTF_Font *btn_font = ap__footer_button_font(btn_name);
+            if (!btn_font) btn_font = hint_font;
+            int btn_font_h = TTF_FontHeight(btn_font);
+            int btn_tw = ap_measure_text(btn_font, btn_name);
             int btn_pill_w;
             if (strlen(btn_name) == 1) {
                 btn_pill_w = AP_DS(AP__BUTTON_SIZE);
@@ -1964,18 +1982,18 @@ void ap_draw_footer(ap_footer_item *items, int count) {
 
             /* Inner button pill */
             ap_draw_pill(cx, btn_y, btn_pill_w, inner_h, ap__g.theme.highlight);
-            ap_draw_text(font, btn_name,
+            ap_draw_text(btn_font, btn_name,
                          cx + (btn_pill_w - btn_tw) / 2,
-                         btn_y + (inner_h - font_h) / 2,
+                         btn_y + (inner_h - btn_font_h) / 2,
                          ap__g.theme.button_label);
 
             /* Label text — vertically centered against BUTTON_SIZE */
             cx += btn_pill_w + btn_margin;
-            ap_draw_text(font, items[i].label,
+            ap_draw_text(hint_font, label,
                          cx,
-                         btn_y + (inner_h - font_h) / 2,
+                         btn_y + (inner_h - hint_font_h) / 2,
                          ap__g.theme.hint);
-            cx += ap_measure_text(font, items[i].label) + btn_margin;
+            cx += ap_measure_text(hint_font, label) + btn_margin;
         }
     }
 
@@ -2000,7 +2018,11 @@ void ap_draw_footer(ap_footer_item *items, int count) {
             if (!items[i].is_confirm) continue;
 
             const char *btn_name = ap_button_name(items[i].button);
-            int btn_tw = ap_measure_text(font, btn_name);
+            const char *label = items[i].label ? items[i].label : "";
+            TTF_Font *btn_font = ap__footer_button_font(btn_name);
+            if (!btn_font) btn_font = hint_font;
+            int btn_font_h = TTF_FontHeight(btn_font);
+            int btn_tw = ap_measure_text(btn_font, btn_name);
             int btn_pill_w;
             if (strlen(btn_name) == 1) {
                 btn_pill_w = AP_DS(AP__BUTTON_SIZE);
@@ -2010,18 +2032,18 @@ void ap_draw_footer(ap_footer_item *items, int count) {
 
             /* Inner button pill */
             ap_draw_pill(cx, btn_y, btn_pill_w, inner_h, ap__g.theme.highlight);
-            ap_draw_text(font, btn_name,
+            ap_draw_text(btn_font, btn_name,
                          cx + (btn_pill_w - btn_tw) / 2,
-                         btn_y + (inner_h - font_h) / 2,
+                         btn_y + (inner_h - btn_font_h) / 2,
                          ap__g.theme.button_label);
 
             /* Label text */
             cx += btn_pill_w + btn_margin;
-            ap_draw_text(font, items[i].label,
+            ap_draw_text(hint_font, label,
                          cx,
-                         btn_y + (inner_h - font_h) / 2,
+                         btn_y + (inner_h - hint_font_h) / 2,
                          ap__g.theme.hint);
-            cx += ap_measure_text(font, items[i].label) + btn_margin;
+            cx += ap_measure_text(hint_font, label) + btn_margin;
         }
     }
 
@@ -2067,9 +2089,91 @@ static bool ap__is_charging(void) {
     return (charger == 1) && (ttf > 0);
 }
 
+static int ap__map_rssi_to_wifi_strength(int rssi) {
+    /* Match NextUI thresholds:
+       0   = disconnected
+       -60 = high
+       -70 = med
+       else low */
+    if (rssi == 0)    return 0;
+    if (rssi >= -60)  return 3;
+    if (rssi >= -70)  return 2;
+    return 1;
+}
+
+static int ap__read_wifi_rssi_iw(void) {
+    const int unavailable = -10000;
+    FILE *f = popen("iw dev wlan0 link 2>/dev/null", "r");
+    if (!f) return unavailable;
+
+    char line[256];
+    int rssi = unavailable;
+    bool disconnected = false;
+
+    while (fgets(line, sizeof(line), f)) {
+        int val;
+        if (sscanf(line, " signal: %d dBm", &val) == 1 ||
+            sscanf(line, "signal: %d dBm", &val) == 1) {
+            rssi = val;
+            break;
+        }
+        if (strstr(line, "Not connected") != NULL) {
+            disconnected = true;
+        }
+    }
+
+    int rc = pclose(f);
+    if (rssi != unavailable) return rssi;
+    if (disconnected) return 0;
+    if (rc == -1) return unavailable;
+    if (WIFEXITED(rc) && WEXITSTATUS(rc) != 0) return unavailable;
+    return unavailable;
+}
+
+static int ap__read_wifi_rssi_wpa_cli(void) {
+    const int unavailable = -10000;
+    static const char *cmds[] = {
+        "wpa_cli -p /var/run/wpa_supplicant -i wlan0 signal_poll 2>/dev/null",
+        "/usr/sbin/wpa_cli -p /var/run/wpa_supplicant -i wlan0 signal_poll 2>/dev/null",
+        "wpa_cli -p /etc/wifi/sockets -i wlan0 signal_poll 2>/dev/null",
+        "/usr/sbin/wpa_cli -p /etc/wifi/sockets -i wlan0 signal_poll 2>/dev/null",
+        "wpa_cli -i wlan0 signal_poll 2>/dev/null",
+        "/usr/sbin/wpa_cli -i wlan0 signal_poll 2>/dev/null",
+        NULL
+    };
+
+    for (int i = 0; cmds[i]; i++) {
+        FILE *f = popen(cmds[i], "r");
+        if (!f) continue;
+
+        int rssi = unavailable;
+        char line[256];
+        while (fgets(line, sizeof(line), f)) {
+            int val;
+            if (sscanf(line, "RSSI=%d", &val) == 1) {
+                rssi = val;
+                break;
+            }
+        }
+
+        int rc = pclose(f);
+        if (rssi != unavailable) return rssi;
+        if (rc == -1) continue;
+        if (WIFEXITED(rc) && WEXITSTATUS(rc) == 0) {
+            /* Command worked but did not report RSSI.
+               Treat as disconnected rather than unavailable. */
+            return 0;
+        }
+    }
+
+    return unavailable;
+}
+
 /* Returns wifi signal strength: 0=off, 1=low, 2=med, 3=high
-   Uses 'iw dev wlan0 link' matching NextUI's PLAT_connectionStrength(). */
+   Uses iw first; falls back to wpa_cli signal_poll on my355 where iw may be unavailable. */
 static int ap__get_wifi_strength(void) {
+    const int unavailable = -10000;
+
     /* Check if interface is up */
     FILE *f = fopen("/sys/class/net/wlan0/operstate", "r");
     if (!f) return 0;
@@ -2081,26 +2185,15 @@ static int ap__get_wifi_strength(void) {
     fclose(f);
     if (strcmp(state, "up") != 0) return 0;
 
-    /* Read signal level via iw (same method as NextUI) */
-    f = popen("iw dev wlan0 link 2>/dev/null", "r");
-    if (!f) return 1; /* up but can't read signal */
-    char line[256];
-    int rssi = 0; /* 0 = connected but no signal reading (disconnected icon) */
-    while (fgets(line, sizeof(line), f)) {
-        /* Look for "signal: -XX dBm" */
-        int val;
-        if (sscanf(line, " signal: %d dBm", &val) == 1) {
-            rssi = val;
-            break;
-        }
+    /* Read signal via iw first, then wpa_cli fallback */
+    int rssi = ap__read_wifi_rssi_iw();
+    if (rssi == unavailable) {
+        rssi = ap__read_wifi_rssi_wpa_cli();
     }
-    pclose(f);
 
-    /* Map to strength levels matching NextUI thresholds */
-    if (rssi == 0)    return 0; /* connected, no signal reading → disconnected/off icon */
-    if (rssi >= -60)  return 3; /* high */
-    if (rssi >= -70)  return 2; /* med */
-    return 1; /* low */
+    /* Keep icon visible when interface is up but RSSI source is unavailable */
+    if (rssi == unavailable) return 1;
+    return ap__map_rssi_to_wifi_strength(rssi);
 }
 #endif /* AP_PLATFORM_IS_DEVICE */
 
@@ -2141,10 +2234,18 @@ int ap_get_status_bar_width(ap_status_bar_opts *opts) {
     int total_w = margin; /* left inset inside pill */
     bool has_any = false;
 
-    /* Wifi icon */
+    /* Wifi icon — on device, hide when disconnected (matches NextUI) */
+    bool wifi_visible = false;
     if (opts->show_wifi) {
-        total_w += AP__WIFI_SIZE * s + margin;
-        has_any = true;
+        #if AP_PLATFORM_IS_DEVICE
+        wifi_visible = (ap__get_wifi_strength() > 0);
+        #else
+        wifi_visible = true;
+        #endif
+        if (wifi_visible) {
+            total_w += AP__WIFI_SIZE * s + margin;
+            has_any = true;
+        }
     }
 
     /* Battery icon */
@@ -2153,26 +2254,41 @@ int ap_get_status_bar_width(ap_status_bar_opts *opts) {
         has_any = true;
     }
 
-    /* Clock */
-    if (opts->show_clock) {
-        TTF_Font *font = ap_get_font(AP_FONT_SMALL);
-        if (font) {
-            char clock_text[32];
-            time_t now = time(NULL);
-            struct tm *t = localtime(&now);
-            if (opts->use_24h)
-                strftime(clock_text, sizeof(clock_text), "%H:%M", t);
-            else
-                strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
-            total_w += ap_measure_text(font, clock_text) + margin;
-            has_any = true;
+    /* Clock — mirror effective visibility logic from ap_draw_status_bar */
+    {
+        bool clock_visible = false;
+        bool clock_24h = opts->use_24h;
+        if (opts->show_clock == AP_CLOCK_SHOW) {
+            clock_visible = true;
+        } else if (opts->show_clock == AP_CLOCK_AUTO) {
+            #if AP_PLATFORM_IS_DEVICE
+            clock_visible = ap__read_nextui_setting_int("showclock", 0) != 0;
+            if (clock_visible)
+                clock_24h = ap__read_nextui_setting_int("clock24h", 1) != 0;
+            #endif
+        }
+        if (clock_visible) {
+            TTF_Font *font = ap_get_font(AP_FONT_SMALL);
+            if (font) {
+                char clock_text[32];
+                time_t now = time(NULL);
+                struct tm *t = localtime(&now);
+                if (clock_24h)
+                    strftime(clock_text, sizeof(clock_text), "%H:%M", t);
+                else
+                    strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
+                total_w += ap_measure_text(font, clock_text) + margin;
+                has_any = true;
+            }
         }
     }
 
     if (!has_any) return 0;
 
-    /* If only battery and no other elements, return square pill */
-    if (!opts->show_wifi && !opts->show_clock) {
+    /* If only battery and no other elements, return square pill.
+       Clock HIDE (2) and AUTO with no clock → battery-only square pill. */
+    bool clock_forces_wide = (opts->show_clock == AP_CLOCK_SHOW);
+    if (!wifi_visible && !clock_forces_wide) {
         return AP_DS(AP__PILL_SIZE);
     }
 
@@ -2198,8 +2314,14 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
 
     ap_draw_pill(pill_x, pill_y, pill_w, pill_h, ap__g.theme.accent);
 
-    /* Battery-only mode: center battery in a square pill */
-    if (!opts->show_wifi && !opts->show_clock && opts->show_battery) {
+    /* Battery-only mode: center battery in a square pill.
+       Entered when wifi is off and clock is not forced wide (SHOW or auto-visible). */
+    bool ap__clock_forces_wide = (opts->show_clock == AP_CLOCK_SHOW);
+    #if AP_PLATFORM_IS_DEVICE
+    if (opts->show_clock == AP_CLOCK_AUTO)
+        ap__clock_forces_wide = ap__read_nextui_setting_int("showclock", 0) != 0;
+    #endif
+    if (!opts->show_wifi && !ap__clock_forces_wide && opts->show_battery) {
         int iw = AP__BATTERY_W * s;
         int ih = AP__BATTERY_H * s;
         int bx = pill_x + (pill_h - (iw + s)) / 2; /* NextUI centers with +FIXED_SCALE fudge */
@@ -2208,6 +2330,7 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
         if (ap__g.status_assets) {
             int bat = ap__get_battery_percent();
             bool charging = ap__is_charging();
+            bool show_pct = ap__read_nextui_setting_int("batteryperc", 0) && !charging;
             if (charging) {
                 ap__blit_status_icon(47, 51, AP__BATTERY_W, AP__BATTERY_H,
                                      bx, by, iw, ih, ap__g.theme.hint);
@@ -2219,6 +2342,33 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
                 bool low = (bat >= 0 && bat <= 10);
                 ap__blit_status_icon(low ? 66 : 47, 51, AP__BATTERY_W, AP__BATTERY_H,
                                      bx, by, iw, ih, ap__g.theme.hint);
+                if (!show_pct && bat >= 0) {
+                    /* Fill bar: clipped from right proportional to charge level */
+                    int fill_src_x = (bat <= 20) ? 1 : 81;
+                    int fill_src_y = (bat <= 20) ? 55 : 33;
+                    int fill_full_w = 12 * s;
+                    int fill_h_px = 6 * s;
+                    int fill_w = fill_full_w * bat / 100;
+                    int clip_off = fill_full_w - fill_w;
+                    if (fill_w > 0) {
+                        SDL_Rect fsrc = { fill_src_x * s + clip_off, fill_src_y * s, fill_w, fill_h_px };
+                        SDL_Rect fdst = { bx + 3 * s + clip_off, by + 2 * s, fill_w, fill_h_px };
+                        SDL_SetTextureColorMod(ap__g.status_assets, ap__g.theme.hint.r, ap__g.theme.hint.g, ap__g.theme.hint.b);
+                        SDL_SetTextureAlphaMod(ap__g.status_assets, ap__g.theme.hint.a);
+                        SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &fsrc, &fdst);
+                    }
+                }
+            }
+            if (show_pct && bat >= 0) {
+                char pct_text[8];
+                snprintf(pct_text, sizeof(pct_text), "%d", bat);
+                TTF_Font *micro = ap_get_font(AP_FONT_MICRO);
+                if (!micro) micro = font;
+                int tw = ap_measure_text(micro, pct_text);
+                int th = TTF_FontHeight(micro);
+                int tx = bx + (iw - tw) / 2 + 1;
+                int ty = by + (ih - th) / 2 - 1;
+                ap_draw_text(micro, pct_text, tx, ty, ap__g.theme.hint);
             }
         } else
         #endif
@@ -2241,21 +2391,24 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
         #if AP_PLATFORM_IS_DEVICE
         if (ap__g.status_assets) {
             int strength = ap__get_wifi_strength();
-            int sx;
-            switch (strength) {
-                case 3:  sx = 1;  break;  /* high */
-                case 2:  sx = 14; break;  /* med */
-                case 1:  sx = 27; break;  /* low */
-                default: sx = 40; break;  /* off/disconnected */
+            if (strength > 0) {           /* hide icon entirely when disconnected */
+                int sx;
+                switch (strength) {
+                    case 3:  sx = 1;  break;  /* high */
+                    case 2:  sx = 14; break;  /* med */
+                    case 1:  sx = 27; break;  /* low */
+                    default: sx = 40; break;  /* off/disconnected (1–3 only reach here) */
+                }
+                ap__blit_status_icon(sx, 104, AP__WIFI_SIZE, AP__WIFI_SIZE,
+                                     cx, iy, iw, ih, ap__g.theme.hint);
+                cx += iw + margin;
             }
-            ap__blit_status_icon(sx, 104, AP__WIFI_SIZE, AP__WIFI_SIZE,
-                                 cx, iy, iw, ih, ap__g.theme.hint);
         } else
         #endif
         {
             ap_draw_text(font, "WiFi", cx, cy + (pill_h - TTF_FontHeight(font)) / 2, ap__g.theme.hint);
+            cx += iw + margin;
         }
-        cx += iw + margin;
     }
 
     /* Battery icon */
@@ -2280,6 +2433,22 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
                 bool low = (bat >= 0 && bat <= 10);
                 ap__blit_status_icon(low ? 66 : 47, 51, AP__BATTERY_W, AP__BATTERY_H,
                                      cx, iy, iw, ih, ap__g.theme.hint);
+                if (!show_pct && bat >= 0) {
+                    /* Fill bar: clipped from right proportional to charge level */
+                    int fill_src_x = (bat <= 20) ? 1 : 81;
+                    int fill_src_y = (bat <= 20) ? 55 : 33;
+                    int fill_full_w = 12 * s;
+                    int fill_h_px = 6 * s;
+                    int fill_w = fill_full_w * bat / 100;
+                    int clip_off = fill_full_w - fill_w;
+                    if (fill_w > 0) {
+                        SDL_Rect fsrc = { fill_src_x * s + clip_off, fill_src_y * s, fill_w, fill_h_px };
+                        SDL_Rect fdst = { cx + 3 * s + clip_off, iy + 2 * s, fill_w, fill_h_px };
+                        SDL_SetTextureColorMod(ap__g.status_assets, ap__g.theme.hint.r, ap__g.theme.hint.g, ap__g.theme.hint.b);
+                        SDL_SetTextureAlphaMod(ap__g.status_assets, ap__g.theme.hint.a);
+                        SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &fsrc, &fdst);
+                    }
+                }
             }
             if (show_pct && bat >= 0) {
                 char pct_text[8];
@@ -2301,17 +2470,32 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     }
 
     /* Clock (rightmost) */
-    if (opts->show_clock) {
-        char clock_text[32];
-        time_t now = time(NULL);
-        struct tm *t = localtime(&now);
-        if (opts->use_24h)
-            strftime(clock_text, sizeof(clock_text), "%H:%M", t);
-        else
-            strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
-        int th = TTF_FontHeight(font);
-        int ty = cy + (pill_h - th) / 2;
-        ap_draw_text(font, clock_text, cx, ty, ap__g.theme.hint);
+    {
+        bool effective_show_clock = false;
+        bool effective_24h = opts->use_24h;
+        if (opts->show_clock == AP_CLOCK_SHOW) {
+            effective_show_clock = true;
+        } else if (opts->show_clock == AP_CLOCK_AUTO) {
+            #if AP_PLATFORM_IS_DEVICE
+            effective_show_clock = ap__read_nextui_setting_int("showclock", 0) != 0;
+            if (effective_show_clock)
+                effective_24h = ap__read_nextui_setting_int("clock24h", 1) != 0;
+            #endif
+        }
+        /* AP_CLOCK_HIDE (2) leaves effective_show_clock = false */
+
+        if (effective_show_clock) {
+            char clock_text[32];
+            time_t now = time(NULL);
+            struct tm *t = localtime(&now);
+            if (effective_24h)
+                strftime(clock_text, sizeof(clock_text), "%H:%M", t);
+            else
+                strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
+            int th = TTF_FontHeight(font);
+            int ty = cy + (pill_h - th) / 2;
+            ap_draw_text(font, clock_text, cx, ty, ap__g.theme.hint);
+        }
     }
 }
 
@@ -2324,12 +2508,45 @@ static const char **ap__power_input_paths(void) {
     #elif defined(PLATFORM_TG5050)
     static const char *paths[] = { "/dev/input/event2", NULL };
     #elif defined(PLATFORM_MY355)
-    static const char *paths[] = { "/dev/input/event2", NULL };
+    /* Try multiple event devices in case firmware assigns power button differently */
+    static const char *paths[] = {
+        "/dev/input/event2",
+        "/dev/input/event0",
+        "/dev/input/event1",
+        "/dev/input/event3",
+        NULL
+    };
     #else
     static const char *paths[] = { "/dev/input/event1", NULL };
     #endif
     return paths;
 }
+
+/* MY355: scan all /dev/input/event* devices for the one that has KEY_HOME (102).
+   Returns an open fd on success, -1 if no matching device found.
+   Uses EVIOCGBIT to query key capabilities, matching the Linux input API. */
+#if defined(PLATFORM_MY355)
+static int ap__open_power_device_by_capability(void) {
+    unsigned char key_bits[(KEY_MAX + 1) / 8];
+    for (int i = 0; i < 16; i++) {
+        char path[32];
+        snprintf(path, sizeof(path), "/dev/input/event%d", i);
+        int fd = open(path, O_RDONLY | O_NONBLOCK);
+        if (fd < 0) continue;
+        memset(key_bits, 0, sizeof(key_bits));
+        if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) >= 0) {
+            /* KEY_HOME = 102: check bit 102 */
+            if (key_bits[102 / 8] & (1 << (102 % 8))) {
+                ap_log("Power: found KEY_HOME on /dev/input/event%d", i);
+                return fd;
+            }
+        }
+        close(fd);
+    }
+    ap_log("Power: no /dev/input/event* device has KEY_HOME capability");
+    return -1;
+}
+#endif
 
 static int ap__run_power_command(const char *action, const char *command) {
     errno = 0;
@@ -2360,10 +2577,14 @@ static int ap__run_power_command(const char *action, const char *command) {
 static void *ap__power_thread_func(void *arg) {
     (void)arg;
 
+    int fd = -1;
+
+#if defined(PLATFORM_MY355)
+    /* Use EVIOCGBIT capability scan to find the device that actually has KEY_HOME */
+    fd = ap__open_power_device_by_capability();
+#else
     const char **input_paths = ap__power_input_paths();
     const char *opened_path = NULL;
-
-    int fd = -1;
     for (int i = 0; input_paths[i]; i++) {
         fd = open(input_paths[i], O_RDONLY | O_NONBLOCK);
         if (fd >= 0) {
@@ -2371,12 +2592,15 @@ static void *ap__power_thread_func(void *arg) {
             break;
         }
     }
+    if (fd >= 0)
+        ap_log("Power handler: listening on %s", opened_path ? opened_path : "unknown");
+#endif
 
     if (fd < 0) {
         ap_log("Power handler: could not open input device");
         return NULL;
     }
-    ap_log("Power handler: listening on %s", opened_path ? opened_path : "unknown");
+    ap_log("Power handler: ready (fd=%d)", fd);
     ap__g.power_fd = fd;
 
     while (ap__g.power_thread_running) {
@@ -2532,10 +2756,20 @@ int ap_init(ap_config *cfg) {
     /* Open input devices.
      * On device we prefer raw joystick mapping because SDL GameController
      * DB mappings can remap face buttons in ways that differ from NextUI's
-     * expected A/B layout on TrimUI hardware. */
+     * expected A/B layout on TrimUI hardware.
+     * On device, ALL joysticks are opened (like NextUI's PLAT_initInput) so that
+     * SDL receives keyboard/power events from every registered input device. */
     int num_joy = SDL_NumJoysticks();
+    #if AP_PLATFORM_IS_DEVICE
     for (int i = 0; i < num_joy; i++) {
-        #if !AP_PLATFORM_IS_DEVICE
+        SDL_Joystick *joy = SDL_JoystickOpen(i);
+        if (joy) {
+            ap_log("Joystick %d opened: %s", i, SDL_JoystickName(joy));
+            if (!ap__g.joystick) ap__g.joystick = joy; /* keep first for backward compat */
+        }
+    }
+    #else
+    for (int i = 0; i < num_joy; i++) {
         if (SDL_IsGameController(i)) {
             ap__g.controller = SDL_GameControllerOpen(i);
             if (ap__g.controller) {
@@ -2545,14 +2779,13 @@ int ap_init(ap_config *cfg) {
                 break;
             }
         }
-        #endif
-
         ap__g.joystick = SDL_JoystickOpen(i);
         if (ap__g.joystick) {
             ap_log("Joystick opened: %s", SDL_JoystickName(ap__g.joystick));
             break;
         }
     }
+    #endif
     ap_log("Input backend: %s",
            ap__g.controller ? "gamecontroller" :
            (ap__g.joystick ? "joystick" : "none"));
