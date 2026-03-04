@@ -1170,7 +1170,10 @@ static void ap__process_sdl_events(void) {
                 break;
             }
 
-            /* --- Raw Joystick events (TrimUI devices) --- */
+            /* --- Raw Joystick events (TrimUI devices) ---
+               MY355 sends all input as keyboard scancodes; processing joystick
+               events too would cause double-input on every press. */
+            #if !defined(PLATFORM_MY355)
             case SDL_JOYBUTTONDOWN: {
                 ap_button b = ap__map_joy_button(ev.jbutton.button);
                 ap__input_push(b, true);
@@ -1349,6 +1352,7 @@ static void ap__process_sdl_events(void) {
                 }
                 break;
             }
+            #endif /* !PLATFORM_MY355 */
         }
     }
 
@@ -1587,6 +1591,47 @@ void ap_draw_rounded_rect(int x, int y, int w, int h, int r, ap_color c) {
     if (r > w / 2) r = w / 2;
     if (r < 0) r = 0;
 
+#if AP_PLATFORM_IS_DEVICE
+    /* On device, use quarter-circle sprites from the pill asset for smooth AA.
+       The 30×30 white pill at (1,1) in assets@Nx.png is a perfect circle — each
+       quadrant scaled to the corner radius via bilinear-filtered SDL_RenderCopy. */
+    if (ap__g.status_assets && r > 0) {
+        int s = ap__g.status_asset_scale;
+        int sx = 1 * s, sy = 1 * s; /* white pill sprite origin */
+        int half = 15 * s;           /* half of the 30×30 sprite */
+
+        SDL_SetTextureColorMod(ap__g.status_assets, c.r, c.g, c.b);
+        SDL_SetTextureAlphaMod(ap__g.status_assets, c.a);
+
+        /* Four corner sprites (quarter-circles) */
+        SDL_Rect tl_src = { sx,        sy,        half, half };
+        SDL_Rect tr_src = { sx + half, sy,        half, half };
+        SDL_Rect bl_src = { sx,        sy + half, half, half };
+        SDL_Rect br_src = { sx + half, sy + half, half, half };
+
+        SDL_Rect tl_dst = { x,         y,         r, r };
+        SDL_Rect tr_dst = { x + w - r, y,         r, r };
+        SDL_Rect bl_dst = { x,         y + h - r, r, r };
+        SDL_Rect br_dst = { x + w - r, y + h - r, r, r };
+
+        SDL_RenderCopy(rend, ap__g.status_assets, &tl_src, &tl_dst);
+        SDL_RenderCopy(rend, ap__g.status_assets, &tr_src, &tr_dst);
+        SDL_RenderCopy(rend, ap__g.status_assets, &bl_src, &bl_dst);
+        SDL_RenderCopy(rend, ap__g.status_assets, &br_src, &br_dst);
+
+        /* Fill body rectangles (cross pattern between corners) */
+        SDL_SetRenderDrawColor(rend, c.r, c.g, c.b, c.a);
+        SDL_Rect top_bar = { x + r, y,         w - 2 * r, r };
+        SDL_Rect mid_bar = { x,     y + r,     w,         h - 2 * r };
+        SDL_Rect bot_bar = { x + r, y + h - r, w - 2 * r, r };
+        SDL_RenderFillRect(rend, &top_bar);
+        SDL_RenderFillRect(rend, &mid_bar);
+        SDL_RenderFillRect(rend, &bot_bar);
+        return;
+    }
+#endif
+
+    /* Desktop / fallback: procedural anti-aliased corners */
     SDL_SetRenderDrawColor(rend, c.r, c.g, c.b, c.a);
 
     /* Center rectangle (between top/bottom arcs) */
@@ -1630,17 +1675,18 @@ void ap_draw_pill(int x, int y, int w, int h, ap_color c) {
         SDL_Rect ldst = { x, y, cap_dst_w, h };
         SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &lsrc, &ldst);
 
-        /* Center fill — solid rect between caps */
-        int center_w = w - h; /* total width minus two half-circle caps */
+        /* Center fill — solid rect between caps.
+           Use 2*cap_dst_w (not h) to avoid 1px gap when h is odd. */
+        int center_w = w - 2 * cap_dst_w;
         if (center_w > 0) {
             SDL_SetRenderDrawColor(ap__g.renderer, c.r, c.g, c.b, c.a);
             SDL_Rect center = { x + cap_dst_w, y, center_w, h };
             SDL_RenderFillRect(ap__g.renderer, &center);
         }
 
-        /* Right cap */
+        /* Right cap — position from left cap + center to avoid rounding gap */
         SDL_Rect rsrc = { sprite_x + cap_src_w, sprite_y, cap_src_w, sprite_sz };
-        SDL_Rect rdst = { x + w - cap_dst_w, y, cap_dst_w, h };
+        SDL_Rect rdst = { x + cap_dst_w + (center_w > 0 ? center_w : 0), y, cap_dst_w, h };
         SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &rsrc, &rdst);
 
         return;

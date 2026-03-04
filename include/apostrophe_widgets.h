@@ -1059,6 +1059,35 @@ static void ap__kb_backspace(ap_keyboard_result *result, int *text_cursor) {
     }
 }
 
+/* Built-in keyboard help text matching Gabagool's instructions */
+static const char *ap__kb_help_default =
+    "D-Pad: Navigate between keys\n"
+    "A: Type the selected key\n"
+    "B: Backspace\n"
+    "X: Space\n"
+    "L1 / R1: Move cursor within text\n"
+    "Select: Toggle Shift (uppercase/symbols)\n"
+    "Y: Exit keyboard without saving\n"
+    "Start: Enter (confirm input)";
+
+static const char *ap__kb_help_numeric =
+    "D-Pad: Navigate between keys\n"
+    "A: Type the selected digit\n"
+    "B: Backspace\n"
+    "L1 / R1: Move cursor within text\n"
+    "Y: Exit keyboard without saving\n"
+    "Start: Enter (confirm input)";
+
+static const char *ap__kb_help_url =
+    "D-Pad: Navigate between keys\n"
+    "A: Type the selected key\n"
+    "B: Backspace\n"
+    "X: Toggle symbols (0-9)\n"
+    "L1 / R1: Move cursor within text\n"
+    "Select: Toggle Shift (uppercase)\n"
+    "Y: Exit keyboard without saving\n"
+    "Start: Enter (confirm input)";
+
 int ap_keyboard(const char *initial_text, const char *help_text,
                 ap_keyboard_layout layout, ap_keyboard_result *result) {
     if (!result) return AP_ERROR;
@@ -1089,7 +1118,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
         int key_r = AP_S(8);
         int grid_w = kb_cols * (key_w + key_gap) - key_gap;
         int grid_x = (screen_w - grid_w) / 2;
-        int grid_y = screen_h - (kb_rows * (key_h + key_gap)) - AP_S(80);
+        int grid_y = screen_h - (kb_rows * (key_h + key_gap)) - ap_get_footer_height();
         int input_y = AP_S(40), input_h = AP_S(60), input_x = AP_S(40);
         int input_w = screen_w - AP_S(80);
         int cursor_x = 0, cursor_y = 0;
@@ -1163,16 +1192,17 @@ int ap_keyboard(const char *initial_text, const char *help_text,
      * 5-Row General Keyboard (matches Gabagool)
      * ═══════════════════════════════════════════════════════════════════════ */
 
-    /* Keyboard occupies ~85% of screen height, text input = screen_h/10 */
-    int kb_area_h  = screen_h * 85 / 100;
+    /* Keyboard occupies available space minus footer, text input = screen_h/10 */
+    int footer_h = ap_get_footer_height();
+    int kb_area_h  = screen_h * 85 / 100 - footer_h;
     int input_h    = screen_h / 10;
-    int input_y    = (screen_h - kb_area_h - input_h) / 2;
+    int input_y    = (screen_h - kb_area_h - footer_h - input_h) / 2;
     int input_x    = AP_S(40);
     int input_w    = screen_w - AP_S(80);
 
-    /* 12-column grid, 6-row tall area (5 key rows + spacing) */
+    /* 12-column grid, 5 key rows (footer handled separately) */
     int grid_cols = 12;
-    int grid_rows_total = 6; /* 5 data rows + 1 for footer/bottom margin */
+    int grid_rows_total = 5;
     int key_spacing = AP_S(4);
     int key_w = (screen_w - AP_S(40) - key_spacing * (grid_cols - 1)) / grid_cols;
     int key_h = (kb_area_h - key_spacing * (grid_rows_total - 1)) / grid_rows_total;
@@ -1310,8 +1340,8 @@ int ap_keyboard(const char *initial_text, const char *help_text,
                     break;
 
                 case AP_BTN_MENU:
-                    /* Help overlay */
-                    if (help_text) ap_show_help_overlay(help_text);
+                    /* Help overlay — use built-in instructions */
+                    ap_show_help_overlay(ap__kb_help_default);
                     break;
 
                 default: break;
@@ -1450,8 +1480,8 @@ int ap_keyboard(const char *initial_text, const char *help_text,
 
         #undef AP__KB_DRAW_KEY
 
-        /* Footer: single centered "Menu: Help" hint */
-        if (help_text) {
+        /* Footer: always show Help hint (built-in instructions available) */
+        {
             ap_footer_item kb_footer[] = {
                 {AP_BTN_MENU, "HELP", false},
             };
@@ -1664,7 +1694,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
                     if (text_cursor < (int)strlen(result->text)) text_cursor++;
                     break;
                 case AP_BTN_MENU:
-                    if (help_text) ap_show_help_overlay(help_text);
+                    ap_show_help_overlay(ap__kb_help_url);
                     break;
                 default: break;
             }
@@ -1799,8 +1829,8 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
 
         #undef AP__KB_DRAW_KEY2
 
-        /* Footer */
-        if (help_text) {
+        /* Footer: always show Help hint */
+        {
             ap_footer_item kb_footer[] = {{AP_BTN_MENU, "HELP", false}};
             ap_draw_footer(kb_footer, 1);
         }
@@ -2493,6 +2523,13 @@ int ap_color_picker(ap_color initial, ap_color *result) {
         int preview_w = AP_S(100);
         int preview_h = AP_S(40);
         ap_draw_pill((screen_w - preview_w) / 2, preview_y, preview_w, preview_h, sel);
+
+        /* Footer */
+        ap_footer_item picker_footer[] = {
+            {AP_BTN_B, "BACK", false},
+            {AP_BTN_A, "SELECT", true},
+        };
+        ap_draw_footer(picker_footer, 2);
 
         ap_present();
         SDL_Delay(AP__FRAME_DELAY);
