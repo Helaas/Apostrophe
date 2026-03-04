@@ -1770,6 +1770,13 @@ void ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int ma
 
     char *line_start = buf;
     while (*line_start) {
+        /* Preserve explicit blank lines ("\n\n") as vertical spacing. */
+        if (*line_start == '\n') {
+            cur_y += line_h;
+            line_start++;
+            continue;
+        }
+
         /* Find how much text fits on this line */
         char *best_break = NULL;
         char *p = line_start;

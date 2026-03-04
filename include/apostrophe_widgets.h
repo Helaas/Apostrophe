@@ -373,6 +373,13 @@ static int ap__wrapped_line_count(TTF_Font *font, const char *text, int max_w) {
     char *line_start = buf;
 
     while (*line_start) {
+        /* Preserve explicit blank lines ("\n\n") to match ap_draw_text_wrapped(). */
+        if (*line_start == '\n') {
+            lines++;
+            line_start++;
+            continue;
+        }
+
         char *best_break = NULL;
         char *p = line_start;
 
@@ -2265,6 +2272,12 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
 
     int margin = AP_S(20);
     int section_gap = AP_S(24);
+    int scrollbar_gutter = AP_S(16);
+    int content_x = margin;
+    int content_right = screen_w - margin - scrollbar_gutter;
+    if (content_right <= content_x) content_right = screen_w - margin;
+    int content_w = content_right - content_x;
+    if (content_w < 1) content_w = 1;
     int body_line_h = TTF_FontLineSkip(body_font);
     int key_line_h = TTF_FontLineSkip(key_font);
     int info_row_h = ap__max(body_line_h, key_line_h) + AP_S(4);
@@ -2311,8 +2324,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                 break;
             case AP_SECTION_DESCRIPTION:
                 if (sec->description) {
-                    int wrap_w = screen_w - margin * 2;
-                    int line_count = ap__wrapped_line_count(body_font, sec->description, wrap_w);
+                    int line_count = ap__wrapped_line_count(body_font, sec->description, content_w);
                     total_content_h += line_count * body_line_h;
                 }
                 break;
@@ -2369,7 +2381,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
         if (opts->status_bar) ap_draw_status_bar(opts->status_bar);
 
         /* Clip to content area */
-        SDL_Rect clip = {0, content_y, screen_w, content_h};
+        SDL_Rect clip = {content_x, content_y, content_w, content_h};
         SDL_RenderSetClipRect(ap_get_renderer(), &clip);
 
         int draw_y = content_y - scroll_offset;
@@ -2395,7 +2407,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                         }
                         int val_x = margin + key_w_max + AP_S(16);
                         int min_val_w = AP_S(120);
-                        int max_val_x = screen_w - margin - min_val_w;
+                        int max_val_x = content_right - min_val_w;
                         if (val_x > max_val_x) val_x = max_val_x;
                         if (val_x < margin + AP_S(16)) val_x = margin + AP_S(16);
 
@@ -2407,7 +2419,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                             if (sec->info_pairs[p].value) {
                                 ap_draw_text_clipped(body_font, sec->info_pairs[p].value,
                                     val_x, draw_y, theme->text,
-                                    screen_w - val_x - margin);
+                                    content_right - val_x);
                             }
                             draw_y += info_row_h;
                         }
@@ -2416,12 +2428,11 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
 
                 case AP_SECTION_DESCRIPTION:
                     if (sec->description) {
-                        int wrap_w = screen_w - margin * 2;
                         ap_draw_text_wrapped(body_font, sec->description,
                             margin, draw_y,
-                            wrap_w,
+                            content_w,
                             theme->text, AP_ALIGN_LEFT);
-                        draw_y += ap__wrapped_line_count(body_font, sec->description, wrap_w) * body_line_h;
+                        draw_y += ap__wrapped_line_count(body_font, sec->description, content_w) * body_line_h;
                     }
                     break;
 
@@ -2430,7 +2441,8 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                     if (img) {
                         int iw = section_image_w[s];
                         int ih = section_image_h[s];
-                        ap_draw_image(img, (screen_w - iw) / 2, draw_y, iw, ih);
+                        int ix = content_x + (content_w - iw) / 2;
+                        ap_draw_image(img, ix, draw_y, iw, ih);
                         draw_y += ih;
                     }
                     break;
@@ -2438,7 +2450,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
 
                 case AP_SECTION_TABLE:
                     if (sec->table_headers && sec->table_cols > 0) {
-                        int col_w = (screen_w - margin * 2) / sec->table_cols;
+                        int col_w = content_w / sec->table_cols;
                         /* Headers */
                         for (int c = 0; c < sec->table_cols; c++) {
                             if (sec->table_headers[c]) {
@@ -2471,7 +2483,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
 
         /* Scrollbar */
         if (max_scroll > 0) {
-            int sb_x = screen_w - margin - AP_S(6);
+            int sb_x = content_right + AP_S(6);
             ap_draw_scrollbar(sb_x, content_y, content_h,
                 content_h, total_content_h, scroll_offset);
         }
