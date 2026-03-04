@@ -361,6 +361,61 @@ static void ap__content_area(int *y, int *h, bool has_title, bool has_footer) {
     *h = ap_get_screen_height() - top - bottom;
 }
 
+/* Count wrapped lines using the same word-break behavior as ap_draw_text_wrapped() */
+static int ap__wrapped_line_count(TTF_Font *font, const char *text, int max_w) {
+    if (!font || !text || !text[0] || max_w <= 0) return 0;
+
+    char buf[4096];
+    strncpy(buf, text, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    int lines = 0;
+    char *line_start = buf;
+
+    while (*line_start) {
+        char *best_break = NULL;
+        char *p = line_start;
+
+        while (*p) {
+            char *word_end = p;
+            while (*word_end && *word_end != ' ' && *word_end != '\n') word_end++;
+
+            char saved = *word_end;
+            *word_end = '\0';
+
+            int tw = 0;
+            TTF_SizeUTF8(font, line_start, &tw, NULL);
+
+            *word_end = saved;
+
+            if (tw > max_w && best_break) break;
+
+            best_break = word_end;
+
+            if (*word_end == '\n') {
+                best_break = word_end;
+                break;
+            }
+
+            if (*word_end == '\0') break;
+            p = word_end + 1;
+        }
+
+        if (!best_break || best_break == line_start) {
+            best_break = line_start + strlen(line_start);
+        }
+
+        lines++;
+
+        if (*best_break == ' ' || *best_break == '\n')
+            line_start = best_break + 1;
+        else
+            line_start = best_break;
+    }
+
+    return lines;
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * LIST WIDGET Implementation
@@ -2210,7 +2265,11 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
 
     int margin = AP_S(20);
     int section_gap = AP_S(24);
-    int line_h = TTF_FontLineSkip(body_font);
+    int body_line_h = TTF_FontLineSkip(body_font);
+    int key_line_h = TTF_FontLineSkip(key_font);
+    int info_row_h = ap__max(body_line_h, key_line_h) + AP_S(4);
+    int table_row_h = info_row_h;
+    int section_title_h = TTF_FontLineSkip(section_font) + AP_S(6);
 
     SDL_Texture **section_images = NULL;
     int *section_image_w = NULL;
@@ -2244,18 +2303,17 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
     int total_content_h = 0;
     for (int s = 0; s < opts->section_count; s++) {
         ap_detail_section *sec = &opts->sections[s];
-        if (sec->title) total_content_h += AP_S(32);
+        if (sec->title) total_content_h += section_title_h;
 
         switch (sec->type) {
             case AP_SECTION_INFO:
-                total_content_h += sec->info_count * (line_h + AP_S(4));
+                total_content_h += sec->info_count * info_row_h;
                 break;
             case AP_SECTION_DESCRIPTION:
-                /* Rough estimate — actual wrapped height is complex */
                 if (sec->description) {
-                    int chars_per_line = (screen_w - margin * 2) / (AP_S(10));
-                    int est_lines = ((int)strlen(sec->description) / (chars_per_line > 0 ? chars_per_line : 1)) + 1;
-                    total_content_h += est_lines * line_h;
+                    int wrap_w = screen_w - margin * 2;
+                    int line_count = ap__wrapped_line_count(body_font, sec->description, wrap_w);
+                    total_content_h += line_count * body_line_h;
                 }
                 break;
             case AP_SECTION_IMAGE:
@@ -2264,7 +2322,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                 }
                 break;
             case AP_SECTION_TABLE:
-                total_content_h += (sec->table_rows_count + 1) * (line_h + AP_S(4));
+                total_content_h += (sec->table_rows_count + 1) * table_row_h;
                 break;
         }
         total_content_h += section_gap;
@@ -2322,37 +2380,48 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
             /* Section title */
             if (sec->title) {
                 ap_draw_text(section_font, sec->title, margin, draw_y, theme->accent);
-                draw_y += AP_S(32);
+                draw_y += section_title_h;
             }
 
             switch (sec->type) {
                 case AP_SECTION_INFO:
-                    for (int p = 0; p < sec->info_count; p++) {
-                        if (sec->info_pairs[p].key) {
-                            ap_draw_text(key_font, sec->info_pairs[p].key,
-                                margin, draw_y, theme->hint);
+                    {
+                        int key_w_max = 0;
+                        for (int p = 0; p < sec->info_count; p++) {
+                            if (sec->info_pairs[p].key) {
+                                int kw = ap_measure_text(key_font, sec->info_pairs[p].key);
+                                if (kw > key_w_max) key_w_max = kw;
+                            }
                         }
-                        if (sec->info_pairs[p].value) {
-                            int val_x = margin + AP_S(200);
-                            ap_draw_text_clipped(body_font, sec->info_pairs[p].value,
-                                val_x, draw_y, theme->text,
-                                screen_w - val_x - margin);
+                        int val_x = margin + key_w_max + AP_S(16);
+                        int min_val_w = AP_S(120);
+                        int max_val_x = screen_w - margin - min_val_w;
+                        if (val_x > max_val_x) val_x = max_val_x;
+                        if (val_x < margin + AP_S(16)) val_x = margin + AP_S(16);
+
+                        for (int p = 0; p < sec->info_count; p++) {
+                            if (sec->info_pairs[p].key) {
+                                ap_draw_text(key_font, sec->info_pairs[p].key,
+                                    margin, draw_y, theme->hint);
+                            }
+                            if (sec->info_pairs[p].value) {
+                                ap_draw_text_clipped(body_font, sec->info_pairs[p].value,
+                                    val_x, draw_y, theme->text,
+                                    screen_w - val_x - margin);
+                            }
+                            draw_y += info_row_h;
                         }
-                        draw_y += line_h + AP_S(4);
                     }
                     break;
 
                 case AP_SECTION_DESCRIPTION:
                     if (sec->description) {
+                        int wrap_w = screen_w - margin * 2;
                         ap_draw_text_wrapped(body_font, sec->description,
                             margin, draw_y,
-                            screen_w - margin * 2,
+                            wrap_w,
                             theme->text, AP_ALIGN_LEFT);
-                        /* Advance draw_y by estimated wrapped text height */
-                        int est_lines = 1;
-                        int cpl = (screen_w - margin * 2) / (AP_S(10));
-                        if (cpl > 0) est_lines = ((int)strlen(sec->description) / cpl) + 1;
-                        draw_y += est_lines * line_h;
+                        draw_y += ap__wrapped_line_count(body_font, sec->description, wrap_w) * body_line_h;
                     }
                     break;
 
@@ -2377,7 +2446,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                                     margin + c * col_w, draw_y, theme->accent);
                             }
                         }
-                        draw_y += line_h + AP_S(4);
+                        draw_y += table_row_h;
                         /* Rows */
                         for (int r = 0; r < sec->table_rows_count; r++) {
                             if (sec->table_rows && sec->table_rows[r]) {
@@ -2389,7 +2458,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                                     }
                                 }
                             }
-                            draw_y += line_h + AP_S(4);
+                            draw_y += table_row_h;
                         }
                     }
                     break;
