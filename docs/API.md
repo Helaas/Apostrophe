@@ -20,6 +20,9 @@ Complete reference for all public functions, types, and macros in `apostrophe.h`
   - [Texture Cache](#texture-cache)
   - [Combos](#combos)
   - [Logging](#logging)
+  - [Accessors](#accessors)
+  - [Power](#power)
+  - [Error Handling](#error-handling)
 - [Widgets (apostrophe_widgets.h)](#widgets)
   - [List](#list)
   - [Options List](#options-list)
@@ -45,12 +48,16 @@ Complete reference for all public functions, types, and macros in `apostrophe.h`
 | `AP_CANCELLED` | `-2` | User cancelled (pressed back) |
 | `AP_REFERENCE_WIDTH` | `1024` | Reference width for scaling |
 | `AP_SCALE_DAMPING` | `0.75f` | Damping for screens wider than reference |
+| `AP_DS(base)` | — | Scale a pixel value by integer `device_scale` (2 or 3) |
 | `AP_S(base)` | — | Scale a pixel value from reference to actual screen |
 | `AP_PLATFORM_NAME` | `"tg5040"` etc. | Compile-time platform identifier |
 | `AP_PLATFORM_IS_DEVICE` | `0` or `1` | Whether building for a real device |
+| `AP_INPUT_DEBOUNCE` | `20` | Input debounce delay (ms) |
 | `AP_INPUT_REPEAT_DELAY` | `150` | Initial hold delay (ms) |
 | `AP_INPUT_REPEAT_RATE` | `50` | Repeat rate (ms) |
 | `AP_AXIS_DEADZONE` | `16000` | Joystick axis dead zone |
+| `AP_TEXT_SCROLL_SPEED` | `1` | Text scroll speed (pixels per tick) |
+| `AP_TEXT_SCROLL_PAUSE_MS` | `1000` | Pause at scroll endpoints (ms) |
 | `AP_TEXTURE_CACHE_SIZE` | `8` | LRU texture cache capacity |
 | `AP_MAX_COMBOS` | `16` | Max registered button combos |
 | `AP_MAX_LOG_LEN` | `2048` | Max log message length |
@@ -207,6 +214,14 @@ Get the current screen dimensions in pixels.
 
 Get the current scaling factor (screen_width / reference_width, with damping).
 
+#### `int ap_scale(int base)`
+
+Scale a pixel value from 1024-reference space to actual screen space. Equivalent to the `AP_S()` macro as a function call.
+
+#### `int ap_font_size_for_resolution(int base_size)`
+
+Scale a base font size by `device_scale` (integer multiplier: 2 for MY355/TG5050/TG5040 handheld, 3 for TG5040 brick). Returns `base_size * device_scale`.
+
 #### `AP_S(base)`
 
 Macro. Scales an integer pixel value from reference (1024px) to actual screen:
@@ -221,9 +236,17 @@ int margin = AP_S(20);  // 20px * scale factor
 
 Get a pointer to the current theme. Modifiable.
 
+#### `int ap_theme_load_nextui(void)`
+
+Load the theme from the NextUI configuration. Sets accent color, font path, and background image from device settings. Returns `AP_OK` on success, `AP_ERROR` on failure. Called automatically during `ap_init()` when `ap_config.is_nextui` is true.
+
+#### `ap_color ap_hex_to_color(const char *hex)`
+
+Parse a `#RRGGBB` hex string and return the corresponding `ap_color` (with alpha 255). Returns black `{0,0,0,255}` on invalid input.
+
 #### `void ap_set_theme_color(const char *hex)`
 
-Parse a `#RRGGBB` string into a color: `ap_theme_set_color(&theme->accent, "#FF6600");`
+Parse a `#RRGGBB` string and apply it as the theme accent color: `ap_set_theme_color("#FF6600");`
 
 ### Fonts
 
@@ -238,6 +261,14 @@ Get a pre-loaded, pre-scaled font for the given tier. Returns NULL if not loaded
 Poll for the next input event. Returns `true` if an event was available.
 
 Handles SDL event processing internally: keyboard events, raw joystick buttons/axes/hats (TrimUI), SDL GameController buttons/axes (macOS + recognised gamepads), platform-specific scancodes (my355), and quit events.
+
+#### `void ap_flip_face_buttons(bool flip)`
+
+Swap A/B and X/Y button mappings. When `flip` is true, hardware A reports as `AP_BTN_B` and vice versa (likewise X/Y). Useful for platforms where the firmware already swaps face buttons.
+
+#### `const char *ap_button_name(ap_button btn)`
+
+Get the display name string for a virtual button (e.g. `"A"`, `"UP"`, `"START"`). Returns `"Unknown"` for out-of-range values.
 
 #### `void ap_set_input_delay(uint32_t ms)`
 
@@ -289,9 +320,25 @@ Draw a pill shape (fully rounded rectangle where corner radius = h/2). On device
 
 Draw a filled rounded rectangle with arbitrary corner radius using scanline quarter-circle fill with sub-pixel anti-aliasing (no SDL2_gfx dependency).
 
+#### `void ap_draw_circle(int cx, int cy, int r, ap_color c)`
+
+Draw a filled circle at center (cx, cy) with radius r.
+
 #### `void ap_draw_image(SDL_Texture *tex, int x, int y, int w, int h)`
 
 Draw a loaded SDL texture at the given position/size.
+
+#### `SDL_Texture *ap_load_image(const char *path)`
+
+Load an image from disk (PNG, JPG) and return an SDL_Texture. Returns NULL on failure.
+
+#### `void ap_draw_scrollbar(int x, int y, int h, int visible, int total, int offset)`
+
+Draw a vertical scrollbar track and thumb. The thumb size and position are computed from visible/total/offset. Does nothing if total <= visible.
+
+#### `void ap_draw_progress_bar(int x, int y, int w, int h, float progress, ap_color fg, ap_color bg)`
+
+Draw a rounded progress bar. `progress` is clamped to 0.0–1.0.
 
 ### Footer & Status Bar
 
@@ -313,15 +360,23 @@ Draw a status bar pill at the top-right of the screen. Shows clock, battery, and
 
 Calculate the pixel width of the status bar pill, including padding. Use this to clip long title text to avoid overlap.
 
+#### `int ap_get_status_bar_height(void)`
+
+Get the height of the status bar in pixels (scaled).
+
 ### Text Scrolling
+
+#### `void ap_text_scroll_init(ap_text_scroll *s)`
+
+Initialise a text scroll state. Resets offset, direction, and pause timer.
 
 #### `void ap_text_scroll_reset(ap_text_scroll *scroll)`
 
 Reset a text scroll state to the beginning.
 
-#### `void ap_text_scroll_update(ap_text_scroll *scroll, int text_w, int visible_w)`
+#### `void ap_text_scroll_update(ap_text_scroll *scroll, int text_w, int visible_w, uint32_t dt_ms)`
 
-Advance the ping-pong scroll animation. Call once per frame.
+Advance the ping-pong scroll animation. Call once per frame, passing the frame delta time in milliseconds.
 
 ### Texture Cache
 
@@ -349,6 +404,14 @@ Returns `AP_ERROR` when `id` is NULL/empty, `buttons` is NULL, or `count` is out
 Register an ordered button sequence combo.
 Returns `AP_ERROR` when `id` is NULL/empty, `buttons` is NULL, or `count` is outside `1..8`.
 
+#### `void ap_unregister_combo(const char *id)`
+
+Deactivate a previously registered combo by its `id`. The combo slot is marked inactive but not removed.
+
+#### `void ap_clear_combos(void)`
+
+Remove all registered combos.
+
 #### `bool ap_poll_combo(ap_combo_event *event)`
 
 Poll the combo event queue.
@@ -371,6 +434,32 @@ Resolve a standard NextUI-style log path for an app binary name:
 - `HOME/.userdata/logs/<app_name>.txt`
 
 Returns `NULL` if no suitable base path is available.
+
+### Accessors
+
+#### `SDL_Renderer *ap_get_renderer(void)`
+
+Get the underlying SDL renderer.
+
+#### `SDL_Window *ap_get_window(void)`
+
+Get the underlying SDL window.
+
+### Power
+
+#### `void ap_set_power_handler(bool enabled)`
+
+Enable or disable the background power button handler. On device, this listens for `KEY_POWER` from Linux input devices — a short press triggers suspend, a long press (>= 1s) triggers shutdown. Enabled automatically by `ap_init()` on device builds.
+
+### Error Handling
+
+#### `const char *ap_get_error(void)`
+
+Get the last error message set by Apostrophe. Returns an empty string if no error.
+
+#### `bool ap_is_cancelled(int result)`
+
+Convenience check: returns `true` if `result == AP_CANCELLED`.
 
 ---
 
@@ -570,6 +659,22 @@ Scrollable multi-section view for displaying information. Supports:
 | `AP_SECTION_TABLE` | Tabular data |
 
 `AP_SECTION_IMAGE` textures are loaded once when the detail screen opens and reused for each frame until the screen exits.
+
+**`ap_detail_action`** enum:
+```c
+typedef enum {
+    AP_DETAIL_BACK = 0,   // User pressed back
+    AP_DETAIL_ACTION      // User pressed the action button
+} ap_detail_action;
+```
+
+**`ap_detail_result`**:
+```c
+typedef struct {
+    ap_detail_action action;
+} ap_detail_result;
+```
+
 ### Download Manager
 
 ```c

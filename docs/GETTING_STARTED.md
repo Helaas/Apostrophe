@@ -290,7 +290,7 @@ Never hard-code pixel sizes. Use the scaling macro:
 
 ```c
 int margin = AP_S(20);           // 20px at 1024-width reference
-int font_height = AP_S(44);     // Medium font size
+int padding = AP_S(10);          // 10px at 1024-width reference
 ```
 
 This automatically adapts to the target screen resolution.

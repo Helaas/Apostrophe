@@ -163,12 +163,12 @@ typedef enum {
 
 /* Font size tiers — scaled to screen resolution at init */
 typedef enum {
-    AP_FONT_EXTRA_LARGE = 0,  /* Base: 60px at 1024 width */
-    AP_FONT_LARGE,             /* Base: 50px */
-    AP_FONT_MEDIUM,            /* Base: 44px */
-    AP_FONT_SMALL,             /* Base: 34px */
-    AP_FONT_TINY,              /* Base: 24px */
-    AP_FONT_MICRO,             /* Base: 18px */
+    AP_FONT_EXTRA_LARGE = 0,  /* Base: 24 × device_scale */
+    AP_FONT_LARGE,             /* Base: 16 × device_scale */
+    AP_FONT_MEDIUM,            /* Base: 14 × device_scale */
+    AP_FONT_SMALL,             /* Base: 12 × device_scale */
+    AP_FONT_TINY,              /* Base: 10 × device_scale */
+    AP_FONT_MICRO,             /* Base:  7 × device_scale */
     AP_FONT_TIER_COUNT
 } ap_font_tier;
 
@@ -1170,9 +1170,10 @@ static void ap__process_sdl_events(void) {
                 break;
             }
 
-            /* --- Raw Joystick events (TrimUI devices) ---
-               MY355 sends all input as keyboard scancodes; processing joystick
-               events too would cause double-input on every press. */
+            /* --- Raw Joystick button/hat events (TrimUI devices) ---
+               MY355 sends buttons and d-pad as keyboard scancodes; processing
+               joystick button/hat events too would cause double-input.
+               Axis events (thumbstick) are allowed through on all platforms. */
             #if !defined(PLATFORM_MY355)
             case SDL_JOYBUTTONDOWN: {
                 ap_button b = ap__map_joy_button(ev.jbutton.button);
@@ -1311,7 +1312,11 @@ static void ap__process_sdl_events(void) {
                 ap__g.hat_repeat_time = now + ap__g.input_repeat_delay_ms;
                 break;
             }
+            #endif /* !PLATFORM_MY355 */
 
+            /* --- Analog stick axis events (all device platforms) ---
+               Thumbstick generates SDL_JOYAXISMOTION on all devices including
+               MY355, so this must remain outside the MY355 exclusion guard. */
             case SDL_JOYAXISMOTION: {
                 if (ev.jaxis.axis == 1) { /* Y axis (up/down) */
                     if (ev.jaxis.value < -AP_AXIS_DEADZONE) {
@@ -1352,7 +1357,6 @@ static void ap__process_sdl_events(void) {
                 }
                 break;
             }
-            #endif /* !PLATFORM_MY355 */
         }
     }
 
