@@ -34,7 +34,7 @@ CURL_CFLAGS += -I$(CURL_PREFIX)/include -DAP_ENABLE_CURL
 CURL_LDFLAGS += -Wl,--no-as-needed \
 	-L$(CURL_PREFIX)/lib -L$(OPENSSL_PREFIX)/lib \
 	-Wl,-rpath-link,$(CURL_PREFIX)/lib -Wl,-rpath-link,$(OPENSSL_PREFIX)/lib \
-	-lcurl -lssl -lcrypto -lz \
+	-lcurl \
 	-Wl,--as-needed
 endif
 

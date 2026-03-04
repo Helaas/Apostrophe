@@ -371,18 +371,26 @@ static void demo_process(void) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void demo_detail(void) {
     ap_detail_info_pair info[] = {
-        { .key = "Name",     .value = "Apostrophe" },
-        { .key = "Version",  .value = "1.0.0"      },
-        { .key = "Author",   .value = "Helaas"  },
-        { .key = "License",  .value = "MIT"         },
+        { .key = "Name",             .value = "Apostrophe" },
+        { .key = "Version",          .value = "1.0.0" },
+        { .key = "Author",           .value = "Helaas" },
+        { .key = "License",          .value = "MIT" },
+        { .key = "Language",         .value = "C (header-only)" },
+        { .key = "Renderer",         .value = "SDL2" },
+        { .key = "Reference Width",  .value = "1024px" },
+        { .key = "Widgets",          .value = "List, Options, Keyboard, Detail, Selection, Process, Color Picker" },
+        { .key = "Targets",          .value = "Desktop + NextUI handheld devices" },
+        { .key = "Repository",       .value = "github.com/Helaas/apostrophe" },
+        { .key = "Focus",            .value = "Portable, practical, gamepad-first interfaces" },
+        { .key = "Demo Goal",        .value = "Show every widget and stress scrolling behavior" },
     };
 
     ap_detail_section sections[] = {
         {
             .type       = AP_SECTION_INFO,
-            .title      = "Info",
+            .title      = "Project Info",
             .info_pairs = info,
-            .info_count = 4,
+            .info_count = (int)(sizeof(info) / sizeof(info[0])),
         },
         {
             .type        = AP_SECTION_DESCRIPTION,
@@ -390,7 +398,46 @@ static void demo_detail(void) {
             .description = "Apostrophe is a header-only C UI toolkit for building "
                            "graphical tools on retro gaming handhelds running NextUI. "
                            "It provides a comprehensive set of pre-built widgets "
-                           "including lists, keyboards, settings panels, and more.",
+                           "including lists, keyboards, settings panels, process views, "
+                           "detail screens, and other reusable screens that can be composed "
+                           "into complete applications with very little glue code.",
+        },
+        {
+            .type        = AP_SECTION_DESCRIPTION,
+            .title       = "Why This Screen Is Long",
+            .description = "This section intentionally contains extra text to demonstrate "
+                           "vertical scrolling in the detail widget. Use D-Pad Up and Down "
+                           "to move through content, and watch the scrollbar update as the "
+                           "content offset changes. The goal is to make it easy to validate "
+                           "scroll feel on both smaller and larger screens without needing to "
+                           "edit source code each time.",
+        },
+        {
+            .type        = AP_SECTION_DESCRIPTION,
+            .title       = "Input Guide",
+            .description = "A/B/X/Y and shoulder buttons are available depending on your "
+                           "device mapping, but this screen only needs the basics: B returns "
+                           "to the previous menu and D-Pad handles scrolling. If your target "
+                           "device has lower resolution, this page should still be comfortably "
+                           "readable due to scaling and text wrapping.",
+        },
+        {
+            .type        = AP_SECTION_DESCRIPTION,
+            .title       = "Implementation Notes",
+            .description = "The demo keeps this content static and local, but the same widget "
+                           "can render runtime data such as package metadata, release notes, "
+                           "game details, diagnostics, legal notices, or troubleshooting "
+                           "instructions. You can split those into multiple sections so users "
+                           "can scan headings while scrolling.",
+        },
+        {
+            .type        = AP_SECTION_DESCRIPTION,
+            .title       = "Sample Changelog",
+            .description = "v1.0.0: Initial public header-only release with list, options, "
+                           "keyboard, confirmation, selection, process, detail, and color "
+                           "widgets.\n\nv1.1.0: Added scroll position restoration and richer "
+                           "footer actions.\n\nv1.2.0: Improved visual parity and tightened "
+                           "input behavior on handheld targets.",
         },
     };
 
@@ -401,7 +448,7 @@ static void demo_detail(void) {
     ap_detail_opts opts = {
         .title         = "About Apostrophe",
         .sections      = sections,
-        .section_count = 2,
+        .section_count = (int)(sizeof(sections) / sizeof(sections[0])),
         .footer        = footer,
         .footer_count  = 1,
     };

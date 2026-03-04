@@ -1019,6 +1019,7 @@ TTF_Font *ap_get_font(ap_font_tier tier) {
 /* ─── Input System ───────────────────────────────────────────────────────── */
 
 /* Map SDL joystick button to virtual button (raw joystick — used on TrimUI) */
+#if !defined(PLATFORM_MY355)
 static ap_button ap__map_joy_button(uint8_t btn) {
     if (ap__g.face_buttons_flipped) {
         if (btn == AP__JOY_BTN_A) return AP_BTN_B;
@@ -1039,6 +1040,7 @@ static ap_button ap__map_joy_button(uint8_t btn) {
         default:                 return AP_BTN_NONE;
     }
 }
+#endif
 
 /* Map SDL GameController button to virtual button (used on macOS / when SDL
  * recognises the device as a standard game controller) */

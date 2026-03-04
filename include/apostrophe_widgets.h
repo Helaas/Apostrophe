@@ -1150,6 +1150,9 @@ int ap_keyboard(const char *initial_text, const char *help_text,
                     case AP_BTN_START: return AP_OK;
                     case AP_BTN_L1: if (text_cursor > 0) text_cursor--; break;
                     case AP_BTN_R1: if (text_cursor < (int)strlen(result->text)) text_cursor++; break;
+                    case AP_BTN_MENU:
+                        ap_show_help_overlay(help_text ? help_text : ap__kb_help_numeric);
+                        break;
                     default: break;
                 }
             }
