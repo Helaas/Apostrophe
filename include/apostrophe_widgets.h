@@ -334,7 +334,7 @@ static void ap__draw_title(const char *title) {
     TTF_Font *font = ap_get_font(AP_FONT_EXTRA_LARGE);
     if (!font) return;
 
-    int margin = AP_S(30);   /* Gabagool: Margins.Left(20) + 10 = 30 */
+    int margin = AP_DS(ap__g.device_padding + 5); /* inset from screen edge */
     int title_y = 0;
     ap_draw_text(font, title, margin, title_y, ap_get_theme()->text);
 }
@@ -345,7 +345,7 @@ static void ap__draw_title_clipped(const char *title, int status_bar_w) {
     TTF_Font *font = ap_get_font(AP_FONT_EXTRA_LARGE);
     if (!font) return;
 
-    int margin = AP_S(30);
+    int margin = AP_DS(ap__g.device_padding + 5);
     int title_y = 0;
     int max_w = ap_get_screen_width() - margin * 2 - status_bar_w;
     ap_draw_text_clipped(font, title, margin, title_y, ap_get_theme()->text, max_w);
@@ -354,7 +354,7 @@ static void ap__draw_title_clipped(const char *title, int status_bar_w) {
 /* Calculate the usable content area (below title, above footer) */
 static void ap__content_area(int *y, int *h, bool has_title, bool has_footer) {
     int top = 0;
-    if (has_title) top = AP_S(80);  /* title at Y=0, ExtraLarge(60) + gap(20) */
+    if (has_title) top = AP_DS(40);  /* title zone: EXTRA_LARGE font height + gap */
     int bottom = 0;
     if (has_footer) bottom = ap_get_footer_height();
     *y = top;
@@ -409,16 +409,16 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     int screen_w = ap_get_screen_width();
 
     TTF_Font *title_font = ap_get_font(AP_FONT_EXTRA_LARGE);
-    TTF_Font *item_font  = ap_get_font(AP_FONT_SMALL);
+    TTF_Font *item_font  = ap_get_font(AP_FONT_LARGE); /* NextUI uses font.large for menu items */
     if (!title_font || !item_font) return AP_ERROR;
 
-    /* Layout constants — match Gabagool: 60px pill, no gap */
-    int margin     = AP_S(20);
-    int pill_h     = AP_S(60);
-    int pill_pad   = AP_S(20);
+    /* Layout constants — match NextUI: PILL_SIZE × device_scale, no gap */
+    int margin     = AP_DS(ap__g.device_padding);
+    int pill_h     = AP_DS(AP__PILL_SIZE);
+    int pill_pad   = AP_DS(AP__BUTTON_PADDING);
     int item_gap   = 0;
-    int image_size = opts->show_images ? AP_S(48) : 0;
-    int image_pad  = opts->show_images ? AP_S(12) : 0;
+    int image_size = opts->show_images ? AP_DS(24) : 0;
+    int image_pad  = opts->show_images ? AP_DS(6) : 0;
 
     /* Content area */
     int content_y, content_h;
@@ -743,15 +743,15 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
     ap_theme *theme = ap_get_theme();
     int screen_w = ap_get_screen_width();
 
-    TTF_Font *label_font = ap_get_font(AP_FONT_SMALL);
+    TTF_Font *label_font = ap_get_font(AP_FONT_LARGE); /* NextUI uses font.large for option labels */
     TTF_Font *value_font = ap_get_font(AP_FONT_TINY);
     if (!label_font || !value_font) return AP_ERROR;
 
-    int margin   = AP_S(20);
-    int pill_h   = AP_S(56);
-    int pill_pad = AP_S(20);
-    int item_gap = AP_S(4);
-    int arrow_w  = AP_S(24);
+    int margin   = AP_DS(ap__g.device_padding);
+    int pill_h   = AP_DS(AP__PILL_SIZE);
+    int pill_pad = AP_DS(AP__BUTTON_PADDING);
+    int item_gap = AP_DS(2);
+    int arrow_w  = AP_DS(12);
 
     int content_y, content_h;
     ap__content_area(&content_y, &content_h, opts->title != NULL, opts->footer_count > 0);

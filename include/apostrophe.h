@@ -529,14 +529,14 @@ static int ap__clamp(int val, int lo, int hi) {
 
 static int ap__max(int a, int b) { return a > b ? a : b; }
 
-/* Base font sizes at 1024px reference width */
+/* Base font sizes — multiplied by device_scale, matching NextUI defines.h */
 static const int ap__font_base_sizes[AP_FONT_TIER_COUNT] = {
-    60, /* EXTRA_LARGE */
-    50, /* LARGE */
-    44, /* MEDIUM */
-    34, /* SMALL */
-    24, /* TINY */
-    18, /* MICRO */
+    24, /* EXTRA_LARGE — title/header (no NextUI equivalent) */
+    16, /* LARGE       — menu/list items (NextUI FONT_LARGE) */
+    14, /* MEDIUM      — single-char button label (NextUI FONT_MEDIUM) */
+    12, /* SMALL       — hint text, status clock (NextUI FONT_SMALL) */
+    10, /* TINY        — multi-char button label (NextUI FONT_TINY) */
+     7, /* MICRO       — overlay text (NextUI FONT_MICRO) */
 };
 
 /* Default theme (matches Gabagool's NextUI defaults) */
@@ -900,7 +900,8 @@ int ap_scale(int base) {
 }
 
 int ap_font_size_for_resolution(int base_size) {
-    return (int)(base_size * ap__g.scale_factor);
+    int scale = ap__g.device_scale ? ap__g.device_scale : 2;
+    return base_size * scale;
 }
 
 static void ap__compute_scale_factor(void) {
@@ -1608,6 +1609,44 @@ void ap_draw_rounded_rect(int x, int y, int w, int h, int r, ap_color c) {
 }
 
 void ap_draw_pill(int x, int y, int w, int h, ap_color c) {
+#if AP_PLATFORM_IS_DEVICE
+    /* On device, use pre-rendered pill sprite from assets@2x.png for proper AA.
+       White pill sprite at (1,1, 30,30) in 1x coords — a 30×30 circle with
+       anti-aliased alpha edges. Blit left cap + center fill + right cap.
+       Color tinting via SDL_SetTextureColorMod on the white sprite. */
+    if (ap__g.status_assets) {
+        int s = ap__g.status_asset_scale;
+        int sprite_x = 1 * s;  /* white pill top-left in spritesheet */
+        int sprite_y = 1 * s;
+        int sprite_sz = 30 * s; /* full sprite width/height */
+        int cap_src_w = sprite_sz / 2; /* half-sprite = one cap */
+        int cap_dst_w = h / 2;         /* destination cap width = half pill height */
+
+        SDL_SetTextureColorMod(ap__g.status_assets, c.r, c.g, c.b);
+        SDL_SetTextureAlphaMod(ap__g.status_assets, c.a);
+
+        /* Left cap */
+        SDL_Rect lsrc = { sprite_x, sprite_y, cap_src_w, sprite_sz };
+        SDL_Rect ldst = { x, y, cap_dst_w, h };
+        SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &lsrc, &ldst);
+
+        /* Center fill — solid rect between caps */
+        int center_w = w - h; /* total width minus two half-circle caps */
+        if (center_w > 0) {
+            SDL_SetRenderDrawColor(ap__g.renderer, c.r, c.g, c.b, c.a);
+            SDL_Rect center = { x + cap_dst_w, y, center_w, h };
+            SDL_RenderFillRect(ap__g.renderer, &center);
+        }
+
+        /* Right cap */
+        SDL_Rect rsrc = { sprite_x + cap_src_w, sprite_y, cap_src_w, sprite_sz };
+        SDL_Rect rdst = { x + w - cap_dst_w, y, cap_dst_w, h };
+        SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &rsrc, &rdst);
+
+        return;
+    }
+#endif
+    /* Desktop / fallback: procedural drawing */
     ap_draw_rounded_rect(x, y, w, h, h / 2, c);
 }
 
@@ -2862,6 +2901,37 @@ int ap_init(ap_config *cfg) {
     ap__compute_scale_factor();
     ap_log("Scale factor: %.3f", ap__g.scale_factor);
 
+    /* Compute device scale & padding matching NextUI's FIXED_SCALE / PADDING.
+       Must be set before font loading since fonts use device_scale. */
+    #if AP_PLATFORM_IS_DEVICE
+    {
+        #if defined(PLATFORM_TG5040)
+        /* TG5040 brick: 1024×768 scale=3 padding=5, handheld: 1280×720 scale=2 padding=10 */
+        if (ap__g.screen_w <= 1024 && ap__g.screen_h >= 768) {
+            ap__g.device_scale = 3;
+            ap__g.device_padding = 5;
+        } else {
+            ap__g.device_scale = 2;
+            ap__g.device_padding = 10;
+        }
+        #elif defined(PLATFORM_TG5050)
+        ap__g.device_scale = 2;
+        ap__g.device_padding = 10;
+        #elif defined(PLATFORM_MY355)
+        ap__g.device_scale = 2;
+        ap__g.device_padding = 10;
+        #else
+        ap__g.device_scale = 2;
+        ap__g.device_padding = 10;
+        #endif
+    }
+    #else
+    /* Non-device (macOS / desktop): use scale 2 as reasonable default */
+    ap__g.device_scale = 2;
+    ap__g.device_padding = 10;
+    #endif
+    ap_log("Device scale: %d, padding: %d", ap__g.device_scale, ap__g.device_padding);
+
     /* Create window */
     uint32_t win_flags = SDL_WINDOW_SHOWN;
     if (!dev_mode) {
@@ -2884,6 +2954,9 @@ int ap_init(ap_config *cfg) {
         SDL_Quit();
         return AP_ERROR;
     }
+
+    /* Set render quality hint before creating renderer/textures (matches NextUI) */
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"); /* bilinear filtering */
 
     /* Create renderer — try HW accelerated first, fall back to software */
     ap__g.renderer = SDL_CreateRenderer(ap__g.window, -1,
@@ -2957,35 +3030,6 @@ int ap_init(ap_config *cfg) {
             }
         }
     }
-
-    /* Compute device scale & padding matching NextUI's FIXED_SCALE / PADDING */
-    #if AP_PLATFORM_IS_DEVICE
-    {
-        #if defined(PLATFORM_TG5040)
-        /* TG5040 brick: 1024×768 scale=3 padding=5, handheld: 1280×720 scale=2 padding=10 */
-        if (ap__g.screen_w <= 1024 && ap__g.screen_h >= 768) {
-            ap__g.device_scale = 3;
-            ap__g.device_padding = 5;
-        } else {
-            ap__g.device_scale = 2;
-            ap__g.device_padding = 10;
-        }
-        #elif defined(PLATFORM_TG5050)
-        ap__g.device_scale = 2;
-        ap__g.device_padding = 10;
-        #elif defined(PLATFORM_MY355)
-        ap__g.device_scale = 2;
-        ap__g.device_padding = 10;
-        #else
-        ap__g.device_scale = 2;
-        ap__g.device_padding = 10;
-        #endif
-    }
-    #else
-    /* Non-device (macOS / desktop): use scale 2 as reasonable default */
-    ap__g.device_scale = 2;
-    ap__g.device_padding = 10;
-    #endif
 
     /* Load NextUI asset spritesheet for status bar icons */
     #if AP_PLATFORM_IS_DEVICE

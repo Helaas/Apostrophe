@@ -266,14 +266,14 @@ ap_color color = ap_get_theme()->highlight;
 
 ## Font Tiers
 
-| Gabagool | Apostrophe | Base Size |
-|----------|-----------|-----------|
-| `gabagool.FontExtraLarge` | `AP_FONT_EXTRA_LARGE` | 60px |
-| `gabagool.FontLarge` | `AP_FONT_LARGE` | 50px |
-| `gabagool.FontMedium` | `AP_FONT_MEDIUM` | 44px |
-| `gabagool.FontSmall` | `AP_FONT_SMALL` | 34px |
-| `gabagool.FontTiny` | `AP_FONT_TINY` | 24px |
-| `gabagool.FontMicro` | `AP_FONT_MICRO` | 18px |
+| Gabagool | Apostrophe | Base Size | NextUI equiv |
+|----------|-----------|-----------|--------------|
+| `gabagool.FontExtraLarge` | `AP_FONT_EXTRA_LARGE` | 24 × device_scale | — |
+| `gabagool.FontLarge` | `AP_FONT_LARGE` | 16 × device_scale | FONT_LARGE |
+| `gabagool.FontMedium` | `AP_FONT_MEDIUM` | 14 × device_scale | FONT_MEDIUM |
+| `gabagool.FontSmall` | `AP_FONT_SMALL` | 12 × device_scale | FONT_SMALL |
+| `gabagool.FontTiny` | `AP_FONT_TINY` | 10 × device_scale | FONT_TINY |
+| `gabagool.FontMicro` | `AP_FONT_MICRO` | 7 × device_scale | FONT_MICRO |
 
 ## Common Patterns
 

@@ -313,7 +313,7 @@ TTF_Font *font = ap_get_font(AP_FONT_MEDIUM);
 ap_draw_text(font, "Hello!", x, y, ap_get_theme()->text);
 ```
 
-Font tiers (at 1024px reference): Extra Large (60), Large (50), Medium (44), Small (34), Tiny (24), Micro (18).
+Font tiers (base × device_scale, matching NextUI): Extra Large (24), Large (16), Medium (14), Small (12), Tiny (10), Micro (7). At device_scale=2 (MY355, TG5050): 48, 32, 28, 24, 20, 14px.
 
 ## Next Steps
 

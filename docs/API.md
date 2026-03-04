@@ -71,13 +71,15 @@ AP_BTN_START, AP_BTN_SELECT, AP_BTN_MENU, AP_BTN_POWER
 #### `ap_font_tier`
 
 ```c
-AP_FONT_EXTRA_LARGE  // 60px at 1024 ref
-AP_FONT_LARGE        // 50px
-AP_FONT_MEDIUM       // 44px
-AP_FONT_SMALL        // 34px
-AP_FONT_TINY         // 24px
-AP_FONT_MICRO        // 18px
+AP_FONT_EXTRA_LARGE  // 24 × device_scale (title/header)
+AP_FONT_LARGE        // 16 × device_scale (list items — NextUI FONT_LARGE)
+AP_FONT_MEDIUM       // 14 × device_scale (single-char button label — NextUI FONT_MEDIUM)
+AP_FONT_SMALL        // 12 × device_scale (hint text — NextUI FONT_SMALL)
+AP_FONT_TINY         // 10 × device_scale (multi-char button label — NextUI FONT_TINY)
+AP_FONT_MICRO        //  7 × device_scale (overlay text — NextUI FONT_MICRO)
 ```
+
+Font sizes use integer `device_scale` (2 for MY355/TG5050/TG5040 handheld, 3 for TG5040 brick), matching NextUI's `SCALE1(FONT_*)` exactly.
 
 #### `ap_text_align`
 
@@ -162,7 +164,7 @@ typedef struct {
     int  show_clock;     // AP_CLOCK_AUTO (default), AP_CLOCK_SHOW, or AP_CLOCK_HIDE
     bool use_24h;        // Only used when show_clock == AP_CLOCK_SHOW
     bool show_battery;   // Show battery icon (device only)
-    bool show_wifi;      // Show wifi icon (device only)
+    bool show_wifi;      // Show wifi icon when connected (device only)
 } ap_status_bar_opts;
 ```
 
@@ -174,7 +176,12 @@ settings, or `AP_CLOCK_HIDE` to always suppress it. When using `AP_CLOCK_SHOW`, 
 `use_24h` field controls the time format; in auto mode, `clock24h` from device settings
 is used instead.
 
-On device builds, battery and wifi icons are rendered from the NextUI asset spritesheet (`/mnt/SDCARD/.system/res/assets@Nx.png`). On macOS dev builds, these fields are silently ignored when the spritesheet is not available.
+**Wifi behaviour:** When `show_wifi` is true, the wifi icon is only shown when the device
+is connected to a network (signal strength > 0). When disconnected, the icon is hidden
+and the pill shrinks accordingly. This matches NextUI's behaviour of hiding the wifi icon
+when not connected.
+
+On device builds, battery and wifi icons are rendered from the NextUI asset spritesheet (`/mnt/SDCARD/.system/res/assets@Nx.png`). Pills (status bar, footer) use pre-rendered sprites from the same asset sheet for smooth anti-aliased edges. On macOS dev builds, sprites are not available so pills use procedural drawing and status fields are rendered as text placeholders.
 
 ### Lifecycle
 
@@ -274,9 +281,13 @@ Measure text width without rendering.
 
 Draw a filled rectangle.
 
+#### `void ap_draw_pill(int x, int y, int w, int h, ap_color color)`
+
+Draw a pill shape (fully rounded rectangle where corner radius = h/2). On device, uses the pre-rendered pill sprite from the NextUI asset sheet for smooth anti-aliased edges. Falls back to procedural drawing on desktop.
+
 #### `void ap_draw_rounded_rect(int x, int y, int w, int h, int radius, ap_color color)`
 
-Draw a filled rounded rectangle using scanline quarter-circle fill (no SDL2_gfx dependency).
+Draw a filled rounded rectangle with arbitrary corner radius using scanline quarter-circle fill with sub-pixel anti-aliasing (no SDL2_gfx dependency).
 
 #### `void ap_draw_image(SDL_Texture *tex, int x, int y, int w, int h)`
 
@@ -288,7 +299,7 @@ Draw a loaded SDL texture at the given position/size.
 
 Draw the footer bar at the bottom of the screen with button hints.
 
-Non-confirm items render in one continuous outer pill on the left; confirm items render in one continuous outer pill on the right. Inside each outer pill, every item shows an inner button pill (letter/symbol) followed by a text label. Sizing matches Gabagool: base 60px outer pill height, SmallFont (34px), with circular inner pills for single-character buttons.
+Non-confirm items render in one continuous outer pill on the left; confirm items render in one continuous outer pill on the right. Inside each outer pill, every item shows an inner button pill (letter/symbol) followed by a text label. Sizing matches NextUI: `PILL_SIZE` (30) outer height, `BUTTON_SIZE` (20) inner circles, all scaled by `device_scale`. Font tiers: `AP_FONT_MEDIUM` (14 base) for single-char button labels, `AP_FONT_TINY` (10 base) for multi-char labels, `AP_FONT_SMALL` (12 base) for hint text.
 
 #### `int ap_get_footer_height(void)`
 
