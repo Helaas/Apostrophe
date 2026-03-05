@@ -394,15 +394,31 @@ Flush the entire texture cache and free all textures.
 
 ### Combos
 
+The combo system detects two kinds of multi-button input:
+
+- **Chords** — multiple buttons pressed simultaneously (e.g. L1+R1 together)
+- **Sequences** — buttons pressed in a specific order (e.g. Up, Up, Down, Down)
+
+Combos do **not** suppress individual button events — `ap_poll_input()` still returns every press and release as normal.
+
 #### `int ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t window_ms)`
 
-Register a simultaneous button chord combo.
+Register a simultaneous button chord. All `count` buttons must be held at the same time, with
+the time between the earliest and latest press no greater than `window_ms` (default 100ms if 0).
 Returns `AP_ERROR` when `id` is NULL/empty, `buttons` is NULL, or `count` is outside `1..8`.
+
+When the chord triggers, a combo event is queued with `triggered = true`. When any button in the
+chord is released, a second event is queued with `triggered = false`. A chord will not re-trigger
+until all buttons have been released and pressed again.
 
 #### `int ap_register_sequence(const char *id, ap_button *buttons, int count, uint32_t timeout_ms, bool strict)`
 
-Register an ordered button sequence combo.
+Register an ordered button sequence. Each button must be pressed within `timeout_ms` of the
+previous one (default 500ms if 0). When `strict` is true, any extraneous button press during
+the sequence window causes the match to fail.
 Returns `AP_ERROR` when `id` is NULL/empty, `buttons` is NULL, or `count` is outside `1..8`.
+
+Sequences only fire `triggered = true` events (no release event).
 
 #### `void ap_unregister_combo(const char *id)`
 
@@ -410,11 +426,55 @@ Deactivate a previously registered combo by its `id`. The combo slot is marked i
 
 #### `void ap_clear_combos(void)`
 
-Remove all registered combos.
+Remove all registered combos and reset internal detection state.
 
 #### `bool ap_poll_combo(ap_combo_event *event)`
 
-Poll the combo event queue.
+Poll the combo event queue. Returns `true` if a combo event is available, filling `event` with:
+- `id` — the string identifier passed to `ap_register_chord()` or `ap_register_sequence()`
+- `triggered` — `true` when the combo fires, `false` when a chord is released
+
+#### Limits
+
+| Limit | Value |
+|-------|-------|
+| Max registered combos | 16 (`AP_MAX_COMBOS`) |
+| Max buttons per combo | 8 |
+| Combo event queue size | 16 |
+| Sequence detection buffer | 20 recent presses |
+
+#### Example
+
+```c
+/* Register a chord: L1 + R1 pressed within 150ms */
+ap_button shoulders[] = { AP_BTN_L1, AP_BTN_R1 };
+ap_register_chord("shoulders", shoulders, 2, 150);
+
+/* Register a chord: L2 + R2 pressed within 150ms */
+ap_button triggers[] = { AP_BTN_L2, AP_BTN_R2 };
+ap_register_chord("triggers", triggers, 2, 150);
+
+/* Register a sequence: Up, Up, Down, Down within 500ms between presses */
+ap_button uudd[] = { AP_BTN_UP, AP_BTN_UP, AP_BTN_DOWN, AP_BTN_DOWN };
+ap_register_sequence("uudd", uudd, 4, 500, false);
+
+/* In your main loop: */
+ap_input_event ev;
+while (ap_poll_input(&ev)) {
+    /* Handle normal button events as usual */
+}
+
+ap_combo_event combo;
+while (ap_poll_combo(&combo)) {
+    if (combo.triggered) {
+        printf("Combo triggered: %s\n", combo.id);
+    } else {
+        printf("Chord released: %s\n", combo.id);
+    }
+}
+```
+
+See `examples/combo/main.c` for a complete working example.
 
 ### Logging
 

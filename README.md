@@ -136,6 +136,8 @@ On device, colors are loaded from NextUI's theme system (`nextval.elf`). On macO
 
 Apostrophe abstracts all input sources into a unified virtual button system (`AP_BTN_*`). On macOS and recognised gamepads it uses the SDL GameController API; on TrimUI devices it reads raw joystick events; and on the Miyoo Flip (my355) it maps hardware-specific keyboard scancodes. Directional buttons auto-repeat with configurable delay/rate.
 
+The **combo system** adds support for chords (simultaneous button presses like L1+R1) and sequences (ordered presses like Up, Up, Down, Down). Register combos with `ap_register_chord()` / `ap_register_sequence()` and poll for events with `ap_poll_combo()`. See `examples/combo/` and the [API reference](docs/API.md#combos) for details.
+
 ## Widgets
 
 | Widget | Function | Description |

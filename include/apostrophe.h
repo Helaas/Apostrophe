@@ -258,6 +258,12 @@ typedef struct {
     int            count;
 } ap_texture_cache;
 
+/* Sequence buffer entry (internal) */
+typedef struct {
+    ap_button  button;
+    uint32_t   time_ms;
+} ap__seq_entry;
+
 /* Combo registration */
 typedef struct {
     char       id[64];
@@ -332,6 +338,13 @@ typedef struct {
     ap_combo_event combo_queue[16];
     int            combo_queue_head;
     int            combo_queue_tail;
+
+    /* Sequence detection buffer */
+    ap__seq_entry seq_buffer[20];
+    int           seq_buffer_count;
+
+    /* Chord held tracking (separate from ap_combo.active which means "registered") */
+    bool          combo_held[AP_MAX_COMBOS];
 
     /* Button held state for chords */
     bool          buttons_held[AP_BTN_COUNT];
@@ -593,6 +606,10 @@ static const char *ap__font_search_paths[] = {
 #define AP__JOY_BTN_SELECT  6
 #define AP__JOY_BTN_START   7
 #define AP__JOY_BTN_MENU    8
+
+/* TrimUI analog trigger axes (L2/R2 are axes, not buttons, on TG5040/TG5050) */
+#define AP__JOY_AXIS_L2     2   /* ABS_Z   */
+#define AP__JOY_AXIS_R2     5   /* ABS_RZ  */
 
 /* my355 (Miyoo Mini Flip) keyboard scancode mapping.
  * On the Flip, ALL buttons arrive as SDL keyboard scancodes, not joystick. */
@@ -1129,8 +1146,134 @@ static ap_input_event ap__input_queue[64];
 static int ap__input_head = 0;
 static int ap__input_tail = 0;
 
+/* ─── Combo Detection Helpers ────────────────────────────────────────────── */
+
+static void ap__combo_push_event(const char *id, bool triggered) {
+    int next = (ap__g.combo_queue_head + 1) % 16;
+    if (next == ap__g.combo_queue_tail) return; /* queue full */
+    ap__g.combo_queue[ap__g.combo_queue_head].id = id;
+    ap__g.combo_queue[ap__g.combo_queue_head].triggered = triggered;
+    ap__g.combo_queue_head = next;
+}
+
+static void ap__combo_add_seq_entry(ap_button btn, uint32_t now) {
+    if (ap__g.seq_buffer_count >= 20) {
+        memmove(&ap__g.seq_buffer[0], &ap__g.seq_buffer[1],
+                19 * sizeof(ap__seq_entry));
+        ap__g.seq_buffer_count = 19;
+    }
+    ap__g.seq_buffer[ap__g.seq_buffer_count].button = btn;
+    ap__g.seq_buffer[ap__g.seq_buffer_count].time_ms = now;
+    ap__g.seq_buffer_count++;
+}
+
+static void ap__combo_check_chords(uint32_t now) {
+    (void)now;
+    for (int i = 0; i < ap__g.combo_count; i++) {
+        ap_combo *c = &ap__g.combos[i];
+        if (!c->active || c->is_sequence || ap__g.combo_held[i]) continue;
+
+        bool all_pressed = true;
+        uint32_t earliest = UINT32_MAX;
+        uint32_t latest = 0;
+
+        for (int j = 0; j < c->button_count; j++) {
+            ap_button btn = c->buttons[j];
+            if (!ap__g.buttons_held[btn]) {
+                all_pressed = false;
+                break;
+            }
+            uint32_t t = ap__g.button_press_time[btn];
+            if (t < earliest) earliest = t;
+            if (t > latest) latest = t;
+        }
+
+        if (all_pressed && (latest - earliest) <= c->window_ms) {
+            ap__g.combo_held[i] = true;
+            ap__combo_push_event(c->id, true);
+        }
+    }
+}
+
+static void ap__combo_check_chord_releases(void) {
+    for (int i = 0; i < ap__g.combo_count; i++) {
+        ap_combo *c = &ap__g.combos[i];
+        if (!c->active || c->is_sequence || !ap__g.combo_held[i]) continue;
+
+        for (int j = 0; j < c->button_count; j++) {
+            if (!ap__g.buttons_held[c->buttons[j]]) {
+                ap__g.combo_held[i] = false;
+                ap__combo_push_event(c->id, false);
+                break;
+            }
+        }
+    }
+}
+
+static void ap__combo_check_sequences(void) {
+    for (int i = 0; i < ap__g.combo_count; i++) {
+        ap_combo *c = &ap__g.combos[i];
+        if (!c->active || !c->is_sequence) continue;
+        if (ap__g.seq_buffer_count < c->button_count) continue;
+
+        int start = ap__g.seq_buffer_count - c->button_count;
+        bool match = true;
+
+        for (int j = 0; j < c->button_count; j++) {
+            ap__seq_entry *entry = &ap__g.seq_buffer[start + j];
+            if (entry->button != c->buttons[j]) {
+                match = false;
+                break;
+            }
+            if (j > 0) {
+                ap__seq_entry *prev = &ap__g.seq_buffer[start + j - 1];
+                if (entry->time_ms - prev->time_ms > c->window_ms) {
+                    match = false;
+                    break;
+                }
+            }
+        }
+
+        /* Strict mode: reject if an extraneous button was pressed just before
+         * the matched range but within the same time window.  Buffer entries
+         * are chronological, so checking only the entry immediately before the
+         * matched range is sufficient — any earlier entry has an equal or
+         * earlier timestamp. */
+        if (match && c->strict && start > 0) {
+            uint32_t seq_start_time = ap__g.seq_buffer[start].time_ms;
+            if (ap__g.seq_buffer[start - 1].time_ms >= seq_start_time) {
+                match = false;
+            }
+        }
+
+        if (match) {
+            ap__combo_push_event(c->id, true);
+            ap__g.seq_buffer_count = 0;
+            return;
+        }
+    }
+}
+
+/* ─── Input Queue ────────────────────────────────────────────────────────── */
+
 static void ap__input_push(ap_button btn, bool pressed) {
     if (btn == AP_BTN_NONE) return;
+
+    uint32_t now = SDL_GetTicks();
+
+    /* Combo detection — only on real presses/releases, not auto-repeats */
+    if (pressed && !ap__g.buttons_held[btn]) {
+        ap__g.buttons_held[btn] = true;
+        ap__g.button_press_time[btn] = now;
+        ap__combo_add_seq_entry(btn, now);
+        ap__combo_check_chords(now);
+        ap__combo_check_sequences();
+    } else if (!pressed && ap__g.buttons_held[btn]) {
+        ap__g.buttons_held[btn] = false;
+        ap__combo_check_chord_releases();
+    }
+
+    /* Push to input queue */
     int next = (ap__input_head + 1) % 64;
     if (next == ap__input_tail) return; /* queue full */
     ap__input_queue[ap__input_head].button = btn;
@@ -1151,52 +1294,47 @@ static void ap__process_sdl_events(void) {
             case SDL_KEYDOWN:
                 if (!ev.key.repeat) {
                     ap_button b = ap__map_key_event(&ev.key);
-                    ap__input_push(b, true);
-                    if (b != AP_BTN_NONE) {
-                        ap__g.buttons_held[b] = true;
-                        ap__g.button_press_time[b] = now;
-                        if (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT) {
-                            ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
-                        }
+                    if (b != AP_BTN_NONE && (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT)) {
+                        ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
                     }
+                    ap__input_push(b, true);
                 }
                 break;
 
             case SDL_KEYUP: {
                 ap_button b = ap__map_key_event(&ev.key);
-                ap__input_push(b, false);
                 if (b != AP_BTN_NONE) {
-                    ap__g.buttons_held[b] = false;
                     ap__g.button_repeat_time[b] = 0;
                 }
+                ap__input_push(b, false);
                 break;
             }
 
             /* --- Raw Joystick button/hat events (TrimUI devices) ---
                MY355 sends buttons and d-pad as keyboard scancodes; processing
                joystick button/hat events too would cause double-input.
+               When a GameController is active (macOS), skip raw joystick
+               button/hat events — the GameController API already maps them
+               correctly, and the raw mappings differ, causing phantom inputs.
                Axis events (thumbstick) are allowed through on all platforms. */
             #if !defined(PLATFORM_MY355)
             case SDL_JOYBUTTONDOWN: {
+                if (ap__g.controller) break; /* GameController handles this */
                 ap_button b = ap__map_joy_button(ev.jbutton.button);
-                ap__input_push(b, true);
-                if (b != AP_BTN_NONE) {
-                    ap__g.buttons_held[b] = true;
-                    ap__g.button_press_time[b] = now;
-                    if (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT) {
-                        ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
-                    }
+                if (b != AP_BTN_NONE && (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT)) {
+                    ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
                 }
+                ap__input_push(b, true);
                 break;
             }
 
             case SDL_JOYBUTTONUP: {
+                if (ap__g.controller) break; /* GameController handles this */
                 ap_button b = ap__map_joy_button(ev.jbutton.button);
-                ap__input_push(b, false);
                 if (b != AP_BTN_NONE) {
-                    ap__g.buttons_held[b] = false;
                     ap__g.button_repeat_time[b] = 0;
                 }
+                ap__input_push(b, false);
                 break;
             }
 
@@ -1204,24 +1342,19 @@ static void ap__process_sdl_events(void) {
             #if !AP_PLATFORM_IS_DEVICE
             case SDL_CONTROLLERBUTTONDOWN: {
                 ap_button b = ap__map_controller_button(ev.cbutton.button);
-                ap__input_push(b, true);
-                if (b != AP_BTN_NONE) {
-                    ap__g.buttons_held[b] = true;
-                    ap__g.button_press_time[b] = now;
-                    if (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT) {
-                        ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
-                    }
+                if (b != AP_BTN_NONE && (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT)) {
+                    ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
                 }
+                ap__input_push(b, true);
                 break;
             }
 
             case SDL_CONTROLLERBUTTONUP: {
                 ap_button b = ap__map_controller_button(ev.cbutton.button);
-                ap__input_push(b, false);
                 if (b != AP_BTN_NONE) {
-                    ap__g.buttons_held[b] = false;
                     ap__g.button_repeat_time[b] = 0;
                 }
+                ap__input_push(b, false);
                 break;
             }
 
@@ -1267,21 +1400,17 @@ static void ap__process_sdl_events(void) {
                     if (ev.caxis.value > AP_AXIS_DEADZONE) {
                         if (!ap__g.buttons_held[AP_BTN_L2]) {
                             ap__input_push(AP_BTN_L2, true);
-                            ap__g.buttons_held[AP_BTN_L2] = true;
                         }
                     } else if (ap__g.buttons_held[AP_BTN_L2]) {
                         ap__input_push(AP_BTN_L2, false);
-                        ap__g.buttons_held[AP_BTN_L2] = false;
                     }
                 } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
                     if (ev.caxis.value > AP_AXIS_DEADZONE) {
                         if (!ap__g.buttons_held[AP_BTN_R2]) {
                             ap__input_push(AP_BTN_R2, true);
-                            ap__g.buttons_held[AP_BTN_R2] = true;
                         }
                     } else if (ap__g.buttons_held[AP_BTN_R2]) {
                         ap__input_push(AP_BTN_R2, false);
-                        ap__g.buttons_held[AP_BTN_R2] = false;
                     }
                 }
                 break;
@@ -1289,6 +1418,7 @@ static void ap__process_sdl_events(void) {
             #endif
 
             case SDL_JOYHATMOTION: {
+                if (ap__g.controller) break; /* GameController handles d-pad */
                 uint8_t hat = ev.jhat.value;
                 /* Clear previous hat state */
                 if (!(hat & SDL_HAT_UP) && ap__g.hat_held & SDL_HAT_UP)
@@ -1357,6 +1487,28 @@ static void ap__process_sdl_events(void) {
                         ap__g.axis_held_dir_x = 0;
                     }
                 }
+                #if AP_PLATFORM_IS_DEVICE
+                /* L2/R2 analog triggers (TrimUI TG5040/TG5050 send triggers as
+                 * axes 2/5 rather than joystick buttons). Use val > 0 threshold
+                 * to match NextUI's trigger handling.  The buttons_held guard in
+                 * ap__input_push prevents duplicate events if the platform also
+                 * sends joystick button events for these triggers. */
+                else if (ev.jaxis.axis == AP__JOY_AXIS_L2) {
+                    if (ev.jaxis.value > 0) {
+                        if (!ap__g.buttons_held[AP_BTN_L2])
+                            ap__input_push(AP_BTN_L2, true);
+                    } else if (ap__g.buttons_held[AP_BTN_L2]) {
+                        ap__input_push(AP_BTN_L2, false);
+                    }
+                } else if (ev.jaxis.axis == AP__JOY_AXIS_R2) {
+                    if (ev.jaxis.value > 0) {
+                        if (!ap__g.buttons_held[AP_BTN_R2])
+                            ap__input_push(AP_BTN_R2, true);
+                    } else if (ap__g.buttons_held[AP_BTN_R2]) {
+                        ap__input_push(AP_BTN_R2, false);
+                    }
+                }
+                #endif
                 break;
             }
         }
@@ -1507,6 +1659,10 @@ void ap_unregister_combo(const char *id) {
 
 void ap_clear_combos(void) {
     ap__g.combo_count = 0;
+    ap__g.seq_buffer_count = 0;
+    memset(ap__g.combo_held, 0, sizeof(ap__g.combo_held));
+    ap__g.combo_queue_head = 0;
+    ap__g.combo_queue_tail = 0;
 }
 
 bool ap_poll_combo(ap_combo_event *event) {
