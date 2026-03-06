@@ -500,10 +500,6 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     bool running = true;
     bool show_help = false;
 
-    /* Edge-stop wrap: stop at list boundary during hold, wrap on fresh press */
-    bool edge_stopped = false;
-    bool edge_released = false;
-
     /* Text scroll state for selected item */
     ap_text_scroll sel_scroll;
     ap_text_scroll_init(&sel_scroll);
@@ -519,11 +515,6 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         /* Input */
         ap_input_event ev;
         while (ap_poll_input(&ev)) {
-            /* Track d-pad releases for edge-stop wrap */
-            if (!ev.pressed && (ev.button == AP_BTN_UP || ev.button == AP_BTN_DOWN)) {
-                if (edge_stopped) edge_released = true;
-                continue;
-            }
             if (!ev.pressed) continue;
             if (show_help) {
                 show_help = false;
@@ -533,14 +524,8 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
             switch (ev.button) {
                 case AP_BTN_UP:
                     if (cursor == 0) {
-                        /* At top: wrap to bottom only on fresh press after release */
-                        if (edge_stopped && edge_released && !reorder_mode) {
+                        if (!ev.repeated && !reorder_mode)
                             cursor = opts->item_count - 1;
-                            edge_stopped = false;
-                            edge_released = false;
-                        } else {
-                            edge_stopped = true;
-                        }
                     } else {
                         if (reorder_mode) {
                             ap_list_item tmp = opts->items[cursor];
@@ -548,21 +533,13 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                             opts->items[cursor - 1] = tmp;
                         }
                         cursor--;
-                        edge_stopped = false;
-                        edge_released = false;
                     }
                     break;
 
                 case AP_BTN_DOWN:
                     if (cursor >= opts->item_count - 1) {
-                        /* At bottom: wrap to top only on fresh press after release */
-                        if (edge_stopped && edge_released && !reorder_mode) {
+                        if (!ev.repeated && !reorder_mode)
                             cursor = 0;
-                            edge_stopped = false;
-                            edge_released = false;
-                        } else {
-                            edge_stopped = true;
-                        }
                     } else {
                         if (reorder_mode && cursor < opts->item_count - 1) {
                             ap_list_item tmp = opts->items[cursor];
@@ -570,8 +547,6 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                             opts->items[cursor + 1] = tmp;
                         }
                         cursor++;
-                        edge_stopped = false;
-                        edge_released = false;
                     }
                     break;
 
@@ -862,51 +837,29 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
     if (scroll_top < 0) scroll_top = 0;
     bool running = true;
 
-    /* Edge-stop wrap: stop at list boundary during hold, wrap on fresh press */
-    bool edge_stopped = false;
-    bool edge_released = false;
 
     while (running) {
         /* Input */
         ap_input_event ev;
         while (ap_poll_input(&ev)) {
-            /* Track d-pad releases for edge-stop wrap */
-            if (!ev.pressed && (ev.button == AP_BTN_UP || ev.button == AP_BTN_DOWN)) {
-                if (edge_stopped) edge_released = true;
-                continue;
-            }
             if (!ev.pressed) continue;
 
             switch (ev.button) {
                 case AP_BTN_UP:
                     if (cursor == 0) {
-                        if (edge_stopped && edge_released) {
+                        if (!ev.repeated)
                             cursor = opts->item_count - 1;
-                            edge_stopped = false;
-                            edge_released = false;
-                        } else {
-                            edge_stopped = true;
-                        }
                     } else {
                         cursor--;
-                        edge_stopped = false;
-                        edge_released = false;
                     }
                     break;
 
                 case AP_BTN_DOWN:
                     if (cursor >= opts->item_count - 1) {
-                        if (edge_stopped && edge_released) {
+                        if (!ev.repeated)
                             cursor = 0;
-                            edge_stopped = false;
-                            edge_released = false;
-                        } else {
-                            edge_stopped = true;
-                        }
                     } else {
                         cursor++;
-                        edge_stopped = false;
-                        edge_released = false;
                     }
                     break;
 
