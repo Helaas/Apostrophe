@@ -2571,6 +2571,10 @@ int ap_get_status_bar_width(ap_status_bar_opts *opts) {
     /* If only battery and no other elements, return square pill.
        Clock HIDE (2) and AUTO with no clock → battery-only square pill. */
     bool clock_forces_wide = (opts->show_clock == AP_CLOCK_SHOW);
+    #if AP_PLATFORM_IS_DEVICE
+    if (opts->show_clock == AP_CLOCK_AUTO)
+        clock_forces_wide = ap__read_nextui_setting_int("showclock", 0) != 0;
+    #endif
     if (!wifi_visible && !clock_forces_wide) {
         return AP_DS(AP__PILL_SIZE);
     }
@@ -2597,6 +2601,16 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
 
     ap_draw_pill(pill_x, pill_y, pill_w, pill_h, ap__g.theme.accent);
 
+    /* Determine actual wifi visibility (same logic as ap_get_status_bar_width) */
+    bool wifi_visible = false;
+    if (opts->show_wifi) {
+        #if AP_PLATFORM_IS_DEVICE
+        wifi_visible = (ap__get_wifi_strength() > 0);
+        #else
+        wifi_visible = true;
+        #endif
+    }
+
     /* Battery-only mode: center battery in a square pill.
        Entered when wifi is off and clock is not forced wide (SHOW or auto-visible). */
     bool ap__clock_forces_wide = (opts->show_clock == AP_CLOCK_SHOW);
@@ -2604,7 +2618,7 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     if (opts->show_clock == AP_CLOCK_AUTO)
         ap__clock_forces_wide = ap__read_nextui_setting_int("showclock", 0) != 0;
     #endif
-    if (!opts->show_wifi && !ap__clock_forces_wide && opts->show_battery) {
+    if (!wifi_visible && !ap__clock_forces_wide && opts->show_battery) {
         int iw = AP__BATTERY_W * s;
         int ih = AP__BATTERY_H * s;
         int bx = pill_x + (pill_h - (iw + s)) / 2; /* NextUI centers with +FIXED_SCALE fudge */
@@ -2666,7 +2680,7 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     int cy = pill_y;
 
     /* Wifi icon */
-    if (opts->show_wifi) {
+    if (wifi_visible) {
         int iw = AP__WIFI_SIZE * s;
         int ih = AP__WIFI_SIZE * s;
         int iy = cy + (pill_h - ih) / 2;
