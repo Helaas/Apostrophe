@@ -2793,12 +2793,21 @@ static void *ap__dl_worker(void *arg) {
     ap_download *dl = td->dl;
 
     pthread_mutex_lock(&td->ctx->mutex);
+    bool already_cancelled = td->ctx->cancel;
     dl->status = AP_DL_DOWNLOADING;
     dl->progress = 0.0f;
     dl->speed_bps = 0.0;
     dl->http_code = 0;
     dl->error[0] = '\0';
     pthread_mutex_unlock(&td->ctx->mutex);
+
+    if (already_cancelled) {
+        pthread_mutex_lock(&td->ctx->mutex);
+        dl->status = AP_DL_FAILED;
+        snprintf(dl->error, sizeof(dl->error), "Cancelled");
+        pthread_mutex_unlock(&td->ctx->mutex);
+        goto done;
+    }
 
     FILE *fp = fopen(dl->dest_path, "wb");
     if (!fp) {
@@ -2831,9 +2840,9 @@ static void *ap__dl_worker(void *arg) {
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 100L);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
 
     if (td->ctx->opts && td->ctx->opts->skip_ssl_verify) {
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
@@ -2914,6 +2923,10 @@ done:
 /* Start the next pending download if capacity allows */
 static void ap__dl_dispatch(ap__dl_context *ctx) {
     pthread_mutex_lock(&ctx->mutex);
+    if (ctx->cancel) {
+        pthread_mutex_unlock(&ctx->mutex);
+        return;
+    }
     int max_c = (ctx->opts && ctx->opts->max_concurrent > 0)
                  ? ctx->opts->max_concurrent : 3;
 
@@ -3057,7 +3070,24 @@ int ap_download_manager(ap_download *downloads, int count,
                     if (!all_done) {
                         pthread_mutex_lock(&ctx.mutex);
                         ctx.cancel = true;
+                        for (int ci = 0; ci < count; ci++) {
+                            if (downloads[ci].status == AP_DL_PENDING) {
+                                downloads[ci].status = AP_DL_FAILED;
+                                snprintf(downloads[ci].error, sizeof(downloads[ci].error), "Cancelled");
+                                ctx.completed++;
+                            } else if (downloads[ci].status == AP_DL_DOWNLOADING) {
+                                downloads[ci].status = AP_DL_FAILED;
+                                snprintf(downloads[ci].error, sizeof(downloads[ci].error), "Cancelled");
+                            }
+                            /* Update snapshots so render shows cancelled state */
+                            snapshots[ci].status = downloads[ci].status;
+                            snapshots[ci].progress = downloads[ci].progress;
+                            strncpy(snapshots[ci].error, downloads[ci].error, sizeof(snapshots[ci].error) - 1);
+                            snapshots[ci].error[sizeof(snapshots[ci].error) - 1] = '\0';
+                        }
+                        comp_fail = count - comp_ok;
                         pthread_mutex_unlock(&ctx.mutex);
+                        result->cancelled = true;
                     }
                     break;
                 case AP_BTN_X:
@@ -3067,7 +3097,7 @@ int ap_download_manager(ap_download *downloads, int count,
                     if (max_visible < 1) max_visible = 1;
                     break;
                 case AP_BTN_A:
-                    if (all_done) goto dm_exit;
+                    if (all_done || result->cancelled) goto dm_exit;
                     break;
                 case AP_BTN_UP:
                     if (scroll > 0) scroll--;
@@ -3096,7 +3126,9 @@ int ap_download_manager(ap_download *downloads, int count,
         /* Title: "Downloading..." or completion summary */
         {
             char title_buf[128];
-            if (all_done) {
+            if (result->cancelled) {
+                snprintf(title_buf, sizeof(title_buf), "Downloads Cancelled");
+            } else if (all_done) {
                 snprintf(title_buf, sizeof(title_buf), "Downloads Complete (%d/%d)", comp_ok, count);
             } else {
                 snprintf(title_buf, sizeof(title_buf), "Downloading... %d/%d", done_count, count);
@@ -3164,7 +3196,7 @@ int ap_download_manager(ap_download *downloads, int count,
         }
 
         /* Footer */
-        if (all_done) {
+        if (all_done || result->cancelled) {
             ap_footer_item dm_footer[] = {{AP_BTN_A, "CLOSE", true}};
             ap_draw_footer(dm_footer, 1);
         } else {
