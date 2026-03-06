@@ -53,8 +53,8 @@ Complete reference for all public functions, types, and macros in `apostrophe.h`
 | `AP_PLATFORM_NAME` | `"tg5040"` etc. | Compile-time platform identifier |
 | `AP_PLATFORM_IS_DEVICE` | `0` or `1` | Whether building for a real device |
 | `AP_INPUT_DEBOUNCE` | `20` | Input debounce delay (ms) |
-| `AP_INPUT_REPEAT_DELAY` | `150` | Initial hold delay (ms) |
-| `AP_INPUT_REPEAT_RATE` | `50` | Repeat rate (ms) |
+| `AP_INPUT_REPEAT_DELAY` | `300` | Initial hold delay (ms) |
+| `AP_INPUT_REPEAT_RATE` | `100` | Repeat rate (ms) |
 | `AP_AXIS_DEADZONE` | `16000` | Joystick axis dead zone |
 | `AP_TEXT_SCROLL_SPEED` | `1` | Text scroll speed (pixels per tick) |
 | `AP_TEXT_SCROLL_PAUSE_MS` | `1000` | Pause at scroll endpoints (ms) |

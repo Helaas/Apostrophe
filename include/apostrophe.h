@@ -117,8 +117,8 @@
 #define AP_SCALE_DAMPING 0.75f
 
 /* Input timing defaults (milliseconds) */
-#define AP_INPUT_REPEAT_DELAY  150
-#define AP_INPUT_REPEAT_RATE    50
+#define AP_INPUT_REPEAT_DELAY  300
+#define AP_INPUT_REPEAT_RATE   100
 #define AP_INPUT_DEBOUNCE       20
 #define AP_AXIS_DEADZONE     16000
 
@@ -1281,6 +1281,119 @@ static void ap__input_push(ap_button btn, bool pressed) {
     ap__input_head = next;
 }
 
+static bool ap__is_direction_button(ap_button btn) {
+    return btn == AP_BTN_UP || btn == AP_BTN_DOWN ||
+           btn == AP_BTN_LEFT || btn == AP_BTN_RIGHT;
+}
+
+static void ap__arm_direction_repeat(ap_button btn, uint32_t now) {
+    if (!ap__is_direction_button(btn)) return;
+    ap__g.button_repeat_time[btn] = now + ap__g.input_repeat_delay_ms;
+}
+
+static void ap__advance_repeat_deadline(uint32_t *deadline, uint32_t now) {
+    if (!deadline) return;
+    if (*deadline == 0) {
+        *deadline = now + ap__g.input_repeat_rate_ms;
+    } else {
+        *deadline += ap__g.input_repeat_rate_ms;
+    }
+}
+
+static void ap__advance_direction_repeat(ap_button btn, uint32_t now) {
+    if (!ap__is_direction_button(btn)) return;
+    ap__advance_repeat_deadline(&ap__g.button_repeat_time[btn], now);
+}
+
+static void ap__clear_direction_repeat(ap_button btn) {
+    if (!ap__is_direction_button(btn)) return;
+    ap__g.button_repeat_time[btn] = 0;
+}
+
+static void ap__push_button_press(ap_button btn, uint32_t now) {
+    ap__arm_direction_repeat(btn, now);
+    ap__input_push(btn, true);
+}
+
+static void ap__push_button_release(ap_button btn) {
+    ap__clear_direction_repeat(btn);
+    ap__input_push(btn, false);
+}
+
+static bool ap__repeat_direction(ap_button btn, uint32_t now) {
+    if (!ap__is_direction_button(btn)) return false;
+    ap__input_push(btn, true);
+    ap__advance_direction_repeat(btn, now);
+    return true;
+}
+
+static void ap__set_hat_state(uint8_t hat, uint32_t now) {
+    uint8_t prev = ap__g.hat_held;
+
+    if (!(hat & SDL_HAT_UP) && (prev & SDL_HAT_UP))
+        ap__push_button_release(AP_BTN_UP);
+    if (!(hat & SDL_HAT_DOWN) && (prev & SDL_HAT_DOWN))
+        ap__push_button_release(AP_BTN_DOWN);
+    if (!(hat & SDL_HAT_LEFT) && (prev & SDL_HAT_LEFT))
+        ap__push_button_release(AP_BTN_LEFT);
+    if (!(hat & SDL_HAT_RIGHT) && (prev & SDL_HAT_RIGHT))
+        ap__push_button_release(AP_BTN_RIGHT);
+
+    if ((hat & SDL_HAT_UP) && !(prev & SDL_HAT_UP))
+        ap__push_button_press(AP_BTN_UP, now);
+    if ((hat & SDL_HAT_DOWN) && !(prev & SDL_HAT_DOWN))
+        ap__push_button_press(AP_BTN_DOWN, now);
+    if ((hat & SDL_HAT_LEFT) && !(prev & SDL_HAT_LEFT))
+        ap__push_button_press(AP_BTN_LEFT, now);
+    if ((hat & SDL_HAT_RIGHT) && !(prev & SDL_HAT_RIGHT))
+        ap__push_button_press(AP_BTN_RIGHT, now);
+
+    ap__g.hat_held = hat;
+    ap__g.hat_repeat_time = hat ? (now + ap__g.input_repeat_delay_ms) : 0;
+}
+
+static void ap__set_axis_direction_y(int dir, uint32_t now) {
+    if (ap__g.axis_held_dir_y == dir) return;
+
+    if (ap__g.axis_held_dir_y == -1) {
+        ap__push_button_release(AP_BTN_UP);
+    } else if (ap__g.axis_held_dir_y == 1) {
+        ap__push_button_release(AP_BTN_DOWN);
+    }
+
+    ap__g.axis_held_dir_y = dir;
+    if (dir < 0) {
+        ap__push_button_press(AP_BTN_UP, now);
+        ap__g.axis_repeat_time_y = now + ap__g.input_repeat_delay_ms;
+    } else if (dir > 0) {
+        ap__push_button_press(AP_BTN_DOWN, now);
+        ap__g.axis_repeat_time_y = now + ap__g.input_repeat_delay_ms;
+    } else {
+        ap__g.axis_repeat_time_y = 0;
+    }
+}
+
+static void ap__set_axis_direction_x(int dir, uint32_t now) {
+    if (ap__g.axis_held_dir_x == dir) return;
+
+    if (ap__g.axis_held_dir_x == -1) {
+        ap__push_button_release(AP_BTN_LEFT);
+    } else if (ap__g.axis_held_dir_x == 1) {
+        ap__push_button_release(AP_BTN_RIGHT);
+    }
+
+    ap__g.axis_held_dir_x = dir;
+    if (dir < 0) {
+        ap__push_button_press(AP_BTN_LEFT, now);
+        ap__g.axis_repeat_time_x = now + ap__g.input_repeat_delay_ms;
+    } else if (dir > 0) {
+        ap__push_button_press(AP_BTN_RIGHT, now);
+        ap__g.axis_repeat_time_x = now + ap__g.input_repeat_delay_ms;
+    } else {
+        ap__g.axis_repeat_time_x = 0;
+    }
+}
+
 static void ap__process_sdl_events(void) {
     SDL_Event ev;
     uint32_t now = SDL_GetTicks();
@@ -1294,19 +1407,13 @@ static void ap__process_sdl_events(void) {
             case SDL_KEYDOWN:
                 if (!ev.key.repeat) {
                     ap_button b = ap__map_key_event(&ev.key);
-                    if (b != AP_BTN_NONE && (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT)) {
-                        ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
-                    }
-                    ap__input_push(b, true);
+                    ap__push_button_press(b, now);
                 }
                 break;
 
             case SDL_KEYUP: {
                 ap_button b = ap__map_key_event(&ev.key);
-                if (b != AP_BTN_NONE) {
-                    ap__g.button_repeat_time[b] = 0;
-                }
-                ap__input_push(b, false);
+                ap__push_button_release(b);
                 break;
             }
 
@@ -1321,20 +1428,14 @@ static void ap__process_sdl_events(void) {
             case SDL_JOYBUTTONDOWN: {
                 if (ap__g.controller) break; /* GameController handles this */
                 ap_button b = ap__map_joy_button(ev.jbutton.button);
-                if (b != AP_BTN_NONE && (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT)) {
-                    ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
-                }
-                ap__input_push(b, true);
+                ap__push_button_press(b, now);
                 break;
             }
 
             case SDL_JOYBUTTONUP: {
                 if (ap__g.controller) break; /* GameController handles this */
                 ap_button b = ap__map_joy_button(ev.jbutton.button);
-                if (b != AP_BTN_NONE) {
-                    ap__g.button_repeat_time[b] = 0;
-                }
-                ap__input_push(b, false);
+                ap__push_button_release(b);
                 break;
             }
 
@@ -1342,19 +1443,13 @@ static void ap__process_sdl_events(void) {
             #if !AP_PLATFORM_IS_DEVICE
             case SDL_CONTROLLERBUTTONDOWN: {
                 ap_button b = ap__map_controller_button(ev.cbutton.button);
-                if (b != AP_BTN_NONE && (b == AP_BTN_UP || b == AP_BTN_DOWN || b == AP_BTN_LEFT || b == AP_BTN_RIGHT)) {
-                    ap__g.button_repeat_time[b] = now + ap__g.input_repeat_delay_ms;
-                }
-                ap__input_push(b, true);
+                ap__push_button_press(b, now);
                 break;
             }
 
             case SDL_CONTROLLERBUTTONUP: {
                 ap_button b = ap__map_controller_button(ev.cbutton.button);
-                if (b != AP_BTN_NONE) {
-                    ap__g.button_repeat_time[b] = 0;
-                }
-                ap__input_push(b, false);
+                ap__push_button_release(b);
                 break;
             }
 
@@ -1362,39 +1457,19 @@ static void ap__process_sdl_events(void) {
                 /* Map left analog stick to d-pad via GameController axis */
                 if (ev.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
                     if (ev.caxis.value < -AP_AXIS_DEADZONE) {
-                        if (ap__g.axis_held_dir_y != -1) {
-                            ap__input_push(AP_BTN_UP, true);
-                            ap__g.axis_repeat_time_y = now + ap__g.input_repeat_delay_ms;
-                        }
-                        ap__g.axis_held_dir_y = -1;
+                        ap__set_axis_direction_y(-1, now);
                     } else if (ev.caxis.value > AP_AXIS_DEADZONE) {
-                        if (ap__g.axis_held_dir_y != 1) {
-                            ap__input_push(AP_BTN_DOWN, true);
-                            ap__g.axis_repeat_time_y = now + ap__g.input_repeat_delay_ms;
-                        }
-                        ap__g.axis_held_dir_y = 1;
+                        ap__set_axis_direction_y(1, now);
                     } else {
-                        if (ap__g.axis_held_dir_y == -1) ap__input_push(AP_BTN_UP, false);
-                        if (ap__g.axis_held_dir_y ==  1) ap__input_push(AP_BTN_DOWN, false);
-                        ap__g.axis_held_dir_y = 0;
+                        ap__set_axis_direction_y(0, now);
                     }
                 } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
                     if (ev.caxis.value < -AP_AXIS_DEADZONE) {
-                        if (ap__g.axis_held_dir_x != -1) {
-                            ap__input_push(AP_BTN_LEFT, true);
-                            ap__g.axis_repeat_time_x = now + ap__g.input_repeat_delay_ms;
-                        }
-                        ap__g.axis_held_dir_x = -1;
+                        ap__set_axis_direction_x(-1, now);
                     } else if (ev.caxis.value > AP_AXIS_DEADZONE) {
-                        if (ap__g.axis_held_dir_x != 1) {
-                            ap__input_push(AP_BTN_RIGHT, true);
-                            ap__g.axis_repeat_time_x = now + ap__g.input_repeat_delay_ms;
-                        }
-                        ap__g.axis_held_dir_x = 1;
+                        ap__set_axis_direction_x(1, now);
                     } else {
-                        if (ap__g.axis_held_dir_x == -1) ap__input_push(AP_BTN_LEFT, false);
-                        if (ap__g.axis_held_dir_x ==  1) ap__input_push(AP_BTN_RIGHT, false);
-                        ap__g.axis_held_dir_x = 0;
+                        ap__set_axis_direction_x(0, now);
                     }
                 } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
                     if (ev.caxis.value > AP_AXIS_DEADZONE) {
@@ -1419,29 +1494,7 @@ static void ap__process_sdl_events(void) {
 
             case SDL_JOYHATMOTION: {
                 if (ap__g.controller) break; /* GameController handles d-pad */
-                uint8_t hat = ev.jhat.value;
-                /* Clear previous hat state */
-                if (!(hat & SDL_HAT_UP) && ap__g.hat_held & SDL_HAT_UP)
-                    ap__input_push(AP_BTN_UP, false);
-                if (!(hat & SDL_HAT_DOWN) && ap__g.hat_held & SDL_HAT_DOWN)
-                    ap__input_push(AP_BTN_DOWN, false);
-                if (!(hat & SDL_HAT_LEFT) && ap__g.hat_held & SDL_HAT_LEFT)
-                    ap__input_push(AP_BTN_LEFT, false);
-                if (!(hat & SDL_HAT_RIGHT) && ap__g.hat_held & SDL_HAT_RIGHT)
-                    ap__input_push(AP_BTN_RIGHT, false);
-
-                /* New hat presses */
-                if ((hat & SDL_HAT_UP) && !(ap__g.hat_held & SDL_HAT_UP))
-                    ap__input_push(AP_BTN_UP, true);
-                if ((hat & SDL_HAT_DOWN) && !(ap__g.hat_held & SDL_HAT_DOWN))
-                    ap__input_push(AP_BTN_DOWN, true);
-                if ((hat & SDL_HAT_LEFT) && !(ap__g.hat_held & SDL_HAT_LEFT))
-                    ap__input_push(AP_BTN_LEFT, true);
-                if ((hat & SDL_HAT_RIGHT) && !(ap__g.hat_held & SDL_HAT_RIGHT))
-                    ap__input_push(AP_BTN_RIGHT, true);
-
-                ap__g.hat_held = hat;
-                ap__g.hat_repeat_time = now + ap__g.input_repeat_delay_ms;
+                ap__set_hat_state(ev.jhat.value, now);
                 break;
             }
             #endif /* !PLATFORM_MY355 */
@@ -1452,39 +1505,19 @@ static void ap__process_sdl_events(void) {
             case SDL_JOYAXISMOTION: {
                 if (ev.jaxis.axis == 1) { /* Y axis (up/down) */
                     if (ev.jaxis.value < -AP_AXIS_DEADZONE) {
-                        if (ap__g.axis_held_dir_y != -1) {
-                            ap__input_push(AP_BTN_UP, true);
-                            ap__g.axis_repeat_time_y = now + ap__g.input_repeat_delay_ms;
-                        }
-                        ap__g.axis_held_dir_y = -1;
+                        ap__set_axis_direction_y(-1, now);
                     } else if (ev.jaxis.value > AP_AXIS_DEADZONE) {
-                        if (ap__g.axis_held_dir_y != 1) {
-                            ap__input_push(AP_BTN_DOWN, true);
-                            ap__g.axis_repeat_time_y = now + ap__g.input_repeat_delay_ms;
-                        }
-                        ap__g.axis_held_dir_y = 1;
+                        ap__set_axis_direction_y(1, now);
                     } else {
-                        if (ap__g.axis_held_dir_y == -1) ap__input_push(AP_BTN_UP, false);
-                        if (ap__g.axis_held_dir_y ==  1) ap__input_push(AP_BTN_DOWN, false);
-                        ap__g.axis_held_dir_y = 0;
+                        ap__set_axis_direction_y(0, now);
                     }
                 } else if (ev.jaxis.axis == 0) { /* X axis (left/right) */
                     if (ev.jaxis.value < -AP_AXIS_DEADZONE) {
-                        if (ap__g.axis_held_dir_x != -1) {
-                            ap__input_push(AP_BTN_LEFT, true);
-                            ap__g.axis_repeat_time_x = now + ap__g.input_repeat_delay_ms;
-                        }
-                        ap__g.axis_held_dir_x = -1;
+                        ap__set_axis_direction_x(-1, now);
                     } else if (ev.jaxis.value > AP_AXIS_DEADZONE) {
-                        if (ap__g.axis_held_dir_x != 1) {
-                            ap__input_push(AP_BTN_RIGHT, true);
-                            ap__g.axis_repeat_time_x = now + ap__g.input_repeat_delay_ms;
-                        }
-                        ap__g.axis_held_dir_x = 1;
+                        ap__set_axis_direction_x(1, now);
                     } else {
-                        if (ap__g.axis_held_dir_x == -1) ap__input_push(AP_BTN_LEFT, false);
-                        if (ap__g.axis_held_dir_x ==  1) ap__input_push(AP_BTN_RIGHT, false);
-                        ap__g.axis_held_dir_x = 0;
+                        ap__set_axis_direction_x(0, now);
                     }
                 }
                 #if AP_PLATFORM_IS_DEVICE
@@ -1521,55 +1554,45 @@ static void ap__process_sdl_events(void) {
 
     /* Directional hold repeat — digital buttons (keyboard/D-pad/button maps) */
     if (ap__g.buttons_held[AP_BTN_UP] && now >= ap__g.button_repeat_time[AP_BTN_UP]) {
-        ap__input_push(AP_BTN_UP, true);
-        ap__g.button_repeat_time[AP_BTN_UP] = now + ap__g.input_repeat_rate_ms;
-        repeated_up = true;
+        repeated_up = ap__repeat_direction(AP_BTN_UP, now);
     }
     if (ap__g.buttons_held[AP_BTN_DOWN] && now >= ap__g.button_repeat_time[AP_BTN_DOWN]) {
-        ap__input_push(AP_BTN_DOWN, true);
-        ap__g.button_repeat_time[AP_BTN_DOWN] = now + ap__g.input_repeat_rate_ms;
-        repeated_down = true;
+        repeated_down = ap__repeat_direction(AP_BTN_DOWN, now);
     }
     if (ap__g.buttons_held[AP_BTN_LEFT] && now >= ap__g.button_repeat_time[AP_BTN_LEFT]) {
-        ap__input_push(AP_BTN_LEFT, true);
-        ap__g.button_repeat_time[AP_BTN_LEFT] = now + ap__g.input_repeat_rate_ms;
-        repeated_left = true;
+        repeated_left = ap__repeat_direction(AP_BTN_LEFT, now);
     }
     if (ap__g.buttons_held[AP_BTN_RIGHT] && now >= ap__g.button_repeat_time[AP_BTN_RIGHT]) {
-        ap__input_push(AP_BTN_RIGHT, true);
-        ap__g.button_repeat_time[AP_BTN_RIGHT] = now + ap__g.input_repeat_rate_ms;
-        repeated_right = true;
+        repeated_right = ap__repeat_direction(AP_BTN_RIGHT, now);
     }
 
     /* Directional hold repeat — hat */
     if (ap__g.hat_held && now >= ap__g.hat_repeat_time) {
-        if ((ap__g.hat_held & SDL_HAT_UP) && !repeated_up) ap__input_push(AP_BTN_UP, true);
-        if ((ap__g.hat_held & SDL_HAT_DOWN) && !repeated_down) ap__input_push(AP_BTN_DOWN, true);
-        if ((ap__g.hat_held & SDL_HAT_LEFT) && !repeated_left) ap__input_push(AP_BTN_LEFT, true);
-        if ((ap__g.hat_held & SDL_HAT_RIGHT) && !repeated_right) ap__input_push(AP_BTN_RIGHT, true);
-        ap__g.hat_repeat_time = now + ap__g.input_repeat_rate_ms;
+        if ((ap__g.hat_held & SDL_HAT_UP) && !repeated_up) repeated_up = ap__repeat_direction(AP_BTN_UP, now);
+        if ((ap__g.hat_held & SDL_HAT_DOWN) && !repeated_down) repeated_down = ap__repeat_direction(AP_BTN_DOWN, now);
+        if ((ap__g.hat_held & SDL_HAT_LEFT) && !repeated_left) repeated_left = ap__repeat_direction(AP_BTN_LEFT, now);
+        if ((ap__g.hat_held & SDL_HAT_RIGHT) && !repeated_right) repeated_right = ap__repeat_direction(AP_BTN_RIGHT, now);
+        ap__advance_repeat_deadline(&ap__g.hat_repeat_time, now);
     }
 
     /* Directional hold repeat — analog Y */
     if (ap__g.axis_held_dir_y && now >= ap__g.axis_repeat_time_y) {
         if (ap__g.axis_held_dir_y < 0) {
-            if (!repeated_up) ap__input_push(AP_BTN_UP, true);
-            repeated_up = true;
+            if (!repeated_up) repeated_up = ap__repeat_direction(AP_BTN_UP, now);
         } else {
-            if (!repeated_down) ap__input_push(AP_BTN_DOWN, true);
-            repeated_down = true;
+            if (!repeated_down) repeated_down = ap__repeat_direction(AP_BTN_DOWN, now);
         }
-        ap__g.axis_repeat_time_y = now + ap__g.input_repeat_rate_ms;
+        ap__advance_repeat_deadline(&ap__g.axis_repeat_time_y, now);
     }
 
     /* Directional hold repeat — analog X */
     if (ap__g.axis_held_dir_x && now >= ap__g.axis_repeat_time_x) {
         if (ap__g.axis_held_dir_x < 0) {
-            if (!repeated_left) ap__input_push(AP_BTN_LEFT, true);
+            if (!repeated_left) repeated_left = ap__repeat_direction(AP_BTN_LEFT, now);
         } else {
-            if (!repeated_right) ap__input_push(AP_BTN_RIGHT, true);
+            if (!repeated_right) repeated_right = ap__repeat_direction(AP_BTN_RIGHT, now);
         }
-        ap__g.axis_repeat_time_x = now + ap__g.input_repeat_rate_ms;
+        ap__advance_repeat_deadline(&ap__g.axis_repeat_time_x, now);
     }
 }
 

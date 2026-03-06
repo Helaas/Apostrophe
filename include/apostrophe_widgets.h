@@ -325,8 +325,6 @@ int ap_download_manager(ap_download *downloads, int count,
 
 /* ─── Internal widget helpers ────────────────────────────────────────────── */
 
-/* Standard widget loop timing */
-#define AP__FRAME_DELAY 16  /* ~60 fps */
 
 /* Draw title bar text at top of screen — ExtraLarge font matching Gabagool */
 static void ap__draw_title(const char *title) {
@@ -800,7 +798,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         }
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 
     result->visible_start_index = scroll_top;
@@ -1094,7 +1092,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
         }
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 
     result->visible_start_index = scroll_top;
@@ -1315,7 +1313,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
                 }
             }
             ap_present();
-            SDL_Delay(AP__FRAME_DELAY);
+    
         }
         return AP_CANCELLED;
     }
@@ -1621,7 +1619,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
         }
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 
     return AP_CANCELLED;
@@ -1968,7 +1966,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
         }
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 
     return AP_CANCELLED;
@@ -2061,7 +2059,7 @@ int ap_confirmation(ap_message_opts *opts, ap_confirm_result *result) {
         }
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 
     /* Cleanup */
@@ -2163,7 +2161,7 @@ int ap_selection(const char *message, ap_selection_option *options, int count,
         }
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 
     return AP_OK;
@@ -2305,7 +2303,7 @@ int ap_process_message(ap_process_opts *opts, ap_process_fn fn, void *userdata) 
         }
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 
     /* Wait for thread to finish */
@@ -2560,7 +2558,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
         }
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 
     int rc = (result->action == AP_DETAIL_BACK) ? AP_CANCELLED : AP_OK;
@@ -2683,7 +2681,7 @@ int ap_color_picker(ap_color initial, ap_color *result) {
         ap_draw_footer(picker_footer, 2);
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 
     return AP_CANCELLED;
@@ -2770,7 +2768,7 @@ void ap_show_help_overlay(const char *text) {
         }
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 }
 
@@ -3225,7 +3223,7 @@ int ap_download_manager(ap_download *downloads, int count,
         }
 
         ap_present();
-        SDL_Delay(AP__FRAME_DELAY);
+
     }
 
 dm_exit:
