@@ -318,6 +318,95 @@ while (1) {
 }
 ```
 
+## Window Visibility
+
+### Gabagool
+```go
+app.ShowWindow()
+app.HideWindow()
+```
+
+### Apostrophe
+```c
+ap_show_window();
+ap_hide_window();
+```
+
+Both are no-ops when called before `ap_init()`.
+
+## Combos
+
+Gabagool supports `ChordOptions.OnTrigger`/`OnRelease` callbacks and `SequenceOptions.OnTrigger`.
+Apostrophe matches this with two registration styles:
+
+### Polling (classic)
+
+Register with `ap_register_chord` / `ap_register_sequence` and drain `ap_poll_combo()` each frame.
+
+#### Gabagool
+```go
+app.RegisterChord(&gabagool.ChordOptions{
+    ID:      "shoulders",
+    Buttons: []gabagool.Button{gabagool.ButtonL1, gabagool.ButtonR1},
+    Window:  150 * time.Millisecond,
+})
+// poll in loop:
+for event := range app.ComboEvents() {
+    if event.Triggered { fmt.Println("triggered:", event.ID) }
+}
+```
+
+#### Apostrophe
+```c
+ap_button shoulders[] = { AP_BTN_L1, AP_BTN_R1 };
+ap_register_chord("shoulders", shoulders, 2, 150);
+
+/* In your main loop: */
+ap_combo_event combo;
+while (ap_poll_combo(&combo)) {
+    const char *kind = (combo.type == AP_COMBO_CHORD) ? "chord" : "seq";
+    if (combo.triggered)
+        printf("Triggered [%s]: %s\n", kind, combo.id);
+}
+```
+
+### Callbacks (_ex variants)
+
+Register with `ap_register_chord_ex` / `ap_register_sequence_ex` to get callbacks that fire
+automatically at trigger/release time — no poll loop required. Polling still works alongside
+callbacks; both are additive.
+
+#### Gabagool
+```go
+app.RegisterChord(&gabagool.ChordOptions{
+    ID:      "shoulders",
+    Buttons: []gabagool.Button{gabagool.ButtonL1, gabagool.ButtonR1},
+    Window:  150 * time.Millisecond,
+    OnTrigger: func(id string) { fmt.Println("triggered:", id) },
+    OnRelease: func(id string) { fmt.Println("released:", id) },
+})
+```
+
+#### Apostrophe
+```c
+void on_trigger(const char *id, ap_combo_type type, void *userdata) {
+    printf("triggered: %s\n", id);
+}
+void on_release(const char *id, ap_combo_type type, void *userdata) {
+    printf("released: %s\n", id);
+}
+
+ap_button shoulders[] = { AP_BTN_L1, AP_BTN_R1 };
+ap_register_chord_ex("shoulders", shoulders, 2, 150, on_trigger, on_release, NULL);
+
+/* Sequences: on_trigger only (no release phase) */
+ap_button uudd[] = { AP_BTN_UP, AP_BTN_UP, AP_BTN_DOWN, AP_BTN_DOWN };
+ap_register_sequence_ex("uudd", uudd, 4, 500, false, on_trigger, NULL);
+```
+
+The `ap_combo_type` argument in the callback is `AP_COMBO_CHORD` or `AP_COMBO_SEQUENCE`, letting
+a single callback handle both kinds.
+
 ## Download Manager
 
 Gabagool's `DownloadManager` maps to Apostrophe's `ap_download_manager`. Both use concurrent downloads with progress reporting.

@@ -402,6 +402,34 @@ The combo system detects two kinds of multi-button input:
 
 Combos do **not** suppress individual button events — `ap_poll_input()` still returns every press and release as normal.
 
+#### Types
+
+##### `ap_combo_type`
+
+```c
+typedef enum { AP_COMBO_CHORD, AP_COMBO_SEQUENCE } ap_combo_type;
+```
+
+Distinguishes the kind of combo in a `ap_combo_event`. Set to `AP_COMBO_CHORD` for chords and `AP_COMBO_SEQUENCE` for sequences.
+
+##### `ap_combo_callback`
+
+```c
+typedef void (*ap_combo_callback)(const char *id, ap_combo_type type, void *userdata);
+```
+
+Callback signature used by the `_ex` registration variants. Called synchronously at the moment the combo triggers or a chord releases.
+
+##### `ap_combo_event`
+
+```c
+typedef struct {
+    const char    *id;        /* identifier passed to ap_register_chord/sequence */
+    bool           triggered; /* true = fired, false = chord released */
+    ap_combo_type  type;      /* AP_COMBO_CHORD or AP_COMBO_SEQUENCE */
+} ap_combo_event;
+```
+
 #### `int ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t window_ms)`
 
 Register a simultaneous button chord. All `count` buttons must be held at the same time, with
@@ -412,6 +440,10 @@ When the chord triggers, a combo event is queued with `triggered = true`. When a
 chord is released, a second event is queued with `triggered = false`. A chord will not re-trigger
 until all buttons have been released and pressed again.
 
+#### `int ap_register_chord_ex(const char *id, ap_button *buttons, int count, uint32_t window_ms, ap_combo_callback on_trigger, ap_combo_callback on_release, void *userdata)`
+
+Like `ap_register_chord`, but also registers optional callbacks. `on_trigger` fires when the chord fires; `on_release` fires when any button is released. Either may be `NULL`. Callbacks fire synchronously before the event is enqueued, so polling still works alongside them — both are additive.
+
 #### `int ap_register_sequence(const char *id, ap_button *buttons, int count, uint32_t timeout_ms, bool strict)`
 
 Register an ordered button sequence. Each button must be pressed within `timeout_ms` of the
@@ -420,6 +452,10 @@ the sequence window causes the match to fail.
 Returns `AP_ERROR` when `id` is NULL/empty, `buttons` is NULL, or `count` is outside `1..8`.
 
 Sequences only fire `triggered = true` events (no release event).
+
+#### `int ap_register_sequence_ex(const char *id, ap_button *buttons, int count, uint32_t timeout_ms, bool strict, ap_combo_callback on_trigger, void *userdata)`
+
+Like `ap_register_sequence`, but also registers an optional `on_trigger` callback. There is no `on_release` parameter for sequences — they are one-shot events with no release phase.
 
 #### `void ap_unregister_combo(const char *id)`
 
@@ -434,6 +470,7 @@ Remove all registered combos and reset internal detection state.
 Poll the combo event queue. Returns `true` if a combo event is available, filling `event` with:
 - `id` — the string identifier passed to `ap_register_chord()` or `ap_register_sequence()`
 - `triggered` — `true` when the combo fires, `false` when a chord is released
+- `type` — `AP_COMBO_CHORD` or `AP_COMBO_SEQUENCE`
 
 #### Limits
 
@@ -444,38 +481,49 @@ Poll the combo event queue. Returns `true` if a combo event is available, fillin
 | Combo event queue size | 16 |
 | Sequence detection buffer | 20 recent presses |
 
-#### Example
+#### Example: Polling
 
 ```c
-/* Register a chord: L1 + R1 pressed within 150ms */
+/* Register combos */
 ap_button shoulders[] = { AP_BTN_L1, AP_BTN_R1 };
 ap_register_chord("shoulders", shoulders, 2, 150);
 
-/* Register a chord: L2 + R2 pressed within 150ms */
-ap_button triggers[] = { AP_BTN_L2, AP_BTN_R2 };
-ap_register_chord("triggers", triggers, 2, 150);
-
-/* Register a sequence: Up, Up, Down, Down within 500ms between presses */
 ap_button uudd[] = { AP_BTN_UP, AP_BTN_UP, AP_BTN_DOWN, AP_BTN_DOWN };
 ap_register_sequence("uudd", uudd, 4, 500, false);
 
 /* In your main loop: */
-ap_input_event ev;
-while (ap_poll_input(&ev)) {
-    /* Handle normal button events as usual */
-}
-
 ap_combo_event combo;
 while (ap_poll_combo(&combo)) {
-    if (combo.triggered) {
-        printf("Combo triggered: %s\n", combo.id);
-    } else {
-        printf("Chord released: %s\n", combo.id);
-    }
+    const char *kind = (combo.type == AP_COMBO_CHORD) ? "chord" : "seq";
+    if (combo.triggered)
+        printf("Triggered [%s]: %s\n", kind, combo.id);
+    else
+        printf("Released  [%s]: %s\n", kind, combo.id);
 }
 ```
 
-See `examples/combo/main.c` for a complete working example.
+#### Example: Callbacks (_ex variants)
+
+```c
+void on_trigger(const char *id, ap_combo_type type, void *userdata) {
+    printf("Triggered: %s\n", id);
+}
+void on_release(const char *id, ap_combo_type type, void *userdata) {
+    printf("Released: %s\n", id);
+}
+
+/* Chord with trigger + release callbacks */
+ap_button shoulders[] = { AP_BTN_L1, AP_BTN_R1 };
+ap_register_chord_ex("shoulders", shoulders, 2, 150, on_trigger, on_release, NULL);
+
+/* Sequence with trigger callback only (no release phase) */
+ap_button uudd[] = { AP_BTN_UP, AP_BTN_UP, AP_BTN_DOWN, AP_BTN_DOWN };
+ap_register_sequence_ex("uudd", uudd, 4, 500, false, on_trigger, NULL);
+
+/* ap_poll_combo() still works — callbacks and polling are both active */
+```
+
+See `examples/combo/main.c` for a complete working example with both modes.
 
 ### Logging
 

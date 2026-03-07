@@ -59,15 +59,13 @@ This document tracks Apostrophe parity against Gabagool `v2.9.6`.
 | Status bar | `ap_draw_status_bar` + per-widget status options | Implemented | |
 | Theme loading from NextUI | `ap_theme_load_nextui` | Implemented | |
 | Logging | `ap_log`, `ap_set_log_path`, `ap_config.log_path` | Implemented | |
-| Combo registration/polling | `ap_register_chord`, `ap_register_sequence`, `ap_poll_combo` | Implemented (behavior differs) | Internal behavior differs from Gabagool callback/event model. |
-| Window visibility controls (`ShowWindow`, `HideWindow`) | None | Missing | No separate window visibility API currently. |
+| Combo registration/polling | `ap_register_chord`, `ap_register_sequence`, `ap_poll_combo` + `_ex` variants | Implemented | Polling + optional callbacks via `_ex` variants. `ap_combo_event` includes `type` field. |
+| Window visibility controls (`ShowWindow`, `HideWindow`) | `ap_show_window`, `ap_hide_window` | Implemented | |
 | Input logger/mapping bytes APIs | None | Missing | No direct equivalent for Gabagool input remap byte loader. |
 | Infrastructure error typing helpers | None | Missing | Apostrophe uses integer return codes + `ap_get_error()`. |
 
-## Out of Scope This Cycle (Ordered Backlog)
+## Out of Scope
 
-1. Add window visibility controls (`ap_show_window`, `ap_hide_window`) to match Gabagool surface.
-2. Add user-configurable input mapping loader equivalent to `SetInputMappingBytes`.
-3. Add richer combo event callbacks/typing parity to reduce behavior differences.
-4. Add optional infrastructure-error style wrappers around current integer return model for migration ergonomics.
+1. Add user-configurable input mapping loader equivalent to `SetInputMappingBytes`.
+2. Add optional infrastructure-error style wrappers around current integer return model for migration ergonomics.
 

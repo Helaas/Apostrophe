@@ -265,6 +265,10 @@ typedef struct {
     uint32_t   time_ms;
 } ap__seq_entry;
 
+/* Combo types and callbacks */
+typedef enum { AP_COMBO_CHORD, AP_COMBO_SEQUENCE } ap_combo_type;
+typedef void (*ap_combo_callback)(const char *id, ap_combo_type type, void *userdata);
+
 /* Combo registration */
 typedef struct {
     char       id[64];
@@ -274,12 +278,16 @@ typedef struct {
     bool       is_sequence;     /* false = chord (simultaneous), true = sequence */
     bool       strict;          /* For sequences: must be exact order */
     bool       active;
+    ap_combo_callback on_trigger;
+    ap_combo_callback on_release;   /* Chords only */
+    void             *userdata;
 } ap_combo;
 
 /* Combo event */
 typedef struct {
-    const char *id;
-    bool        triggered;
+    const char    *id;
+    bool           triggered;
+    ap_combo_type  type;
 } ap_combo_event;
 
 /* Configuration passed to ap_init() */
@@ -404,6 +412,8 @@ SDL_Renderer  *ap_get_renderer(void);
 SDL_Window    *ap_get_window(void);
 int            ap_get_screen_width(void);
 int            ap_get_screen_height(void);
+void           ap_show_window(void);
+void           ap_hide_window(void);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public API — Scaling
@@ -444,6 +454,15 @@ const char    *ap_button_name(ap_button btn);
 
 int            ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t window_ms);
 int            ap_register_sequence(const char *id, ap_button *buttons, int count, uint32_t timeout_ms, bool strict);
+int            ap_register_chord_ex(const char *id, ap_button *buttons, int count,
+                                    uint32_t window_ms,
+                                    ap_combo_callback on_trigger,
+                                    ap_combo_callback on_release,
+                                    void *userdata);
+int            ap_register_sequence_ex(const char *id, ap_button *buttons, int count,
+                                      uint32_t timeout_ms, bool strict,
+                                      ap_combo_callback on_trigger,
+                                      void *userdata);
 void           ap_unregister_combo(const char *id);
 void           ap_clear_combos(void);
 bool           ap_poll_combo(ap_combo_event *event);
@@ -1149,11 +1168,19 @@ static int ap__input_tail = 0;
 
 /* ─── Combo Detection Helpers ────────────────────────────────────────────── */
 
-static void ap__combo_push_event(const char *id, bool triggered) {
+static void ap__combo_push_event(ap_combo *c, bool triggered, ap_combo_type type) {
+    /* Fire callback if registered */
+    if (triggered && c->on_trigger)
+        c->on_trigger(c->id, type, c->userdata);
+    else if (!triggered && c->on_release)
+        c->on_release(c->id, type, c->userdata);
+
+    /* Enqueue for polling */
     int next = (ap__g.combo_queue_head + 1) % 16;
     if (next == ap__g.combo_queue_tail) return; /* queue full */
-    ap__g.combo_queue[ap__g.combo_queue_head].id = id;
+    ap__g.combo_queue[ap__g.combo_queue_head].id = c->id;
     ap__g.combo_queue[ap__g.combo_queue_head].triggered = triggered;
+    ap__g.combo_queue[ap__g.combo_queue_head].type = type;
     ap__g.combo_queue_head = next;
 }
 
@@ -1191,7 +1218,7 @@ static void ap__combo_check_chords(uint32_t now) {
 
         if (all_pressed && (latest - earliest) <= c->window_ms) {
             ap__g.combo_held[i] = true;
-            ap__combo_push_event(c->id, true);
+            ap__combo_push_event(c, true, AP_COMBO_CHORD);
         }
     }
 }
@@ -1204,7 +1231,7 @@ static void ap__combo_check_chord_releases(void) {
         for (int j = 0; j < c->button_count; j++) {
             if (!ap__g.buttons_held[c->buttons[j]]) {
                 ap__g.combo_held[i] = false;
-                ap__combo_push_event(c->id, false);
+                ap__combo_push_event(c, false, AP_COMBO_CHORD);
                 break;
             }
         }
@@ -1248,7 +1275,7 @@ static void ap__combo_check_sequences(void) {
         }
 
         if (match) {
-            ap__combo_push_event(c->id, true);
+            ap__combo_push_event(c, true, AP_COMBO_SEQUENCE);
             ap__g.seq_buffer_count = 0;
             return;
         }
@@ -1642,7 +1669,11 @@ const char *ap_button_name(ap_button btn) {
 
 /* ─── Combo System ───────────────────────────────────────────────────────── */
 
-int ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t window_ms) {
+static int ap__register_combo(const char *id, ap_button *buttons, int count,
+                              uint32_t timing_ms, bool is_sequence, bool strict,
+                              ap_combo_callback on_trigger,
+                              ap_combo_callback on_release,
+                              void *userdata) {
     if (!id || !id[0] || !buttons) return AP_ERROR;
     if (count < 1 || count > 8) return AP_ERROR;
     if (ap__g.combo_count >= AP_MAX_COMBOS) return AP_ERROR;
@@ -1653,28 +1684,39 @@ int ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t wi
     strncpy(c->id, id, sizeof(c->id) - 1);
     memcpy(c->buttons, buttons, button_bytes);
     c->button_count = count;
-    c->window_ms = window_ms > 0 ? window_ms : 100;
-    c->is_sequence = false;
+    c->window_ms = timing_ms > 0 ? timing_ms : (is_sequence ? 500 : 100);
+    c->is_sequence = is_sequence;
+    c->strict = strict;
+    c->on_trigger = on_trigger;
+    c->on_release = on_release;
+    c->userdata = userdata;
     c->active = true;
     return AP_OK;
 }
 
-int ap_register_sequence(const char *id, ap_button *buttons, int count, uint32_t timeout_ms, bool strict) {
-    if (!id || !id[0] || !buttons) return AP_ERROR;
-    if (count < 1 || count > 8) return AP_ERROR;
-    if (ap__g.combo_count >= AP_MAX_COMBOS) return AP_ERROR;
+int ap_register_chord(const char *id, ap_button *buttons, int count, uint32_t window_ms) {
+    return ap__register_combo(id, buttons, count, window_ms, false, false, NULL, NULL, NULL);
+}
 
-    ap_combo *c = &ap__g.combos[ap__g.combo_count++];
-    size_t button_bytes = (size_t)count * sizeof(ap_button);
-    memset(c, 0, sizeof(*c));
-    strncpy(c->id, id, sizeof(c->id) - 1);
-    memcpy(c->buttons, buttons, button_bytes);
-    c->button_count = count;
-    c->window_ms = timeout_ms > 0 ? timeout_ms : 500;
-    c->is_sequence = true;
-    c->strict = strict;
-    c->active = true;
-    return AP_OK;
+int ap_register_sequence(const char *id, ap_button *buttons, int count, uint32_t timeout_ms, bool strict) {
+    return ap__register_combo(id, buttons, count, timeout_ms, true, strict, NULL, NULL, NULL);
+}
+
+int ap_register_chord_ex(const char *id, ap_button *buttons, int count,
+                         uint32_t window_ms,
+                         ap_combo_callback on_trigger,
+                         ap_combo_callback on_release,
+                         void *userdata) {
+    return ap__register_combo(id, buttons, count, window_ms, false, false,
+                              on_trigger, on_release, userdata);
+}
+
+int ap_register_sequence_ex(const char *id, ap_button *buttons, int count,
+                            uint32_t timeout_ms, bool strict,
+                            ap_combo_callback on_trigger,
+                            void *userdata) {
+    return ap__register_combo(id, buttons, count, timeout_ms, true, strict,
+                              on_trigger, NULL, userdata);
 }
 
 void ap_unregister_combo(const char *id) {
@@ -3025,6 +3067,8 @@ void ap_set_power_handler(bool enabled) {
 
 SDL_Renderer *ap_get_renderer(void)   { return ap__g.renderer; }
 SDL_Window   *ap_get_window(void)     { return ap__g.window; }
+void ap_show_window(void) { if (ap__g.window) SDL_ShowWindow(ap__g.window); }
+void ap_hide_window(void) { if (ap__g.window) SDL_HideWindow(ap__g.window); }
 int           ap_get_screen_width(void)  { return ap__g.screen_w; }
 int           ap_get_screen_height(void) { return ap__g.screen_h; }
 
