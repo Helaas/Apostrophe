@@ -22,6 +22,7 @@ Complete reference for all public functions, types, and macros in `apostrophe.h`
   - [Logging](#logging)
   - [Accessors](#accessors)
   - [Power](#power)
+  - [CPU & Fan](#cpu--fan)
   - [Error Handling](#error-handling)
 - [Widgets (apostrophe_widgets.h)](#widgets)
   - [List](#list)
@@ -559,6 +560,104 @@ Get the underlying SDL window.
 #### `void ap_set_power_handler(bool enabled)`
 
 Enable or disable the background power button handler. On device, this listens for `KEY_POWER` from Linux input devices — a short press triggers suspend, a long press (>= 1s) triggers shutdown. Enabled automatically by `ap_init()` on device builds.
+
+### CPU & Fan
+
+Control CPU frequency and fan speed on NextUI handheld hardware. All functions are no-ops (or
+return -1) on desktop builds. Fan functions have no effect on MY355 and TG5040, which have no
+fan hardware.
+
+#### `ap_cpu_speed` (enum)
+
+```c
+typedef enum {
+    AP_CPU_SPEED_DEFAULT     = 0, /* do not change (zero-init default) */
+    AP_CPU_SPEED_MENU,            /* light UI work  */
+    AP_CPU_SPEED_POWERSAVE,       /* battery saving  */
+    AP_CPU_SPEED_NORMAL,          /* standard pak speed — recommended default */
+    AP_CPU_SPEED_PERFORMANCE,     /* maximum speed  */
+} ap_cpu_speed;
+```
+
+Approximate frequencies per preset and platform:
+
+| Preset | MY355 | TG5040 | TG5050 (big core) |
+|--------|-------|--------|-------------------|
+| `AP_CPU_SPEED_MENU` | 600 MHz | 600 MHz | 672 MHz |
+| `AP_CPU_SPEED_POWERSAVE` | 1200 MHz | 1200 MHz | 1200 MHz |
+| `AP_CPU_SPEED_NORMAL` | 1608 MHz | 1608 MHz | 1680 MHz |
+| `AP_CPU_SPEED_PERFORMANCE` | 1992 MHz | 2000 MHz | 2160 MHz |
+
+`AP_CPU_SPEED_NORMAL` is the recommended default for paks — it matches what NextUI's `launch.sh`
+sets before handing control to a pak binary.
+
+**`ap_config.cpu_speed`** — set this field in `ap_config` to apply a speed preset during
+`ap_init()`. Zero (default struct value) leaves the CPU unchanged.
+
+```c
+ap_config cfg = {
+    .window_title = "My Pak",
+    .is_nextui    = AP_PLATFORM_IS_DEVICE,
+    .cpu_speed    = AP_CPU_SPEED_NORMAL,  /* set at init */
+};
+ap_init(&cfg);
+```
+
+#### `int ap_set_cpu_speed(ap_cpu_speed speed)`
+
+Set the CPU to a named preset. Internally writes `userspace` to the cpufreq governor and then
+writes the platform-specific frequency to `scaling_setspeed`. Returns `AP_OK` on success,
+`AP_ERROR` if the sysfs write fails. No-op (returns `AP_OK`) on desktop builds.
+
+#### `int ap_get_cpu_speed_mhz(void)`
+
+Read the current CPU frequency in MHz. Returns `-1` on error or desktop builds.
+
+#### `int ap_get_cpu_temp_celsius(void)`
+
+Read the CPU temperature in °C from `/sys/devices/virtual/thermal/thermal_zone0/temp`.
+Returns `-1` on error or desktop builds.
+
+#### `int ap_set_fan_speed(int percent)`
+
+Set the fan to a 0–100 percentage. Internally maps to 0–31 raw sysfs levels. Pass `-1` to
+leave the current speed unchanged. Only has effect on TG5050; no-op (returns `AP_OK`) on all
+other platforms and desktop builds.
+
+#### `int ap_get_fan_speed(void)`
+
+Read the current fan speed as a 0–100 percentage. Returns `0` on non-TG5050 platforms,
+`-1` if the sysfs read fails.
+
+#### Platform notes
+
+| Platform | CPU sysfs | Fan |
+|----------|-----------|-----|
+| MY355 (Miyoo Mini Plus) | `cpufreq/policy0/scaling_setspeed` | None |
+| TG5040 (Trimui Brick) | `cpu0/cpufreq/scaling_setspeed` | None |
+| TG5050 (Trimui Smart Pro S) | `cpu4/cpufreq/scaling_setspeed` (big core) | `cooling_device0/cur_state` (0–31) |
+| Desktop | No-op | No-op |
+
+#### Example
+
+```c
+/* Set CPU at init */
+ap_config cfg = { .is_nextui = AP_PLATFORM_IS_DEVICE,
+                  .cpu_speed = AP_CPU_SPEED_NORMAL };
+ap_init(&cfg);
+
+/* Change speed at runtime */
+ap_set_cpu_speed(AP_CPU_SPEED_PERFORMANCE);
+
+int mhz  = ap_get_cpu_speed_mhz();   /* e.g. 1680 on TG5050 */
+int temp = ap_get_cpu_temp_celsius(); /* e.g. 42   */
+
+/* Fan (TG5050 only) */
+ap_set_fan_speed(50);          /* 50% */
+int fan = ap_get_fan_speed();  /* 0–100 */
+```
+
+See `examples/perf/main.c` for a live-readout demo with preset picker.
 
 ### Error Handling
 

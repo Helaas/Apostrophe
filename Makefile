@@ -44,7 +44,7 @@ INCLUDE_DIR  := include
 RES_DIR      := res
 
 # Example names
-EXAMPLES := hello demo download combo
+EXAMPLES := hello demo download combo perf
 
 # ─── Phony targets ───────────────────────────────────────────────────────
 

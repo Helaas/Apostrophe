@@ -458,6 +458,154 @@ static void demo_detail(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: CPU & Fan
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Sub-screen: pick a CPU speed preset using the list widget */
+static void demo__cpu_pick_speed(void) {
+    static const struct { const char *label; ap_cpu_speed preset; } presets[] = {
+        { "Menu        (~600-672 MHz)",    AP_CPU_SPEED_MENU        },
+        { "Powersave   (~1200 MHz)",       AP_CPU_SPEED_POWERSAVE   },
+        { "Normal      (~1608-1680 MHz)",  AP_CPU_SPEED_NORMAL      },
+        { "Performance (~1992-2160 MHz)",  AP_CPU_SPEED_PERFORMANCE },
+    };
+    int count = (int)(sizeof(presets) / sizeof(presets[0]));
+
+    ap_list_item items[4];
+    for (int i = 0; i < count; i++)
+        items[i] = (ap_list_item){ .label = presets[i].label };
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "APPLY", .is_confirm = true },
+    };
+    ap_list_opts opts = ap_list_default_opts("CPU Speed", items, count);
+    opts.footer        = footer;
+    opts.footer_count  = 2;
+    opts.initial_index = 2; /* Normal */
+
+    ap_list_result result;
+    if (ap_list(&opts, &result) == AP_OK && result.selected_index >= 0)
+        ap_set_cpu_speed(presets[result.selected_index].preset);
+}
+
+/* Sub-screen: pick a fan speed percentage using the list widget */
+static void demo__cpu_pick_fan(void) {
+    static const struct { const char *label; int percent; } levels[] = {
+        { "Off   (0%)",   0   },
+        { "Low   (25%)",  25  },
+        { "Mid   (50%)",  50  },
+        { "High  (75%)",  75  },
+        { "Full (100%)",  100 },
+    };
+    int count = (int)(sizeof(levels) / sizeof(levels[0]));
+
+    ap_list_item items[5];
+    for (int i = 0; i < count; i++)
+        items[i] = (ap_list_item){ .label = levels[i].label };
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "APPLY", .is_confirm = true },
+    };
+    ap_list_opts opts = ap_list_default_opts("Fan Speed", items, count);
+    opts.footer       = footer;
+    opts.footer_count = 2;
+
+    ap_list_result result;
+    if (ap_list(&opts, &result) == AP_OK && result.selected_index >= 0)
+        ap_set_fan_speed(levels[result.selected_index].percent);
+}
+
+/* Main CPU & Fan screen: live readout + action menu. Stays open until B. */
+static void demo_cpu_fan(void) {
+    TTF_Font *title_font = ap_get_font(AP_FONT_EXTRA_LARGE);
+    TTF_Font *body_font  = ap_get_font(AP_FONT_LARGE);
+    TTF_Font *hint_font  = ap_get_font(AP_FONT_SMALL);
+    ap_color fg     = ap_get_theme()->text;
+    ap_color accent = ap_get_theme()->accent;
+    int pad = AP_DS(12);
+
+    static const struct { const char *label; void (*fn)(void); } actions[] = {
+        { "CPU Speed", demo__cpu_pick_speed },
+        { "Fan Speed", demo__cpu_pick_fan   },
+    };
+    int action_count = (int)(sizeof(actions) / sizeof(actions[0]));
+
+    int  sel     = 0;
+    bool running = true;
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "OPEN", .is_confirm = true },
+    };
+
+    while (running) {
+        ap_input_event ev;
+        while (ap_poll_input(&ev)) {
+            if (!ev.pressed) continue;
+            switch (ev.button) {
+                case AP_BTN_UP:   sel = (sel - 1 + action_count) % action_count; break;
+                case AP_BTN_DOWN: sel = (sel + 1) % action_count;                break;
+                case AP_BTN_A:    actions[sel].fn();                              break;
+                case AP_BTN_B:    running = false;                                break;
+                default: break;
+            }
+        }
+
+        /* Read sensors each frame */
+        int cpu_mhz  = ap_get_cpu_speed_mhz();
+        int cpu_temp = ap_get_cpu_temp_celsius();
+
+        ap_clear_screen();
+        int y = pad;
+        ap_draw_text(title_font, "CPU & Fan", pad, y, fg);
+        y += AP_DS(30);
+
+        /* ── Live readout ── */
+        char row[64];
+        if (cpu_mhz > 0) snprintf(row, sizeof(row), "%d MHz", cpu_mhz);
+        else              snprintf(row, sizeof(row), "N/A");
+        ap_draw_text(hint_font, "CPU speed:", pad, y, fg);
+        ap_draw_text(body_font, row, pad + AP_DS(120), y, fg);
+        y += AP_DS(22);
+
+        if (cpu_temp > 0) snprintf(row, sizeof(row), "%d C", cpu_temp);
+        else               snprintf(row, sizeof(row), "N/A");
+        ap_draw_text(hint_font, "CPU temp:", pad, y, fg);
+        ap_draw_text(body_font, row, pad + AP_DS(120), y, fg);
+        y += AP_DS(22);
+
+#if defined(PLATFORM_TG5050)
+        int fan_pct = ap_get_fan_speed();
+        if (fan_pct >= 0) snprintf(row, sizeof(row), "%d%%", fan_pct);
+        else               snprintf(row, sizeof(row), "N/A");
+        ap_draw_text(hint_font, "Fan speed:", pad, y, fg);
+        ap_draw_text(body_font, row, pad + AP_DS(120), y, fg);
+#else
+        ap_draw_text(hint_font, "Fan speed:", pad, y, fg);
+        ap_draw_text(body_font, "no fan", pad + AP_DS(120), y, fg);
+#endif
+        y += AP_DS(30);
+
+        /* ── Action menu ── */
+        ap_draw_text(hint_font, "Actions:", pad, y, fg);
+        y += AP_DS(20);
+        for (int i = 0; i < action_count; i++) {
+            ap_color col = (i == sel) ? accent : fg;
+            char line[64];
+            snprintf(line, sizeof(line), "%s %s", (i == sel) ? ">" : " ", actions[i].label);
+            ap_draw_text(body_font, line, pad, y, col);
+            y += AP_DS(22);
+        }
+
+        ap_draw_footer(footer, 2);
+        ap_present();
+        SDL_Delay(250); /* slow refresh — sensor reads go through sysfs */
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Demo: Color Picker
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void demo_color_picker(void) {
@@ -495,6 +643,7 @@ static const struct {
     { "Process Message",     demo_process       },
     { "Detail Screen",       demo_detail        },
     { "Color Picker",        demo_color_picker  },
+    { "CPU & Fan",           demo_cpu_fan       },
 };
 
 #define DEMO_COUNT (int)(sizeof(demos) / sizeof(demos[0]))

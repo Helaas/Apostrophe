@@ -190,6 +190,24 @@ typedef enum {
     AP_ACTION_CUSTOM = AP_ACTION_TRIGGERED
 } ap_list_action;
 
+/* CPU speed presets — platform-transparent, see ap_set_cpu_speed().
+ * Approximate frequencies per platform:
+ *
+ *   Preset           MY355        TG5040       TG5050 (big core)
+ *   AP_CPU_SPEED_MENU       600 MHz      600 MHz      672 MHz
+ *   AP_CPU_SPEED_POWERSAVE 1200 MHz     1200 MHz     1200 MHz
+ *   AP_CPU_SPEED_NORMAL    1608 MHz     1608 MHz     1680 MHz  ← standard pak speed
+ *   AP_CPU_SPEED_PERFORMANCE 1992 MHz  2000 MHz     2160 MHz
+ *
+ * AP_CPU_SPEED_DEFAULT (0) means "do not change" and is the zero-init default. */
+typedef enum {
+    AP_CPU_SPEED_DEFAULT     = 0, /* do not change at init */
+    AP_CPU_SPEED_MENU,            /* ~600–672 MHz  — light UI / menus    */
+    AP_CPU_SPEED_POWERSAVE,       /* ~1200 MHz     — battery saving       */
+    AP_CPU_SPEED_NORMAL,          /* ~1608–1680 MHz — standard pak speed  */
+    AP_CPU_SPEED_PERFORMANCE,     /* ~1992–2160 MHz — max speed           */
+} ap_cpu_speed;
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Structs
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -299,6 +317,7 @@ typedef struct {
     const char *primary_color_hex;/* Override accent color "#RRGGBB", NULL = theme default */
     bool        disable_background;  /* Set true to skip bg.png rendering */
     bool        is_nextui;        /* Load theme from NextUI's nextval.elf */
+    ap_cpu_speed cpu_speed;       /* Set CPU at init; 0 = AP_CPU_SPEED_DEFAULT (no-op) */
 } ap_config;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -526,6 +545,30 @@ const char    *ap_resolve_log_path(const char *app_name);
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 void           ap_set_power_handler(bool enabled);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Public API — CPU & Fan
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Set CPU to a named speed preset. Sets the governor to "userspace" first,
+ * then writes the platform-specific frequency. Returns AP_OK on success.
+ * No-op (returns AP_OK) on desktop builds. */
+int            ap_set_cpu_speed(ap_cpu_speed speed);
+
+/* Read the current CPU frequency in MHz. Returns -1 on error or desktop. */
+int            ap_get_cpu_speed_mhz(void);
+
+/* Read the CPU temperature in °C. Returns -1 on error or desktop. */
+int            ap_get_cpu_temp_celsius(void);
+
+/* Set fan speed as a 0–100 percentage. Internally maps to 0–31 raw levels.
+ * Pass -1 to leave the current speed unchanged.
+ * Only has effect on TG5050; no-op (returns AP_OK) on all other platforms. */
+int            ap_set_fan_speed(int percent);
+
+/* Read current fan speed as a 0–100 percentage.
+ * Returns 0 on non-TG5050 platforms, -1 if the value cannot be read. */
+int            ap_get_fan_speed(void);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public API — Error Handling
@@ -2414,6 +2457,115 @@ static bool ap__is_charging(void) {
     return (charger == 1) && (ttf > 0);
 }
 
+/* ─── CPU & Fan sysfs paths and frequency presets ───────────────────────── */
+
+#if defined(PLATFORM_MY355)
+#  define AP__CPU_GOVERNOR_PATH  "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor"
+#  define AP__CPU_SPEED_PATH     "/sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed"
+#  define AP__CPU_CUR_FREQ_PATH  "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
+#  define AP__CPU_FREQ_MENU         600000
+#  define AP__CPU_FREQ_POWERSAVE   1200000
+#  define AP__CPU_FREQ_NORMAL      1608000
+#  define AP__CPU_FREQ_PERFORMANCE 1992000
+#elif defined(PLATFORM_TG5040)
+#  define AP__CPU_GOVERNOR_PATH  "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+#  define AP__CPU_SPEED_PATH     "/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed"
+#  define AP__CPU_CUR_FREQ_PATH  "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
+#  define AP__CPU_FREQ_MENU         600000
+#  define AP__CPU_FREQ_POWERSAVE   1200000
+#  define AP__CPU_FREQ_NORMAL      1608000
+#  define AP__CPU_FREQ_PERFORMANCE 2000000
+#elif defined(PLATFORM_TG5050)
+#  define AP__CPU_GOVERNOR_PATH  "/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor"
+#  define AP__CPU_SPEED_PATH     "/sys/devices/system/cpu/cpu4/cpufreq/scaling_setspeed"
+#  define AP__CPU_CUR_FREQ_PATH  "/sys/devices/system/cpu/cpu4/cpufreq/scaling_cur_freq"
+#  define AP__CPU_FREQ_MENU         672000
+#  define AP__CPU_FREQ_POWERSAVE   1200000
+#  define AP__CPU_FREQ_NORMAL      1680000
+#  define AP__CPU_FREQ_PERFORMANCE 2160000
+#  define AP__FAN_STATE_PATH     "/sys/class/thermal/cooling_device0/cur_state"
+#endif
+
+#define AP__CPU_TEMP_PATH "/sys/devices/virtual/thermal/thermal_zone0/temp"
+
+static int ap__write_sysfs_int(const char *path, int value) {
+    FILE *f = fopen(path, "w");
+    if (!f) return AP_ERROR;
+    fprintf(f, "%d\n", value);
+    fclose(f);
+    return AP_OK;
+}
+
+static int ap__write_sysfs_str(const char *path, const char *value) {
+    FILE *f = fopen(path, "w");
+    if (!f) return AP_ERROR;
+    fputs(value, f);
+    fclose(f);
+    return AP_OK;
+}
+
+#endif /* AP_PLATFORM_IS_DEVICE */
+
+/* ─── CPU & Fan implementations ──────────────────────────────────────────── */
+
+int ap_set_cpu_speed(ap_cpu_speed speed) {
+#if AP_PLATFORM_IS_DEVICE && defined(AP__CPU_SPEED_PATH)
+    int freq = 0;
+    switch (speed) {
+        case AP_CPU_SPEED_MENU:        freq = AP__CPU_FREQ_MENU;        break;
+        case AP_CPU_SPEED_POWERSAVE:   freq = AP__CPU_FREQ_POWERSAVE;   break;
+        case AP_CPU_SPEED_NORMAL:      freq = AP__CPU_FREQ_NORMAL;      break;
+        case AP_CPU_SPEED_PERFORMANCE: freq = AP__CPU_FREQ_PERFORMANCE; break;
+        default: return AP_ERROR;
+    }
+    ap__write_sysfs_str(AP__CPU_GOVERNOR_PATH, "userspace\n");
+    return ap__write_sysfs_int(AP__CPU_SPEED_PATH, freq);
+#else
+    (void)speed;
+    return AP_OK;
+#endif
+}
+
+int ap_get_cpu_speed_mhz(void) {
+#if AP_PLATFORM_IS_DEVICE && defined(AP__CPU_CUR_FREQ_PATH)
+    int khz = ap__read_sysfs_int(AP__CPU_CUR_FREQ_PATH);
+    return (khz > 0) ? khz / 1000 : -1;
+#else
+    return -1;
+#endif
+}
+
+int ap_get_cpu_temp_celsius(void) {
+#if AP_PLATFORM_IS_DEVICE
+    int mk = ap__read_sysfs_int(AP__CPU_TEMP_PATH);
+    return (mk > 0) ? mk / 1000 : -1;
+#else
+    return -1;
+#endif
+}
+
+int ap_set_fan_speed(int percent) {
+#if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
+    if (percent < 0) return AP_OK; /* -1 = keep current */
+    if (percent > 100) percent = 100;
+    int raw = percent * 31 / 100;
+    return ap__write_sysfs_int(AP__FAN_STATE_PATH, raw);
+#else
+    (void)percent;
+    return AP_OK;
+#endif
+}
+
+int ap_get_fan_speed(void) {
+#if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
+    int raw = ap__read_sysfs_int(AP__FAN_STATE_PATH);
+    return (raw >= 0) ? raw * 100 / 31 : -1;
+#else
+    return 0;
+#endif
+}
+
+#if AP_PLATFORM_IS_DEVICE
 static int ap__map_rssi_to_wifi_strength(int rssi) {
     /* Match NextUI thresholds:
        0   = disconnected
@@ -3360,6 +3512,15 @@ int ap_init(ap_config *cfg) {
     /* Start power handler on device if NextUI mode */
     if (cfg && cfg->is_nextui) {
         ap_set_power_handler(true);
+    }
+
+    /* Apply CPU speed preset if specified */
+    if (cfg && cfg->cpu_speed != AP_CPU_SPEED_DEFAULT) {
+        if (ap_set_cpu_speed(cfg->cpu_speed) != AP_OK) {
+            ap_log("Warning: ap_set_cpu_speed failed for preset %d", (int)cfg->cpu_speed);
+        } else {
+            ap_log("CPU speed set to preset %d", (int)cfg->cpu_speed);
+        }
     }
 
     ap__g.initialized = true;
