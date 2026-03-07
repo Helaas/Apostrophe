@@ -83,7 +83,7 @@ extract_source() {
 
 ensure_openssl() {
     local prefix="$PLATFORM_ROOT/openssl/install"
-    local stamp="$prefix/.stamp-openssl-${OPENSSL_VERSION}"
+    local stamp="$prefix/.stamp-openssl-${OPENSSL_VERSION}-static2"
     local src_dir="$PLATFORM_ROOT/openssl/src"
 
     if [[ -f "$stamp" ]]; then
@@ -97,11 +97,17 @@ ensure_openssl() {
     pushd "$src_dir" >/dev/null
     echo "[third_party] building openssl ${OPENSSL_VERSION} for $PLATFORM"
     CC="gcc" AR="ar" RANLIB="ranlib" CROSS_COMPILE="${TRIPLET}-" \
+    CFLAGS="-ffunction-sections -fdata-sections -O2" \
     perl ./Configure linux-aarch64 \
         --prefix="$prefix" \
         --openssldir="$prefix/ssl" \
         --libdir=lib \
-        shared no-tests no-async
+        no-shared no-tests no-async \
+        no-apps \
+        no-afalgeng no-capieng no-padlockeng no-devcryptoeng \
+        no-cmp no-cms no-ct no-ocsp no-ts \
+        no-srp no-gost no-legacy \
+        no-comp no-nextprotoneg no-psk
     make -j"$JOBS"
     make install_sw
     popd >/dev/null
@@ -111,7 +117,7 @@ ensure_openssl() {
 
 ensure_curl() {
     local prefix="$PLATFORM_ROOT/curl/install"
-    local stamp="$prefix/.stamp-curl-${CURL_VERSION}"
+    local stamp="$prefix/.stamp-curl-${CURL_VERSION}-static2"
     local src_dir="$PLATFORM_ROOT/curl/src"
     local openssl_prefix="$PLATFORM_ROOT/openssl/install"
     local cppflags="-I${openssl_prefix}/include -I${SYSROOT}/include"
@@ -135,6 +141,7 @@ ensure_curl() {
     STRIP="${TRIPLET}-strip" \
     LD="${TRIPLET}-ld" \
     PKG_CONFIG=false \
+    CFLAGS="-ffunction-sections -fdata-sections -O2" \
     CPPFLAGS="$cppflags" \
     LDFLAGS="$ldflags" \
     ./configure \
@@ -144,8 +151,8 @@ ensure_curl() {
         --libdir="$prefix/lib" \
         --with-openssl="$openssl_prefix" \
         --with-zlib="$SYSROOT" \
-        --enable-shared \
-        --disable-static \
+        --disable-shared \
+        --enable-static \
         --without-libidn2 \
         --without-libpsl \
         --without-nghttp2 \
@@ -155,7 +162,21 @@ ensure_curl() {
         --without-librtmp \
         --without-ca-bundle \
         --without-ca-path \
-        --disable-manual
+        --disable-manual \
+        --disable-dict \
+        --disable-file \
+        --disable-ftp \
+        --disable-gopher \
+        --disable-imap \
+        --disable-ldap \
+        --disable-mqtt \
+        --disable-pop3 \
+        --disable-rtsp \
+        --disable-smb \
+        --disable-smtp \
+        --disable-telnet \
+        --disable-tftp \
+        --disable-unix-sockets
     make -j"$JOBS"
     make install
     popd >/dev/null
@@ -166,7 +187,6 @@ ensure_curl() {
 stage_runtime_libs() {
     local binary="$3"
     local dest_dir="$4"
-    local curl_prefix="$PLATFORM_ROOT/curl/install"
 
     if [[ ! -f "$binary" ]]; then
         echo "Binary not found: $binary" >&2
@@ -174,62 +194,10 @@ stage_runtime_libs() {
     fi
 
     mkdir -p "$dest_dir"
-    rm -f "$dest_dir"/libcurl.so* "$dest_dir"/libssl.so* "$dest_dir"/libcrypto.so* "$dest_dir"/libz.so*
 
-    # Bundle Mozilla CA certificate bundle for SSL verification on devices
+    # Static build — only the CA certificate bundle is needed at runtime
     download_and_verify "$CACERT_URL" "$CACERT_FILE" "$CACERT_SHA256"
     cp "$SOURCES_DIR/$CACERT_FILE" "$dest_dir/cacert.pem"
-
-    local -a search_dirs=(
-        "$curl_prefix/lib"
-        "$PLATFORM_ROOT/openssl/install/lib"
-        "$SYSROOT/lib"
-    )
-
-    declare -A seen
-    local -a queue
-
-    while IFS= read -r soname; do
-        case "$soname" in
-            libcurl.so*|libssl.so*|libcrypto.so*|libz.so*)
-                queue+=("$soname")
-                ;;
-        esac
-    done < <(readelf -d "$binary" | awk '/NEEDED/ {gsub(/\[|\]/, "", $5); print $5}')
-
-    while [[ "${#queue[@]}" -gt 0 ]]; do
-        local soname="${queue[0]}"
-        queue=("${queue[@]:1}")
-
-        if [[ -n "${seen[$soname]:-}" ]]; then
-            continue
-        fi
-        seen[$soname]=1
-
-        local src=""
-        local dir
-        for dir in "${search_dirs[@]}"; do
-            if [[ -e "$dir/$soname" ]]; then
-                src="$dir/$soname"
-                break
-            fi
-        done
-
-        if [[ -z "$src" ]]; then
-            echo "[third_party] missing runtime dependency: $soname" >&2
-            exit 1
-        fi
-
-        cp -L "$src" "$dest_dir/$soname"
-
-        while IFS= read -r dep; do
-            case "$dep" in
-                libcurl.so*|libssl.so*|libcrypto.so*|libz.so*)
-                    queue+=("$dep")
-                    ;;
-            esac
-        done < <(readelf -d "$dest_dir/$soname" | awk '/NEEDED/ {gsub(/\[|\]/, "", $5); print $5}')
-    done
 }
 
 case "$ACTION" in

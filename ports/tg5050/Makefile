@@ -28,14 +28,15 @@ CURL_LDFLAGS :=
 ifeq ($(USE_BUNDLED_CURL),1)
 CURL_PREFIX := /workspace/build/third_party/$(PLATFORM_ID)/curl/install
 OPENSSL_PREFIX := /workspace/build/third_party/$(PLATFORM_ID)/openssl/install
-CURL_STAMP  := $(CURL_PREFIX)/.stamp-curl-8.7.1
+OPENSSL_LIBSSL := $(OPENSSL_PREFIX)/lib/libssl.a
+OPENSSL_LIBCRYPTO := $(OPENSSL_PREFIX)/lib/libcrypto.a
+CURL_STAMP  := $(CURL_PREFIX)/.stamp-curl-8.7.1-static2
 DEPS += $(CURL_STAMP)
-CURL_CFLAGS += -I$(CURL_PREFIX)/include -DAP_ENABLE_CURL
-CURL_LDFLAGS += -Wl,--no-as-needed \
-	-L$(CURL_PREFIX)/lib -L$(OPENSSL_PREFIX)/lib \
-	-Wl,-rpath-link,$(CURL_PREFIX)/lib -Wl,-rpath-link,$(OPENSSL_PREFIX)/lib \
-	-lcurl \
-	-Wl,--as-needed
+CURL_CFLAGS += -I$(CURL_PREFIX)/include -DAP_ENABLE_CURL -ffunction-sections -fdata-sections
+CURL_LDFLAGS += \
+	-Wl,--whole-archive $(CURL_PREFIX)/lib/libcurl.a -Wl,--no-whole-archive \
+	$(OPENSSL_LIBSSL) $(OPENSSL_LIBCRYPTO) \
+	-lz -Wl,--gc-sections
 endif
 
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter \
