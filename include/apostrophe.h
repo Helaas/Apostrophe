@@ -197,7 +197,7 @@ typedef enum {
  *   AP_CPU_SPEED_MENU       600 MHz      600 MHz      672 MHz
  *   AP_CPU_SPEED_POWERSAVE 1200 MHz     1200 MHz     1200 MHz
  *   AP_CPU_SPEED_NORMAL    1608 MHz     1608 MHz     1680 MHz  ← standard pak speed
- *   AP_CPU_SPEED_PERFORMANCE 1992 MHz  2000 MHz     2160 MHz
+ *   AP_CPU_SPEED_PERFORMANCE 2000 MHz  2000 MHz     2160 MHz
  *
  * AP_CPU_SPEED_DEFAULT (0) means "do not change" and is the zero-init default. */
 typedef enum {
@@ -205,8 +205,16 @@ typedef enum {
     AP_CPU_SPEED_MENU,            /* ~600–672 MHz  — light UI / menus    */
     AP_CPU_SPEED_POWERSAVE,       /* ~1200 MHz     — battery saving       */
     AP_CPU_SPEED_NORMAL,          /* ~1608–1680 MHz — standard pak speed  */
-    AP_CPU_SPEED_PERFORMANCE,     /* ~1992–2160 MHz — max speed           */
+    AP_CPU_SPEED_PERFORMANCE,     /* ~2000–2160 MHz — max speed           */
 } ap_cpu_speed;
+
+typedef enum {
+    AP_FAN_MODE_UNSUPPORTED = -1,
+    AP_FAN_MODE_MANUAL = 0,
+    AP_FAN_MODE_AUTO_QUIET,
+    AP_FAN_MODE_AUTO_NORMAL,
+    AP_FAN_MODE_AUTO_PERFORMANCE,
+} ap_fan_mode;
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Structs
@@ -561,8 +569,18 @@ int            ap_get_cpu_speed_mhz(void);
 /* Read the CPU temperature in °C. Returns -1 on error or desktop. */
 int            ap_get_cpu_temp_celsius(void);
 
+/* Set TG5050 fan mode. Manual stops any active auto daemon; auto modes mirror
+ * NextUI's quiet/normal/performance fancontrol helper.
+ * No-op (returns AP_OK) on platforms without fan hardware. */
+int            ap_set_fan_mode(ap_fan_mode mode);
+
+/* Read the current TG5050 fan mode. Returns AP_FAN_MODE_UNSUPPORTED on
+ * platforms without fan hardware or if the current mode cannot be determined. */
+ap_fan_mode    ap_get_fan_mode(void);
+
 /* Set fan speed as a 0–100 percentage. Internally maps to 0–31 raw levels.
- * Pass -1 to leave the current speed unchanged.
+ * On TG5050 this also stops any active auto fan daemon before applying a
+ * fixed speed. Pass -1 to leave the current speed unchanged.
  * Only has effect on TG5050; no-op (returns AP_OK) on all other platforms. */
 int            ap_set_fan_speed(int percent);
 
@@ -2466,7 +2484,7 @@ static bool ap__is_charging(void) {
 #  define AP__CPU_FREQ_MENU         600000
 #  define AP__CPU_FREQ_POWERSAVE   1200000
 #  define AP__CPU_FREQ_NORMAL      1608000
-#  define AP__CPU_FREQ_PERFORMANCE 1992000
+#  define AP__CPU_FREQ_PERFORMANCE 2000000
 #elif defined(PLATFORM_TG5040)
 #  define AP__CPU_GOVERNOR_PATH  "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 #  define AP__CPU_SPEED_PATH     "/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed"
@@ -2484,6 +2502,8 @@ static bool ap__is_charging(void) {
 #  define AP__CPU_FREQ_NORMAL      1680000
 #  define AP__CPU_FREQ_PERFORMANCE 2160000
 #  define AP__FAN_STATE_PATH     "/sys/class/thermal/cooling_device0/cur_state"
+#  define AP__FAN_HELPER_PATH    "/mnt/SDCARD/.system/tg5050/bin/fancontrol"
+#  define AP__FAN_LOCK_PATH      "/var/run/fan-control.lock"
 #endif
 
 #define AP__CPU_TEMP_PATH "/sys/devices/virtual/thermal/thermal_zone0/temp"
@@ -2503,6 +2523,104 @@ static int ap__write_sysfs_str(const char *path, const char *value) {
     fclose(f);
     return AP_OK;
 }
+
+#if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
+static bool ap__is_all_digits(const char *s) {
+    if (!s || !s[0]) return false;
+    for (const char *p = s; *p; ++p) {
+        if (*p < '0' || *p > '9') return false;
+    }
+    return true;
+}
+
+static const char *ap__fan_mode_arg(ap_fan_mode mode) {
+    switch (mode) {
+        case AP_FAN_MODE_AUTO_QUIET: return "quiet";
+        case AP_FAN_MODE_AUTO_NORMAL: return "normal";
+        case AP_FAN_MODE_AUTO_PERFORMANCE: return "performance";
+        default: return NULL;
+    }
+}
+
+static int ap__fan_stop_helper(void) {
+    (void)system("killall fancontrol 2>/dev/null");
+    usleep(100000);
+    unlink(AP__FAN_LOCK_PATH);
+    return AP_OK;
+}
+
+static bool ap__fan_helper_available(void) {
+    return access(AP__FAN_HELPER_PATH, X_OK) == 0;
+}
+
+static int ap__fan_launch_helper(const char *arg) {
+    char command[256];
+    if (!arg || !arg[0]) return AP_ERROR;
+    snprintf(command, sizeof(command), "%s %s >/dev/null 2>&1 &", AP__FAN_HELPER_PATH, arg);
+    return system(command) == 0 ? AP_OK : AP_ERROR;
+}
+
+static ap_fan_mode ap__fan_detect_helper_mode(void) {
+    DIR *dir = opendir("/proc");
+    if (!dir) return AP_FAN_MODE_UNSUPPORTED;
+
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL) {
+        if (!ap__is_all_digits(ent->d_name)) continue;
+
+        char path[sizeof("/proc//cmdline") + sizeof(ent->d_name)];
+        snprintf(path, sizeof(path), "/proc/%s/cmdline", ent->d_name);
+
+        FILE *f = fopen(path, "r");
+        if (!f) continue;
+
+        char cmdline[256];
+        size_t n = fread(cmdline, 1, sizeof(cmdline) - 1, f);
+        fclose(f);
+        if (n == 0) continue;
+        cmdline[n] = '\0';
+
+        const char *arg = cmdline;
+        const char *found = NULL;
+        const char *next = NULL;
+        while (arg < cmdline + n && *arg) {
+            const char *base = strrchr(arg, '/');
+            base = base ? base + 1 : arg;
+            if (strcmp(base, "fancontrol") == 0) {
+                found = arg;
+                next = arg + strlen(arg) + 1;
+                break;
+            }
+            arg += strlen(arg) + 1;
+        }
+        if (!found) continue;
+
+        if (next >= cmdline + n || !*next) {
+            closedir(dir);
+            return AP_FAN_MODE_MANUAL;
+        }
+
+        if (strcmp(next, "quiet") == 0) {
+            closedir(dir);
+            return AP_FAN_MODE_AUTO_QUIET;
+        }
+        if (strcmp(next, "normal") == 0) {
+            closedir(dir);
+            return AP_FAN_MODE_AUTO_NORMAL;
+        }
+        if (strcmp(next, "performance") == 0) {
+            closedir(dir);
+            return AP_FAN_MODE_AUTO_PERFORMANCE;
+        }
+
+        closedir(dir);
+        return AP_FAN_MODE_MANUAL;
+    }
+
+    closedir(dir);
+    return AP_FAN_MODE_UNSUPPORTED;
+}
+#endif
 
 #endif /* AP_PLATFORM_IS_DEVICE */
 
@@ -2544,12 +2662,44 @@ int ap_get_cpu_temp_celsius(void) {
 #endif
 }
 
+int ap_set_fan_mode(ap_fan_mode mode) {
+#if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
+    const char *arg;
+    if (mode == AP_FAN_MODE_MANUAL) return ap__fan_stop_helper();
+
+    arg = ap__fan_mode_arg(mode);
+    if (!arg) return AP_ERROR;
+
+    ap__fan_stop_helper();
+    if (!ap__fan_helper_available()) return AP_ERROR;
+    return ap__fan_launch_helper(arg);
+#else
+    (void)mode;
+    return AP_OK;
+#endif
+}
+
+ap_fan_mode ap_get_fan_mode(void) {
+#if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
+    ap_fan_mode mode = ap__fan_detect_helper_mode();
+    if (mode != AP_FAN_MODE_UNSUPPORTED) return mode;
+    return ap__read_sysfs_int(AP__FAN_STATE_PATH) >= 0 ? AP_FAN_MODE_MANUAL : AP_FAN_MODE_UNSUPPORTED;
+#else
+    return AP_FAN_MODE_UNSUPPORTED;
+#endif
+}
+
 int ap_set_fan_speed(int percent) {
 #if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
     if (percent < 0) return AP_OK; /* -1 = keep current */
     if (percent > 100) percent = 100;
-    int raw = percent * 31 / 100;
-    return ap__write_sysfs_int(AP__FAN_STATE_PATH, raw);
+    ap__fan_stop_helper();
+    if (ap__fan_helper_available()) {
+        char arg[16];
+        snprintf(arg, sizeof(arg), "%d", percent);
+        if (ap__fan_launch_helper(arg) == AP_OK) return AP_OK;
+    }
+    return ap__write_sysfs_int(AP__FAN_STATE_PATH, (31 * percent + 50) / 100);
 #else
     (void)percent;
     return AP_OK;

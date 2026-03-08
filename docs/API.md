@@ -586,7 +586,7 @@ Approximate frequencies per preset and platform:
 | `AP_CPU_SPEED_MENU` | 600 MHz | 600 MHz | 672 MHz |
 | `AP_CPU_SPEED_POWERSAVE` | 1200 MHz | 1200 MHz | 1200 MHz |
 | `AP_CPU_SPEED_NORMAL` | 1608 MHz | 1608 MHz | 1680 MHz |
-| `AP_CPU_SPEED_PERFORMANCE` | 1992 MHz | 2000 MHz | 2160 MHz |
+| `AP_CPU_SPEED_PERFORMANCE` | 2000 MHz | 2000 MHz | 2160 MHz |
 
 `AP_CPU_SPEED_NORMAL` is the recommended default for paks — it matches what NextUI's `launch.sh`
 sets before handing control to a pak binary.
@@ -618,11 +618,47 @@ Read the current CPU frequency in MHz. Returns `-1` on error or desktop builds.
 Read the CPU temperature in °C from `/sys/devices/virtual/thermal/thermal_zone0/temp`.
 Returns `-1` on error or desktop builds.
 
+`my355` is a special case in NextUI: the shipped `MinUI.pak/launch.sh` boots at `1992 MHz`, but
+NextUI's `workspace/my355/platform/platform.c` uses `2000 MHz` for the named performance preset.
+Apostrophe follows `platform.c` for the preset API.
+
+#### `ap_fan_mode` (enum)
+
+```c
+typedef enum {
+    AP_FAN_MODE_UNSUPPORTED = -1,
+    AP_FAN_MODE_MANUAL = 0,
+    AP_FAN_MODE_AUTO_QUIET,
+    AP_FAN_MODE_AUTO_NORMAL,
+    AP_FAN_MODE_AUTO_PERFORMANCE,
+} ap_fan_mode;
+```
+
+`AP_FAN_MODE_AUTO_*` mirrors NextUI's TG5050 `fancontrol` helper modes. On platforms without fan
+hardware, `ap_get_fan_mode()` returns `AP_FAN_MODE_UNSUPPORTED`.
+
+#### `int ap_set_fan_mode(ap_fan_mode mode)`
+
+Set the TG5050 fan mode. `AP_FAN_MODE_MANUAL` stops any active `fancontrol` daemon without
+changing the current raw fan state. The auto modes launch NextUI's
+`/mnt/SDCARD/.system/tg5050/bin/fancontrol` helper with `quiet`, `normal`, or `performance`.
+Returns `AP_ERROR` if an auto mode is requested and the helper is unavailable. No-op (returns
+`AP_OK`) on non-TG5050 platforms and desktop builds.
+
+#### `ap_fan_mode ap_get_fan_mode(void)`
+
+Read the current TG5050 fan mode. If a `fancontrol` daemon is running, this reports the matching
+auto mode. Otherwise, it reports `AP_FAN_MODE_MANUAL` when the fan sysfs node is readable, or
+`AP_FAN_MODE_UNSUPPORTED` if the mode cannot be determined.
+
 #### `int ap_set_fan_speed(int percent)`
 
-Set the fan to a 0–100 percentage. Internally maps to 0–31 raw sysfs levels. Pass `-1` to
-leave the current speed unchanged. Only has effect on TG5050; no-op (returns `AP_OK`) on all
-other platforms and desktop builds.
+Set the fan to a fixed 0–100 percentage. On TG5050, Apostrophe first stops any active
+`fancontrol` daemon, then prefers invoking NextUI's helper with that percentage; if the helper is
+missing it falls back to a direct write to `cooling_device0/cur_state`. The direct sysfs fallback
+uses NextUI-compatible rounding: `(31 * percent + 50) / 100`. Pass `-1` to leave the current
+speed unchanged. Only has effect on TG5050; no-op (returns `AP_OK`) on all other platforms and
+desktop builds.
 
 #### `int ap_get_fan_speed(void)`
 
@@ -635,7 +671,7 @@ Read the current fan speed as a 0–100 percentage. Returns `0` on non-TG5050 pl
 |----------|-----------|-----|
 | MY355 (Miyoo Mini Plus) | `cpufreq/policy0/scaling_setspeed` | None |
 | TG5040 (Trimui Brick) | `cpu0/cpufreq/scaling_setspeed` | None |
-| TG5050 (Trimui Smart Pro S) | `cpu4/cpufreq/scaling_setspeed` (big core) | `cooling_device0/cur_state` (0–31) |
+| TG5050 (Trimui Smart Pro S) | `cpu4/cpufreq/scaling_setspeed` (big core) | `cooling_device0/cur_state` (0–31), plus `fancontrol` helper auto curves |
 | Desktop | No-op | No-op |
 
 #### Example
@@ -653,7 +689,9 @@ int mhz  = ap_get_cpu_speed_mhz();   /* e.g. 1680 on TG5050 */
 int temp = ap_get_cpu_temp_celsius(); /* e.g. 42   */
 
 /* Fan (TG5050 only) */
+ap_set_fan_mode(AP_FAN_MODE_AUTO_NORMAL);
 ap_set_fan_speed(50);          /* 50% */
+ap_fan_mode mode = ap_get_fan_mode();
 int fan = ap_get_fan_speed();  /* 0–100 */
 ```
 

@@ -3,9 +3,9 @@
  *
  * Demonstrates CPU speed and fan control:
  *
- *  Main screen — live readout of CPU MHz, temperature, and fan % (TG5050 only).
+ *  Main screen — live readout of CPU MHz, temperature, fan mode, and fan %.
  *  "CPU Speed"  — pick a preset; the change takes effect immediately.
- *  "Fan Speed"  — pick a fan percentage (TG5050 only; shown as N/A on others).
+ *  "Fan Speed"  — pick a NextUI-style fan mode or fixed percentage.
  *
  * All values display "N/A" on desktop builds (non-device).
  * MENU quits from any screen.
@@ -13,6 +13,8 @@
 
 #define AP_IMPLEMENTATION
 #include "apostrophe.h"
+#define AP_WIDGETS_IMPLEMENTATION
+#include "apostrophe_widgets.h"
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Shared render state
@@ -59,9 +61,19 @@ static const struct { const char *label; ap_cpu_speed preset; } g_cpu_presets[] 
     { "Menu       (~600–672 MHz)",   AP_CPU_SPEED_MENU        },
     { "Powersave  (~1200 MHz)",      AP_CPU_SPEED_POWERSAVE   },
     { "Normal     (~1608–1680 MHz)", AP_CPU_SPEED_NORMAL      },
-    { "Performance (~1992–2160 MHz)",AP_CPU_SPEED_PERFORMANCE },
+    { "Performance (~2000–2160 MHz)",AP_CPU_SPEED_PERFORMANCE },
 };
 #define CPU_PRESET_COUNT 4
+
+static const char *fan_mode_label(ap_fan_mode mode) {
+    switch (mode) {
+        case AP_FAN_MODE_MANUAL:           return "Manual";
+        case AP_FAN_MODE_AUTO_QUIET:       return "Auto Quiet";
+        case AP_FAN_MODE_AUTO_NORMAL:      return "Auto Normal";
+        case AP_FAN_MODE_AUTO_PERFORMANCE: return "Auto Performance";
+        default:                           return "N/A";
+    }
+}
 
 static void run_cpu_screen(void) {
     int sel     = 2; /* default cursor on Normal */
@@ -120,77 +132,79 @@ static void run_cpu_screen(void) {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Sub-screen: Fan Speed picker (TG5050 only)
+ * Sub-screen: Fan mode / speed picker (TG5050 only)
  * ────────────────────────────────────────────────────────────────────────── */
 
-static const struct { const char *label; int percent; } g_fan_levels[] = {
-    { "Off   (0%)",  0  },
-    { "Low   (25%)", 25 },
-    { "Mid   (50%)", 50 },
-    { "High  (75%)", 75 },
-    { "Full (100%)", 100},
+static const struct {
+    const char *label;
+    bool        auto_mode;
+    ap_fan_mode mode;
+    int         percent;
+} g_fan_levels[] = {
+    { "Performance (auto)", true,  AP_FAN_MODE_AUTO_PERFORMANCE, -1  },
+    { "Normal (auto)",      true,  AP_FAN_MODE_AUTO_NORMAL,      -1  },
+    { "Quiet (auto)",       true,  AP_FAN_MODE_AUTO_QUIET,       -1  },
+    { "0%",                 false, AP_FAN_MODE_MANUAL,            0  },
+    { "10%",                false, AP_FAN_MODE_MANUAL,           10  },
+    { "20%",                false, AP_FAN_MODE_MANUAL,           20  },
+    { "30%",                false, AP_FAN_MODE_MANUAL,           30  },
+    { "40%",                false, AP_FAN_MODE_MANUAL,           40  },
+    { "50%",                false, AP_FAN_MODE_MANUAL,           50  },
+    { "60%",                false, AP_FAN_MODE_MANUAL,           60  },
+    { "70%",                false, AP_FAN_MODE_MANUAL,           70  },
+    { "80%",                false, AP_FAN_MODE_MANUAL,           80  },
+    { "90%",                false, AP_FAN_MODE_MANUAL,           90  },
+    { "100%",               false, AP_FAN_MODE_MANUAL,          100  },
 };
-#define FAN_LEVEL_COUNT 5
+#define FAN_LEVEL_COUNT ((int)(sizeof(g_fan_levels) / sizeof(g_fan_levels[0])))
 
 static void run_fan_screen(void) {
-    int sel     = 0;
-    bool running = true;
-
     ap_footer_item footer[] = {
         { .button = AP_BTN_MENU, .label = "BACK" },
         { .button = AP_BTN_A,    .label = "APPLY", .is_confirm = true },
     };
+#if defined(PLATFORM_TG5050)
+    ap_list_item items[FAN_LEVEL_COUNT];
+    for (int i = 0; i < FAN_LEVEL_COUNT; i++) {
+        items[i] = (ap_list_item){ .label = g_fan_levels[i].label };
+    }
 
+    ap_list_opts opts = ap_list_default_opts("Fan Speed", items, FAN_LEVEL_COUNT);
+    opts.footer       = footer;
+    opts.footer_count = 2;
+
+    ap_list_result result;
+    if (ap_list(&opts, &result) == AP_OK && result.selected_index >= 0) {
+        int sel = result.selected_index;
+        if (g_fan_levels[sel].auto_mode) {
+            ap_set_fan_mode(g_fan_levels[sel].mode);
+            ap_log("perf: fan mode set to %s", fan_mode_label(g_fan_levels[sel].mode));
+        } else {
+            ap_set_fan_speed(g_fan_levels[sel].percent);
+            ap_log("perf: fan set to %d%%", g_fan_levels[sel].percent);
+        }
+    }
+#else
+    bool running = true;
     while (running) {
         ap_input_event ev;
         while (ap_poll_input(&ev)) {
             if (!ev.pressed) continue;
-            switch (ev.button) {
-                case AP_BTN_UP:   sel = (sel - 1 + FAN_LEVEL_COUNT) % FAN_LEVEL_COUNT; break;
-                case AP_BTN_DOWN: sel = (sel + 1) % FAN_LEVEL_COUNT;                   break;
-                case AP_BTN_A:
-                    ap_set_fan_speed(g_fan_levels[sel].percent);
-                    ap_log("perf: fan set to %d%%", g_fan_levels[sel].percent);
-                    running = false;
-                    break;
-                case AP_BTN_MENU: running = false; break;
-                default: break;
-            }
+            if (ev.button == AP_BTN_MENU || ev.button == AP_BTN_A) running = false;
         }
 
         ap_clear_screen();
         int y = g_pad;
         ap_draw_text(g_title_font, "Fan Speed", g_pad, y, g_fg);
         y += AP_DS(30);
-
-#if defined(PLATFORM_TG5050)
-        ap_draw_text(g_hint_font, "Select a level and press A to apply:", g_pad, y, g_fg);
-        y += AP_DS(20);
-
-        for (int i = 0; i < FAN_LEVEL_COUNT; i++) {
-            ap_color col = (i == sel) ? g_accent : g_fg;
-            char line[64];
-            snprintf(line, sizeof(line), "%s %s",
-                     (i == sel) ? ">" : " ", g_fan_levels[i].label);
-            ap_draw_text(g_body_font, line, g_pad, y, col);
-            y += AP_DS(22);
-        }
-
-        y += AP_DS(10);
-        char buf[32];
-        char cur[64];
-        snprintf(cur, sizeof(cur), "Current: %s", fmt_sensor(buf, ap_get_fan_speed(), "%"));
-        ap_draw_text(g_hint_font, cur, g_pad, y, g_fg);
-#else
         ap_draw_text(g_hint_font, "Fan control is only available on TG5050.", g_pad, y, g_fg);
         y += AP_DS(18);
         ap_draw_text(g_hint_font, "This device has no fan hardware.", g_pad, y, g_fg);
-#endif
-
         ap_draw_footer(footer, 2);
         ap_present();
         SDL_Delay(16);
     }
+#endif
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -248,6 +262,7 @@ int main(int argc, char *argv[]) {
         int   cpu_mhz  = ap_get_cpu_speed_mhz();
         int   cpu_temp = ap_get_cpu_temp_celsius();
         int   fan_pct  = ap_get_fan_speed();
+        ap_fan_mode fan_mode = ap_get_fan_mode();
 
         ap_clear_screen();
         int y = g_pad;
@@ -260,9 +275,10 @@ int main(int argc, char *argv[]) {
         y = draw_kv(g_pad, y, "CPU speed:",  fmt_sensor(b1, cpu_mhz,  "MHz"));
         y = draw_kv(g_pad, y, "CPU temp:",   fmt_sensor(b2, cpu_temp, "C"));
 #if defined(PLATFORM_TG5050)
+        y = draw_kv(g_pad, y, "Fan mode:",   fan_mode_label(fan_mode));
         y = draw_kv(g_pad, y, "Fan speed:",  fmt_sensor(b3, fan_pct,  "%"));
 #else
-        (void)b3; (void)fan_pct;
+        (void)b3; (void)fan_pct; (void)fan_mode;
         y = draw_kv(g_pad, y, "Fan speed:",  "N/A (no fan)");
 #endif
 
