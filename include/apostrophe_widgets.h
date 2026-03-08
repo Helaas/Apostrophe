@@ -426,6 +426,9 @@ static int ap__wrapped_line_count(TTF_Font *font, const char *text, int max_w) {
  * LIST WIDGET Implementation
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Duration of the selection pill slide animation in ms (~3 frames at 60fps) */
+#define AP__PILL_ANIM_MS 80.0f
+
 ap_list_opts ap_list_default_opts(const char *title, ap_list_item *items, int count) {
     ap_list_opts opts = {0};
     opts.title = title;
@@ -504,6 +507,14 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     ap_text_scroll sel_scroll;
     ap_text_scroll_init(&sel_scroll);
     int last_cursor = cursor;
+
+    /* Pill animation state */
+    float    pill_anim_y           = 0.0f;
+    float    pill_anim_w           = 0.0f;
+    float    pill_from_y           = 0.0f;
+    float    pill_from_w           = 0.0f;
+    uint32_t pill_anim_start       = 0;
+    bool     pill_anim_initialized = false;
 
     uint32_t last_frame = SDL_GetTicks();
 
@@ -607,9 +618,19 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
             }
         }
 
-        /* Reset text scroll on cursor change */
+        /* Reset text scroll on cursor change; start pill animation */
         if (cursor != last_cursor) {
             ap_text_scroll_reset(&sel_scroll);
+            bool is_wrap = (abs(cursor - last_cursor) > max_visible);
+            if (is_wrap || !pill_anim_initialized) {
+                /* Snap for large jumps (wrap-around) */
+                pill_from_y     = pill_anim_y;
+                pill_from_w     = pill_anim_w;
+            } else {
+                pill_from_y     = pill_anim_y;
+                pill_from_w     = pill_anim_w;
+            }
+            pill_anim_start = now;
             last_cursor = cursor;
         }
 
@@ -618,6 +639,42 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         if (cursor >= scroll_top + max_visible)
             scroll_top = cursor - max_visible + 1;
         if (scroll_top < 0) scroll_top = 0;
+
+        /* Compute target pill geometry for current cursor */
+        int pill_target_y = content_y + (cursor - scroll_top) * (pill_h + item_gap);
+        int pill_target_w;
+        {
+            const char *cur_label = opts->items[cursor].label ? opts->items[cursor].label : "";
+            int tw = ap_measure_text(item_font, cur_label);
+            pill_target_w = tw + pill_pad * 2;
+            if (opts->multi_select) pill_target_w += AP_S(32);
+            if (opts->show_images)  pill_target_w += image_size + image_pad;
+            int avail = screen_w - margin * 2;
+            if (opts->item_count > max_visible) avail -= AP_S(12);
+            if (pill_target_w > avail) pill_target_w = avail;
+        }
+
+        /* First-frame: snap pill to starting position with no animation */
+        if (!pill_anim_initialized) {
+            pill_anim_y           = (float)pill_target_y;
+            pill_anim_w           = (float)pill_target_w;
+            pill_from_y           = (float)pill_target_y;
+            pill_from_w           = (float)pill_target_w;
+            pill_anim_start       = now;
+            pill_anim_initialized = true;
+        }
+
+        /* Advance pill animation */
+        {
+            float t   = ap__clampf((float)(now - pill_anim_start) / AP__PILL_ANIM_MS, 0.0f, 1.0f);
+            pill_anim_y = ap__lerpf(pill_from_y, (float)pill_target_y, t);
+            pill_anim_w = ap__lerpf(pill_from_w, (float)pill_target_w, t);
+            /* Clamp to content area */
+            if (pill_anim_y < (float)content_y)
+                pill_anim_y = (float)content_y;
+            if (pill_anim_y > (float)(content_y + content_h - pill_h))
+                pill_anim_y = (float)(content_y + content_h - pill_h);
+        }
 
         /* Render */
         ap_draw_background();
@@ -640,6 +697,14 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
             available_w -= AP_S(12); /* Space for scrollbar */
         }
 
+        /* Pass 1: draw animated pill background at its interpolated position */
+        ap_draw_pill(margin, (int)pill_anim_y, (int)pill_anim_w, pill_h, theme->highlight);
+
+        /* Pass 2: draw all items at fixed grid positions.
+         * Highlighted text is only shown once the pill has settled — matching NextUI's
+         * behavior where text never moves and the pill slides independently behind it. */
+        bool pill_at_rest = ((int)pill_anim_y == pill_target_y);
+
         for (int i = 0; i < max_visible && (scroll_top + i) < opts->item_count; i++) {
             int idx = scroll_top + i;
             int item_y = content_y + i * (pill_h + item_gap);
@@ -658,85 +723,33 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
             }
 
             if (opts->multi_select) {
-                /* Checkbox space */
                 text_x += AP_S(32);
                 text_max_w -= AP_S(32);
             }
 
-            if (is_selected) {
-                /* Measure text to determine pill width */
-                int text_w = ap_measure_text(item_font, label);
-                int pill_w = text_w + pill_pad * 2;
+            /* Image — always at fixed item_y */
+            if (opts->show_images && opts->items[idx].image) {
+                int img_y = item_y + (pill_h - image_size) / 2;
+                ap_draw_image(opts->items[idx].image, margin + pill_pad, img_y, image_size, image_size);
+            }
 
-                /* Account for checkboxes and images */
-                if (opts->multi_select) pill_w += AP_S(32);
-                if (opts->show_images) pill_w += image_size + image_pad;
-
-                if (pill_w > available_w) pill_w = available_w;
-
-                /* Draw pill */
-                ap_draw_pill(margin, item_y, pill_w, pill_h, theme->highlight);
-
-                /* Draw image if present */
-                if (opts->show_images && opts->items[idx].image) {
-                    int img_y = item_y + (pill_h - image_size) / 2;
-                    ap_draw_image(opts->items[idx].image, margin + pill_pad, img_y, image_size, image_size);
-                }
-
-                /* Draw checkbox */
-                if (opts->multi_select) {
-                    int cb_x = margin + pill_pad + (opts->show_images ? image_size + image_pad : 0);
-                    int cb_y = item_y + (pill_h - AP_S(20)) / 2;
-                    int cb_size = AP_S(20);
+            /* Checkbox — always at fixed item_y */
+            if (opts->multi_select) {
+                int cb_x = margin + pill_pad + (opts->show_images ? image_size + image_pad : 0);
+                int cb_y = item_y + (pill_h - AP_S(20)) / 2;
+                int cb_size = AP_S(20);
+                /* Use highlighted style only when pill is at rest on this item */
+                if (is_selected && pill_at_rest) {
                     ap_color cb_color = theme->highlighted_text;
                     if (opts->items[idx].selected) {
                         ap_draw_rect(cb_x, cb_y, cb_size, cb_size, theme->accent);
                         ap_draw_text(item_font, "✓", cb_x + AP_S(2), cb_y - AP_S(2), theme->highlighted_text);
                     } else {
-                        /* Empty box */
                         SDL_SetRenderDrawColor(ap_get_renderer(), cb_color.r, cb_color.g, cb_color.b, cb_color.a);
                         SDL_Rect border = {cb_x, cb_y, cb_size, cb_size};
                         SDL_RenderDrawRect(ap_get_renderer(), &border);
                     }
-                }
-
-                /* Draw text with scroll for overflow */
-                int draw_label_w = ap_measure_text(item_font, label);
-                ap_text_scroll_update(&sel_scroll, draw_label_w, text_max_w, dt);
-
-                if (draw_label_w > text_max_w) {
-                    /* Scrolling clipped text */
-                    SDL_Rect clip = {text_x, item_y, text_max_w, pill_h};
-                    SDL_RenderSetClipRect(ap_get_renderer(), &clip);
-                    ap_draw_text(item_font, label,
-                                 text_x - sel_scroll.offset,
-                                 item_y + (pill_h - text_h) / 2,
-                                 theme->highlighted_text);
-                    SDL_RenderSetClipRect(ap_get_renderer(), NULL);
                 } else {
-                    ap_draw_text(item_font, label,
-                                 text_x,
-                                 item_y + (pill_h - text_h) / 2,
-                                 theme->highlighted_text);
-                }
-
-                /* Reorder mode indicator */
-                if (reorder_mode) {
-                    ap_color reorder_color = theme->accent;
-                    int indicator_w = AP_S(4);
-                    ap_draw_rect(margin - indicator_w - AP_S(4), item_y, indicator_w, pill_h, reorder_color);
-                }
-            } else {
-                /* Non-selected item */
-                if (opts->show_images && opts->items[idx].image) {
-                    int img_y = item_y + (pill_h - image_size) / 2;
-                    ap_draw_image(opts->items[idx].image, margin + pill_pad, img_y, image_size, image_size);
-                }
-
-                if (opts->multi_select) {
-                    int cb_x = margin + pill_pad + (opts->show_images ? image_size + image_pad : 0);
-                    int cb_y = item_y + (pill_h - AP_S(20)) / 2;
-                    int cb_size = AP_S(20);
                     ap_color cb_color = theme->text;
                     cb_color.a = 180;
                     if (opts->items[idx].selected) {
@@ -748,11 +761,43 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                         SDL_RenderDrawRect(ap_get_renderer(), &border);
                     }
                 }
+            }
 
+            /* Text color: highlighted only when pill is resting on this item */
+            ap_color text_color = (is_selected && pill_at_rest)
+                                ? theme->highlighted_text : theme->text;
+
+            /* Text — always at fixed item_y; selected item may scroll */
+            if (is_selected) {
+                int draw_label_w = ap_measure_text(item_font, label);
+                ap_text_scroll_update(&sel_scroll, draw_label_w, text_max_w, dt);
+
+                if (draw_label_w > text_max_w) {
+                    SDL_Rect clip = {text_x, item_y, text_max_w, pill_h};
+                    SDL_RenderSetClipRect(ap_get_renderer(), &clip);
+                    ap_draw_text(item_font, label,
+                                 text_x - sel_scroll.offset,
+                                 item_y + (pill_h - text_h) / 2,
+                                 text_color);
+                    SDL_RenderSetClipRect(ap_get_renderer(), NULL);
+                } else {
+                    ap_draw_text(item_font, label,
+                                 text_x,
+                                 item_y + (pill_h - text_h) / 2,
+                                 text_color);
+                }
+
+                /* Reorder mode indicator — at fixed item_y */
+                if (reorder_mode) {
+                    ap_color reorder_color = theme->accent;
+                    int indicator_w = AP_S(4);
+                    ap_draw_rect(margin - indicator_w - AP_S(4), item_y, indicator_w, pill_h, reorder_color);
+                }
+            } else {
                 ap_draw_text_clipped(item_font, label,
                                      text_x,
                                      item_y + (pill_h - text_h) / 2,
-                                     theme->text, text_max_w);
+                                     text_color, text_max_w);
             }
         }
 

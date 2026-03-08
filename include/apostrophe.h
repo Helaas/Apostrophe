@@ -271,6 +271,14 @@ typedef struct {
     bool         show_wifi;     /* Show wifi icon from device sysfs */
 } ap_status_bar_opts;
 
+/* Screen fade overlay — per-frame draw state for fade-in / fade-out transitions */
+typedef struct {
+    uint32_t start_ms;     /* SDL_GetTicks() value when fade began */
+    int      duration_ms;  /* Total duration of the fade */
+    bool     fade_in;      /* true = black→transparent, false = transparent→black */
+    bool     active;       /* false = not animating */
+} ap_fade;
+
 /* Texture cache entry */
 typedef struct {
     char          key[256];
@@ -428,6 +436,12 @@ typedef struct {
 #define AP__BUTTON_SIZE     20  /* Button circle size inside footer */
 #define AP__BUTTON_MARGIN    5  /* Margin between pill edge and button / inter-element gap */
 #define AP__BUTTON_PADDING  12  /* Padding between pill edge and content */
+
+/* Float lerp/clamp — used by animation helpers */
+static inline float ap__lerpf(float a, float b, float t) { return a + (b - a) * t; }
+static inline float ap__clampf(float v, float lo, float hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public API — Lifecycle
@@ -587,6 +601,45 @@ int            ap_set_fan_speed(int percent);
 /* Read current fan speed as a 0–100 percentage.
  * Returns 0 on non-TG5050 platforms, -1 if the value cannot be read. */
 int            ap_get_fan_speed(void);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Public API — Screen Fade
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Begin a fade-in: overlay starts fully black and becomes transparent */
+static inline void ap_fade_begin_in(ap_fade *f, int duration_ms) {
+    if (!f) return;
+    f->start_ms    = SDL_GetTicks();
+    f->duration_ms = duration_ms > 0 ? duration_ms : 1;
+    f->fade_in     = true;
+    f->active      = true;
+}
+
+/* Begin a fade-out: overlay starts transparent and becomes fully black */
+static inline void ap_fade_begin_out(ap_fade *f, int duration_ms) {
+    if (!f) return;
+    f->start_ms    = SDL_GetTicks();
+    f->duration_ms = duration_ms > 0 ? duration_ms : 1;
+    f->fade_in     = false;
+    f->active      = true;
+}
+
+/* Draw the fade overlay. Call AFTER drawing your scene, BEFORE ap_present().
+ * Returns true while the fade is still active, false when complete. */
+static inline bool ap_fade_draw(ap_fade *f) {
+    if (!f || !f->active) return false;
+    uint32_t elapsed = SDL_GetTicks() - f->start_ms;
+    float t = ap__clampf((float)elapsed / (float)f->duration_ms, 0.0f, 1.0f);
+    float alpha_f = f->fade_in ? ap__lerpf(255.0f, 0.0f, t)
+                               : ap__lerpf(0.0f, 255.0f, t);
+    SDL_Renderer *rend = ap_get_renderer();
+    SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(rend, 0, 0, 0, (Uint8)(int)alpha_f);
+    SDL_Rect full = { 0, 0, ap_get_screen_width(), ap_get_screen_height() };
+    SDL_RenderFillRect(rend, &full);
+    if (t >= 1.0f) { f->active = false; return false; }
+    return true;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public API — Error Handling
