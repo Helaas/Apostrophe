@@ -427,7 +427,7 @@ static int ap__wrapped_line_count(TTF_Font *font, const char *text, int max_w) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Duration of the selection pill slide animation in ms (~3 frames at 60fps) */
-#define AP__PILL_ANIM_MS 80.0f
+#define AP__PILL_ANIM_MS 50.0f   /* ~3 frames at 60fps, matching NextUI */
 
 ap_list_opts ap_list_default_opts(const char *title, ap_list_item *items, int count) {
     ap_list_opts opts = {0};
@@ -515,6 +515,8 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     float    pill_from_w           = 0.0f;
     uint32_t pill_anim_start       = 0;
     bool     pill_anim_initialized = false;
+    int      pill_prev_target_y    = 0;    /* target_y from previous frame (clean grid row) */
+    int      pill_prev_target_w    = 0;
 
     uint32_t last_frame = SDL_GetTicks();
 
@@ -621,17 +623,12 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         /* Reset text scroll on cursor change; start pill animation */
         if (cursor != last_cursor) {
             ap_text_scroll_reset(&sel_scroll);
-            bool is_wrap = (abs(cursor - last_cursor) > max_visible);
-            if (is_wrap || !pill_anim_initialized) {
-                /* Snap for large jumps (wrap-around) */
-                pill_from_y     = pill_anim_y;
-                pill_from_w     = pill_anim_w;
-            } else {
-                pill_from_y     = pill_anim_y;
-                pill_from_w     = pill_anim_w;
-            }
+            /* Snap from the previous clean grid row (not intermediate animated position)
+             * so rapid input never causes the pill to fall behind. */
+            pill_from_y     = (float)pill_prev_target_y;
+            pill_from_w     = (float)pill_prev_target_w;
             pill_anim_start = now;
-            last_cursor = cursor;
+            last_cursor     = cursor;
         }
 
         /* Scroll adjustment */
@@ -653,6 +650,9 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
             if (opts->item_count > max_visible) avail -= AP_S(12);
             if (pill_target_w > avail) pill_target_w = avail;
         }
+        /* Save for the next frame's cursor-change snap */
+        pill_prev_target_y = pill_target_y;
+        pill_prev_target_w = pill_target_w;
 
         /* First-frame: snap pill to starting position with no animation */
         if (!pill_anim_initialized) {
@@ -701,9 +701,13 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         ap_draw_pill(margin, (int)pill_anim_y, (int)pill_anim_w, pill_h, theme->highlight);
 
         /* Pass 2: draw all items at fixed grid positions.
-         * Highlighted text is only shown once the pill has settled — matching NextUI's
-         * behavior where text never moves and the pill slides independently behind it. */
-        bool pill_at_rest = ((int)pill_anim_y == pill_target_y);
+         * Highlight the row the pill center is currently over, so the bright text
+         * always tracks the pill's physical position — no color snaps on rapid input. */
+        int pill_center_y  = (int)pill_anim_y + pill_h / 2;
+        int pill_row_idx   = (pill_center_y - content_y) / (pill_h + item_gap);
+        if (pill_row_idx < 0) pill_row_idx = 0;
+        if (pill_row_idx >= max_visible) pill_row_idx = max_visible - 1;
+        int highlight_idx  = scroll_top + pill_row_idx;
 
         for (int i = 0; i < max_visible && (scroll_top + i) < opts->item_count; i++) {
             int idx = scroll_top + i;
@@ -738,8 +742,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                 int cb_x = margin + pill_pad + (opts->show_images ? image_size + image_pad : 0);
                 int cb_y = item_y + (pill_h - AP_S(20)) / 2;
                 int cb_size = AP_S(20);
-                /* Use highlighted style only when pill is at rest on this item */
-                if (is_selected && pill_at_rest) {
+                if (idx == highlight_idx) {
                     ap_color cb_color = theme->highlighted_text;
                     if (opts->items[idx].selected) {
                         ap_draw_rect(cb_x, cb_y, cb_size, cb_size, theme->accent);
@@ -763,8 +766,9 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                 }
             }
 
-            /* Text color: highlighted only when pill is resting on this item */
-            ap_color text_color = (is_selected && pill_at_rest)
+            /* Text color: follow the pill — highlight the departure item during transit,
+             * switch to arrival item only once the pill settles */
+            ap_color text_color = (idx == highlight_idx)
                                 ? theme->highlighted_text : theme->text;
 
             /* Text — always at fixed item_y; selected item may scroll */
