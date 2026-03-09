@@ -822,6 +822,9 @@ static void demo_drawing_primitives(void) {
     /* Texture cache demo state */
     bool cache_loaded = false;
 
+    /* Load image once for page 2 (UI Components) demo */
+    SDL_Texture *page2_icon = ap_load_image("demo_icon.png");
+
     ap_footer_item footer[] = {
         { .button = AP_BTN_B,     .label = "BACK" },
         { .button = AP_BTN_LEFT,  .label = "PREV" },
@@ -981,10 +984,8 @@ static void demo_drawing_primitives(void) {
 
             ap_draw_text_clipped(small_font, "ap_load_image + ap_draw_image:", content_x, y, hint, content_w);
             y += AP_DS(16);
-            SDL_Texture *img = ap_load_image("demo_icon.png");
-            if (img) {
-                ap_draw_image(img, content_x, y, AP_DS(64), AP_DS(64));
-                SDL_DestroyTexture(img);
+            if (page2_icon) {
+                ap_draw_image(page2_icon, content_x, y, AP_DS(64), AP_DS(64));
                 y += AP_DS(64);
             }
 
@@ -1053,6 +1054,7 @@ static void demo_drawing_primitives(void) {
         SDL_Delay(16);
     }
 
+    if (page2_icon) SDL_DestroyTexture(page2_icon);
     ap_cache_clear();
 }
 
