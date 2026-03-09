@@ -2,6 +2,8 @@
 
 Visual guide to every widget available in `apostrophe_widgets.h`.
 
+Widgets that render footer hints inherit the core footer overflow behaviour from `ap_draw_footer()`: overflowing hints stay on one line, show a `+N` marker, and can be inspected with the configured footer overflow chord.
+
 ---
 
 ## List (`ap_list`)

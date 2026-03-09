@@ -132,6 +132,9 @@
 /* Max combo registrations */
 #define AP_MAX_COMBOS 16
 
+/* Footer layout bookkeeping */
+#define AP__MAX_FOOTER_ITEMS 64
+
 /* Max log message length */
 #define AP_MAX_LOG_LEN 2048
 
@@ -257,6 +260,13 @@ typedef struct {
     const char  *label;
     bool         is_confirm;  /* true = right-aligned confirm group */
 } ap_footer_item;
+
+/* Global footer overflow behaviour */
+typedef struct {
+    bool      enabled;  /* When false, footer hints render without overflow handling */
+    ap_button chord_a;  /* First button in the hidden-actions chord */
+    ap_button chord_b;  /* Second button in the hidden-actions chord */
+} ap_footer_overflow_opts;
 
 /* Clock display mode for ap_status_bar_opts.show_clock */
 #define AP_CLOCK_AUTO  0  /* Follow NextUI showclock setting (default) */
@@ -394,6 +404,16 @@ typedef struct {
     bool          buttons_held[AP_BTN_COUNT];
     uint32_t      button_press_time[AP_BTN_COUNT];
     uint32_t      button_repeat_time[AP_BTN_COUNT];
+
+    /* Footer overflow */
+    ap_footer_overflow_opts footer_overflow_opts;
+    bool          footer_overflow_active;
+    bool          footer_overflow_chord_held;
+    bool          footer_overflow_open_requested;
+    bool          footer_overflow_overlay_open;
+    bool          footer_overflow_swallow[AP_BTN_COUNT];
+    ap_footer_item footer_hidden_items[AP__MAX_FOOTER_ITEMS];
+    int            footer_hidden_count;
 
     /* Texture cache */
     ap_texture_cache tex_cache;
@@ -553,6 +573,8 @@ void           ap_cache_clear(void);
 
 void           ap_draw_footer(ap_footer_item *items, int count);
 int            ap_get_footer_height(void);
+void           ap_set_footer_overflow_opts(const ap_footer_overflow_opts *opts);
+void           ap_get_footer_overflow_opts(ap_footer_overflow_opts *out);
 void           ap_draw_status_bar(ap_status_bar_opts *opts);
 int            ap_get_status_bar_height(void);
 int            ap_get_status_bar_width(ap_status_bar_opts *opts);
@@ -1299,6 +1321,90 @@ static ap_input_event ap__input_queue[64];
 static int ap__input_head = 0;
 static int ap__input_tail = 0;
 
+static void ap__footer_overflow_show_hidden_actions(void);
+static bool ap__footer_overflow_consume_open_request(void);
+
+static void ap__footer_overflow_clear_visible_state(void) {
+    ap__g.footer_overflow_active = false;
+    ap__g.footer_hidden_count = 0;
+}
+
+static void ap__footer_overflow_begin_frame(void) {
+    if (ap__g.footer_overflow_overlay_open) return;
+    ap__footer_overflow_clear_visible_state();
+}
+
+static bool ap__footer_overflow_enabled(void) {
+    if (!ap__g.footer_overflow_opts.enabled) return false;
+    if (ap__g.footer_overflow_overlay_open) return false;
+    if (!ap__g.footer_overflow_active || ap__g.footer_hidden_count <= 0) return false;
+    if (ap__g.footer_overflow_opts.chord_a == AP_BTN_NONE ||
+        ap__g.footer_overflow_opts.chord_b == AP_BTN_NONE) {
+        return false;
+    }
+    if (ap__g.footer_overflow_opts.chord_a == ap__g.footer_overflow_opts.chord_b) return false;
+    return true;
+}
+
+static void ap__input_remove_buttons(ap_button a, ap_button b) {
+    ap_input_event filtered[64];
+    int filtered_count = 0;
+    int idx = ap__input_tail;
+
+    while (idx != ap__input_head && filtered_count < 64) {
+        ap_input_event ev = ap__input_queue[idx];
+        idx = (idx + 1) % 64;
+        if (!ev.repeated && (ev.button == a || ev.button == b)) continue;
+        filtered[filtered_count++] = ev;
+    }
+
+    ap__input_tail = 0;
+    ap__input_head = filtered_count % 64;
+    for (int i = 0; i < filtered_count; i++) {
+        ap__input_queue[i] = filtered[i];
+    }
+}
+
+static bool ap__footer_overflow_note_button(ap_button btn, bool pressed) {
+    if (btn == AP_BTN_NONE) return false;
+
+    if (!pressed && ap__g.footer_overflow_swallow[btn]) {
+        ap__g.footer_overflow_swallow[btn] = false;
+        if (btn == ap__g.footer_overflow_opts.chord_a || btn == ap__g.footer_overflow_opts.chord_b) {
+            if (!ap__g.buttons_held[ap__g.footer_overflow_opts.chord_a] &&
+                !ap__g.buttons_held[ap__g.footer_overflow_opts.chord_b]) {
+                ap__g.footer_overflow_chord_held = false;
+            }
+        }
+        return true;
+    }
+
+    if (!pressed) {
+        if ((btn == ap__g.footer_overflow_opts.chord_a || btn == ap__g.footer_overflow_opts.chord_b) &&
+            !ap__g.buttons_held[ap__g.footer_overflow_opts.chord_a] &&
+            !ap__g.buttons_held[ap__g.footer_overflow_opts.chord_b]) {
+            ap__g.footer_overflow_chord_held = false;
+        }
+        return false;
+    }
+
+    if (!ap__footer_overflow_enabled() || ap__g.footer_overflow_chord_held) return false;
+    if (btn != ap__g.footer_overflow_opts.chord_a && btn != ap__g.footer_overflow_opts.chord_b) return false;
+
+    if (ap__g.buttons_held[ap__g.footer_overflow_opts.chord_a] &&
+        ap__g.buttons_held[ap__g.footer_overflow_opts.chord_b]) {
+        ap__g.footer_overflow_chord_held = true;
+        ap__g.footer_overflow_open_requested = true;
+        ap__g.footer_overflow_swallow[ap__g.footer_overflow_opts.chord_a] = true;
+        ap__g.footer_overflow_swallow[ap__g.footer_overflow_opts.chord_b] = true;
+        ap__input_remove_buttons(ap__g.footer_overflow_opts.chord_a,
+                                 ap__g.footer_overflow_opts.chord_b);
+        return true;
+    }
+
+    return false;
+}
+
 /* ─── Combo Detection Helpers ────────────────────────────────────────────── */
 
 static void ap__combo_push_event(ap_combo *c, bool triggered, ap_combo_type type) {
@@ -1421,6 +1527,7 @@ static void ap__input_push(ap_button btn, bool pressed) {
     if (btn == AP_BTN_NONE) return;
 
     uint32_t now = SDL_GetTicks();
+    bool suppress_event = false;
 
     /* Combo detection — only on real presses/releases, not auto-repeats */
     if (pressed && !ap__g.buttons_held[btn]) {
@@ -1433,6 +1540,9 @@ static void ap__input_push(ap_button btn, bool pressed) {
         ap__g.buttons_held[btn] = false;
         ap__combo_check_chord_releases();
     }
+
+    suppress_event = ap__footer_overflow_note_button(btn, pressed);
+    if (suppress_event) return;
 
     /* Push to input queue */
     int next = (ap__input_head + 1) % 64;
@@ -1763,23 +1873,27 @@ static void ap__process_sdl_events(void) {
 }
 
 bool ap_poll_input(ap_input_event *event) {
-    /* Process SDL events into our queue */
-    ap__process_sdl_events();
+    while (1) {
+        /* Process SDL events into our queue */
+        ap__process_sdl_events();
 
-    /* Pop from internal queue */
-    if (ap__input_head == ap__input_tail) return false;
+        if (ap__footer_overflow_consume_open_request()) continue;
 
-    *event = ap__input_queue[ap__input_tail];
-    ap__input_tail = (ap__input_tail + 1) % 64;
+        /* Pop from internal queue */
+        if (ap__input_head == ap__input_tail) return false;
 
-    /* Debounce: skip events too close together */
-    uint32_t now = SDL_GetTicks();
-    if (ap__g.input_delay_ms > 0 && (now - ap__g.last_input_time) < ap__g.input_delay_ms) {
-        return ap_poll_input(event); /* skip and try next */
+        *event = ap__input_queue[ap__input_tail];
+        ap__input_tail = (ap__input_tail + 1) % 64;
+
+        /* Debounce: skip events too close together */
+        uint32_t now = SDL_GetTicks();
+        if (ap__g.input_delay_ms > 0 && (now - ap__g.last_input_time) < ap__g.input_delay_ms) {
+            continue;
+        }
+        ap__g.last_input_time = now;
+
+        return true;
     }
-    ap__g.last_input_time = now;
-
-    return true;
 }
 
 void ap_set_input_delay(uint32_t ms) {
@@ -1880,6 +1994,7 @@ bool ap_poll_combo(ap_combo_event *event) {
 /* ─── Drawing Primitives ─────────────────────────────────────────────────── */
 
 void ap_clear_screen(void) {
+    ap__footer_overflow_begin_frame();
     ap_color bg = ap__g.theme.background;
     SDL_SetRenderDrawColor(ap__g.renderer, bg.r, bg.g, bg.b, bg.a);
     SDL_RenderClear(ap__g.renderer);
@@ -1890,6 +2005,7 @@ void ap_present(void) {
 }
 
 void ap_draw_background(void) {
+    ap__footer_overflow_begin_frame();
     if (ap__g.bg_texture) {
         SDL_RenderCopy(ap__g.renderer, ap__g.bg_texture, NULL, NULL);
     } else {
@@ -2478,14 +2594,114 @@ int ap_get_footer_height(void) {
     return AP_DS(ap__g.device_padding + AP__PILL_SIZE);
 }
 
+void ap_set_footer_overflow_opts(const ap_footer_overflow_opts *opts) {
+    if (opts) {
+        ap__g.footer_overflow_opts = *opts;
+    } else {
+        ap__g.footer_overflow_opts.enabled = true;
+        ap__g.footer_overflow_opts.chord_a = AP_BTN_L1;
+        ap__g.footer_overflow_opts.chord_b = AP_BTN_R1;
+    }
+
+    memset(ap__g.footer_overflow_swallow, 0, sizeof(ap__g.footer_overflow_swallow));
+    ap__g.footer_overflow_chord_held = false;
+    ap__g.footer_overflow_open_requested = false;
+
+    if (!ap__g.footer_overflow_opts.enabled ||
+        ap__g.footer_overflow_opts.chord_a == AP_BTN_NONE ||
+        ap__g.footer_overflow_opts.chord_b == AP_BTN_NONE ||
+        ap__g.footer_overflow_opts.chord_a == ap__g.footer_overflow_opts.chord_b) {
+        ap__g.footer_overflow_active = false;
+        ap__g.footer_hidden_count = 0;
+    }
+}
+
+void ap_get_footer_overflow_opts(ap_footer_overflow_opts *out) {
+    if (!out) return;
+    *out = ap__g.footer_overflow_opts;
+}
+
 static TTF_Font *ap__footer_button_font(const char *btn_name) {
     if (!btn_name || !btn_name[0]) return ap_get_font(AP_FONT_SMALL);
     if (strlen(btn_name) == 1) return ap_get_font(AP_FONT_MEDIUM); /* NextUI: single-char button label */
     return ap_get_font(AP_FONT_TINY); /* NextUI: multi-char button label */
 }
 
+static int ap__footer_item_width(ap_footer_item *item, TTF_Font *hint_font, int btn_margin) {
+    const char *btn_name = ap_button_name(item->button);
+    const char *label = item->label ? item->label : "";
+    TTF_Font *btn_font = ap__footer_button_font(btn_name);
+    if (!btn_font) btn_font = hint_font;
+
+    int btn_tw = ap_measure_text(btn_font, btn_name);
+    int btn_w = (strlen(btn_name) == 1)
+        ? AP_DS(AP__BUTTON_SIZE)
+        : (AP_DS(AP__BUTTON_SIZE) / 2 + btn_tw);
+    int label_w = ap_measure_text(hint_font, label);
+    return btn_w + btn_margin + label_w + btn_margin;
+}
+
+static int ap__footer_marker_width(int hidden_count, TTF_Font *hint_font, int btn_margin) {
+    if (hidden_count <= 0) return 0;
+    char marker[16];
+    snprintf(marker, sizeof(marker), "+%d", hidden_count);
+    return btn_margin + ap_measure_text(hint_font, marker) + btn_margin;
+}
+
+static int ap__footer_group_outer_width(const int *widths, int visible_count,
+                                        int item_gap, int outer_pad, int marker_w) {
+    if (visible_count <= 0 && marker_w <= 0) return 0;
+
+    int inner = 0;
+    for (int i = 0; i < visible_count; i++) {
+        if (i > 0) inner += item_gap;
+        inner += widths[i];
+    }
+    if (marker_w > 0) {
+        if (visible_count > 0) inner += item_gap;
+        inner += marker_w;
+    }
+    return outer_pad + inner + outer_pad;
+}
+
+static void ap__footer_draw_item(int *cx, int btn_y, int inner_h, int btn_margin,
+                                 int hint_font_h, TTF_Font *hint_font, ap_footer_item *item) {
+    const char *btn_name = ap_button_name(item->button);
+    const char *label = item->label ? item->label : "";
+    TTF_Font *btn_font = ap__footer_button_font(btn_name);
+    if (!btn_font) btn_font = hint_font;
+
+    int btn_font_h = TTF_FontHeight(btn_font);
+    int btn_tw = ap_measure_text(btn_font, btn_name);
+    int btn_pill_w = (strlen(btn_name) == 1)
+        ? AP_DS(AP__BUTTON_SIZE)
+        : (AP_DS(AP__BUTTON_SIZE) / 2 + btn_tw);
+
+    ap_draw_pill(*cx, btn_y, btn_pill_w, inner_h, ap__g.theme.highlight);
+    ap_draw_text(btn_font, btn_name,
+                 *cx + (btn_pill_w - btn_tw) / 2,
+                 btn_y + (inner_h - btn_font_h) / 2,
+                 ap__g.theme.button_label);
+
+    *cx += btn_pill_w + btn_margin;
+    ap_draw_text(hint_font, label,
+                 *cx,
+                 btn_y + (inner_h - hint_font_h) / 2,
+                 ap__g.theme.hint);
+    *cx += ap_measure_text(hint_font, label) + btn_margin;
+}
+
+static void ap__footer_store_hidden_item(ap_footer_item *item) {
+    if (!item) return;
+    ap__g.footer_overflow_active = true;
+    if (ap__g.footer_hidden_count >= AP__MAX_FOOTER_ITEMS) return;
+    ap__g.footer_hidden_items[ap__g.footer_hidden_count++] = *item;
+}
+
 void ap_draw_footer(ap_footer_item *items, int count) {
+    ap__footer_overflow_clear_visible_state();
     if (!items || count <= 0) return;
+    if (count > AP__MAX_FOOTER_ITEMS) count = AP__MAX_FOOTER_ITEMS;
 
     /* Match NextUI GFX_blitButtonGroup layout:
      * outer pill = PILL_SIZE high, inner buttons = BUTTON_SIZE high,
@@ -2501,122 +2717,233 @@ void ap_draw_footer(ap_footer_item *items, int count) {
     int item_gap   = btn_margin;                        /* gap between items */
     int outer_pad  = btn_margin;                        /* padding at start/end of outer pill */
     int hint_font_h = TTF_FontHeight(hint_font);
+    int max_total_w = ap__g.screen_w - padding * 2;
+    if (max_total_w < 0) max_total_w = 0;
 
-    /* ── Helper: measure total inner width for a group of items ── */
-    /* Matches NextUI GFX_getButtonWidth: single-char → BUTTON_SIZE circle,
-       multi-char → BUTTON_SIZE/2 + text_width pill. Then + BUTTON_MARGIN + hint_text + BUTTON_MARGIN. */
-    #define AP__FOOTER_ITEM_W(btn_name, label) \
-        ({ TTF_Font *_btn_font = ap__footer_button_font(btn_name); \
-           if (!_btn_font) _btn_font = hint_font; \
-           int _bw = ap_measure_text(_btn_font, btn_name); \
-           int _btn_w; \
-           if (strlen(btn_name) == 1) \
-               _btn_w = AP_DS(AP__BUTTON_SIZE); \
-           else \
-               _btn_w = AP_DS(AP__BUTTON_SIZE) / 2 + _bw; \
-           int _lw = ap_measure_text(hint_font, label); \
-           _btn_w + btn_margin + _lw + btn_margin; })
+    int left_indices[AP__MAX_FOOTER_ITEMS];
+    int left_widths[AP__MAX_FOOTER_ITEMS];
+    int right_indices[AP__MAX_FOOTER_ITEMS];
+    int right_widths[AP__MAX_FOOTER_ITEMS];
 
-    /* ── Left group (non-confirm items) ── */
     int left_count = 0;
-    int left_total_inner = 0;
+    int right_count = 0;
     for (int i = 0; i < count; i++) {
-        if (items[i].is_confirm) continue;
-        if (left_count > 0) left_total_inner += item_gap;
-        left_total_inner += AP__FOOTER_ITEM_W(ap_button_name(items[i].button), items[i].label);
-        left_count++;
+        int width = ap__footer_item_width(&items[i], hint_font, btn_margin);
+        if (items[i].is_confirm) {
+            right_indices[right_count] = i;
+            right_widths[right_count] = width;
+            right_count++;
+        } else {
+            left_indices[left_count] = i;
+            left_widths[left_count] = width;
+            left_count++;
+        }
     }
 
-    if (left_count > 0) {
-        int outer_w = outer_pad + left_total_inner + outer_pad;
-        ap_draw_pill(padding, pill_y, outer_w, outer_h, ap__g.theme.accent);
+    int right_visible_start = 0;
+    int right_visible_count = right_count;
+    int right_outer_w = ap__footer_group_outer_width(right_widths, right_count, item_gap, outer_pad, 0);
 
+    if (ap__g.footer_overflow_opts.enabled && right_count > 0 && right_outer_w > max_total_w) {
+        int inner = 0;
+        right_visible_start = right_count;
+        right_visible_count = 0;
+
+        for (int i = right_count - 1; i >= 0; i--) {
+            int candidate = right_widths[i];
+            if (right_visible_count > 0) candidate += item_gap;
+            if (outer_pad + inner + candidate + outer_pad <= max_total_w || right_visible_count == 0) {
+                inner += candidate;
+                right_visible_start = i;
+                right_visible_count++;
+            }
+        }
+
+        right_outer_w = (right_visible_count > 0) ? (outer_pad + inner + outer_pad) : 0;
+        for (int i = 0; i < right_visible_start; i++) {
+            ap__footer_store_hidden_item(&items[right_indices[i]]);
+        }
+    }
+
+    int available_left_w = max_total_w - right_outer_w;
+    if (available_left_w < 0) available_left_w = 0;
+
+    int left_visible_count = left_count;
+
+    if (ap__g.footer_overflow_opts.enabled) {
+        int best_visible = -1;
+
+        for (int visible = 0; visible <= left_count; visible++) {
+            int hidden_total = ap__g.footer_hidden_count + (left_count - visible);
+            int candidate_marker_w = ap__footer_marker_width(hidden_total, hint_font, btn_margin);
+            int outer_w = ap__footer_group_outer_width(left_widths, visible, item_gap, outer_pad,
+                                                       hidden_total > 0 ? candidate_marker_w : 0);
+            if (outer_w <= available_left_w) {
+                best_visible = visible;
+            }
+        }
+
+        if (best_visible < 0) {
+            left_visible_count = 0;
+        } else {
+            left_visible_count = best_visible;
+        }
+
+        for (int i = left_visible_count; i < left_count; i++) {
+            ap__footer_store_hidden_item(&items[left_indices[i]]);
+        }
+        if (ap__g.footer_hidden_count <= 0) {
+            ap__g.footer_overflow_active = false;
+        }
+    }
+
+    int left_outer_w = ap__footer_group_outer_width(left_widths, left_visible_count, item_gap, outer_pad,
+                                                    (ap__g.footer_hidden_count > 0 && ap__g.footer_overflow_opts.enabled)
+                                                        ? ap__footer_marker_width(ap__g.footer_hidden_count, hint_font, btn_margin)
+                                                        : 0);
+
+    if (!ap__g.footer_overflow_opts.enabled) {
+        left_outer_w = ap__footer_group_outer_width(left_widths, left_count, item_gap, outer_pad, 0);
+        right_outer_w = ap__footer_group_outer_width(right_widths, right_count, item_gap, outer_pad, 0);
+        left_visible_count = left_count;
+        right_visible_start = 0;
+        right_visible_count = right_count;
+    }
+
+    if (left_outer_w > 0) {
+        ap_draw_pill(padding, pill_y, left_outer_w, outer_h, ap__g.theme.accent);
         int cx = padding + outer_pad;
         int btn_y = pill_y + btn_margin; /* buttons inset by BUTTON_MARGIN from pill top */
-        for (int i = 0; i < count; i++) {
-            if (items[i].is_confirm) continue;
+        for (int i = 0; i < left_visible_count; i++) {
+            if (i > 0) cx += item_gap;
+            ap__footer_draw_item(&cx, btn_y, inner_h, btn_margin, hint_font_h, hint_font,
+                                 &items[left_indices[i]]);
+        }
 
-            const char *btn_name = ap_button_name(items[i].button);
-            const char *label = items[i].label ? items[i].label : "";
-            TTF_Font *btn_font = ap__footer_button_font(btn_name);
-            if (!btn_font) btn_font = hint_font;
-            int btn_font_h = TTF_FontHeight(btn_font);
-            int btn_tw = ap_measure_text(btn_font, btn_name);
-            int btn_pill_w;
-            if (strlen(btn_name) == 1) {
-                btn_pill_w = AP_DS(AP__BUTTON_SIZE);
-            } else {
-                btn_pill_w = AP_DS(AP__BUTTON_SIZE) / 2 + btn_tw;
-            }
-
-            /* Inner button pill */
-            ap_draw_pill(cx, btn_y, btn_pill_w, inner_h, ap__g.theme.highlight);
-            ap_draw_text(btn_font, btn_name,
-                         cx + (btn_pill_w - btn_tw) / 2,
-                         btn_y + (inner_h - btn_font_h) / 2,
-                         ap__g.theme.button_label);
-
-            /* Label text — vertically centered against BUTTON_SIZE */
-            cx += btn_pill_w + btn_margin;
-            ap_draw_text(hint_font, label,
-                         cx,
+        if (ap__g.footer_hidden_count > 0 && ap__g.footer_overflow_opts.enabled) {
+            char marker[16];
+            snprintf(marker, sizeof(marker), "+%d", ap__g.footer_hidden_count);
+            if (left_visible_count > 0) cx += item_gap;
+            ap_draw_text(hint_font, marker,
+                         cx + btn_margin,
                          btn_y + (inner_h - hint_font_h) / 2,
                          ap__g.theme.hint);
-            cx += ap_measure_text(hint_font, label) + btn_margin;
         }
     }
 
-    /* ── Right group (confirm items) ── */
-    int right_count = 0;
-    int right_total_inner = 0;
-    for (int i = 0; i < count; i++) {
-        if (!items[i].is_confirm) continue;
-        if (right_count > 0) right_total_inner += item_gap;
-        right_total_inner += AP__FOOTER_ITEM_W(ap_button_name(items[i].button), items[i].label);
-        right_count++;
-    }
-
-    if (right_count > 0) {
-        int outer_w = outer_pad + right_total_inner + outer_pad;
-        int rx = ap__g.screen_w - padding - outer_w;
-        ap_draw_pill(rx, pill_y, outer_w, outer_h, ap__g.theme.accent);
-
+    if (right_visible_count > 0 && right_outer_w > 0) {
+        int rx = ap__g.screen_w - padding - right_outer_w;
+        ap_draw_pill(rx, pill_y, right_outer_w, outer_h, ap__g.theme.accent);
         int cx = rx + outer_pad;
         int btn_y = pill_y + btn_margin;
-        for (int i = 0; i < count; i++) {
-            if (!items[i].is_confirm) continue;
+        for (int i = right_visible_start; i < right_count; i++) {
+            if (i > right_visible_start) cx += item_gap;
+            ap__footer_draw_item(&cx, btn_y, inner_h, btn_margin, hint_font_h, hint_font,
+                                 &items[right_indices[i]]);
+        }
+    }
+}
 
-            const char *btn_name = ap_button_name(items[i].button);
-            const char *label = items[i].label ? items[i].label : "";
-            TTF_Font *btn_font = ap__footer_button_font(btn_name);
-            if (!btn_font) btn_font = hint_font;
-            int btn_font_h = TTF_FontHeight(btn_font);
-            int btn_tw = ap_measure_text(btn_font, btn_name);
-            int btn_pill_w;
-            if (strlen(btn_name) == 1) {
-                btn_pill_w = AP_DS(AP__BUTTON_SIZE);
-            } else {
-                btn_pill_w = AP_DS(AP__BUTTON_SIZE) / 2 + btn_tw;
-            }
+static void ap__footer_overflow_show_hidden_actions(void) {
+    if (ap__g.footer_hidden_count <= 0) return;
 
-            /* Inner button pill */
-            ap_draw_pill(cx, btn_y, btn_pill_w, inner_h, ap__g.theme.highlight);
-            ap_draw_text(btn_font, btn_name,
-                         cx + (btn_pill_w - btn_tw) / 2,
-                         btn_y + (inner_h - btn_font_h) / 2,
-                         ap__g.theme.button_label);
+    TTF_Font *title_font = ap_get_font(AP_FONT_SMALL);
+    TTF_Font *body_font = ap_get_font(AP_FONT_TINY);
+    TTF_Font *hint_font = ap_get_font(AP_FONT_MICRO);
+    if (!body_font) return;
 
-            /* Label text */
-            cx += btn_pill_w + btn_margin;
-            ap_draw_text(hint_font, label,
-                         cx,
-                         btn_y + (inner_h - hint_font_h) / 2,
-                         ap__g.theme.hint);
-            cx += ap_measure_text(hint_font, label) + btn_margin;
+    char text[2048];
+    int off = 0;
+    for (int i = 0; i < ap__g.footer_hidden_count && off < (int)sizeof(text) - 1; i++) {
+        const char *btn_name = ap_button_name(ap__g.footer_hidden_items[i].button);
+        const char *label = ap__g.footer_hidden_items[i].label ? ap__g.footer_hidden_items[i].label : "";
+        off += snprintf(text + off, sizeof(text) - (size_t)off,
+                        "%s  %.120s\n", btn_name, label);
+        if (off < 0 || off >= (int)sizeof(text)) {
+            text[sizeof(text) - 1] = '\0';
+            break;
         }
     }
 
-    #undef AP__FOOTER_ITEM_W
+    ap__g.footer_overflow_overlay_open = true;
+
+    ap_theme *theme = ap_get_theme();
+    int screen_w = ap_get_screen_width();
+    int screen_h = ap_get_screen_height();
+    int margin = AP_S(40);
+    int title_h = title_font ? TTF_FontLineSkip(title_font) : 0;
+    int line_h = TTF_FontLineSkip(body_font);
+    int body_y = margin + title_h + AP_S(12);
+    int max_w = screen_w - margin * 2;
+    int body_h = screen_h - body_y - margin;
+    if (body_h < line_h) body_h = line_h;
+
+    int chars_per_line = max_w / AP_S(10);
+    if (chars_per_line < 1) chars_per_line = 1;
+    int est_lines = ((int)strlen(text) / chars_per_line) + 2;
+    int content_h = est_lines * line_h;
+    int scroll = 0;
+    int max_scroll = content_h - body_h;
+    if (max_scroll < 0) max_scroll = 0;
+
+    bool running = true;
+    while (running) {
+        ap_input_event ev;
+        while (ap_poll_input(&ev)) {
+            if (!ev.pressed) continue;
+            switch (ev.button) {
+                case AP_BTN_UP:
+                    scroll -= AP_S(40);
+                    if (scroll < 0) scroll = 0;
+                    break;
+                case AP_BTN_DOWN:
+                    scroll += AP_S(40);
+                    if (scroll > max_scroll) scroll = max_scroll;
+                    break;
+                default:
+                    running = false;
+                    break;
+            }
+        }
+
+        ap_color overlay_bg = {0, 0, 0, 220};
+        ap_draw_rect(0, 0, screen_w, screen_h, overlay_bg);
+
+        if (title_font) {
+            ap_draw_text(title_font, "Hidden Actions", margin, margin, theme->text);
+        }
+
+        SDL_Rect clip = { margin, body_y, max_w, body_h };
+        SDL_RenderSetClipRect(ap_get_renderer(), &clip);
+        ap_draw_text_wrapped(body_font, text, margin, body_y - scroll, max_w, theme->text, AP_ALIGN_LEFT);
+        SDL_RenderSetClipRect(ap_get_renderer(), NULL);
+
+        if (max_scroll > 0) {
+            ap_draw_scrollbar(screen_w - margin + AP_S(8), body_y, body_h, body_h, content_h, scroll);
+        }
+
+        if (hint_font) {
+            const char *hint = "Press any button to close";
+            int hint_w = ap_measure_text(hint_font, hint);
+            ap_draw_text(hint_font, hint, (screen_w - hint_w) / 2,
+                         screen_h - margin + AP_S(8), theme->hint);
+        }
+
+        ap_present();
+    }
+
+    ap__g.footer_overflow_overlay_open = false;
+}
+
+static bool ap__footer_overflow_consume_open_request(void) {
+    if (!ap__g.footer_overflow_open_requested) return false;
+
+    ap__g.footer_overflow_open_requested = false;
+    if (!ap__footer_overflow_enabled()) return true;
+
+    ap__footer_overflow_show_hidden_actions();
+    ap__g.last_input_time = SDL_GetTicks();
+    return true;
 }
 
 int ap_get_status_bar_height(void) {
@@ -3584,6 +3911,9 @@ int ap_init(ap_config *cfg) {
     ap__g.input_delay_ms = AP_INPUT_DEBOUNCE;
     ap__g.input_repeat_delay_ms = AP_INPUT_REPEAT_DELAY;
     ap__g.input_repeat_rate_ms = AP_INPUT_REPEAT_RATE;
+    ap__g.footer_overflow_opts.enabled = true;
+    ap__g.footer_overflow_opts.chord_a = AP_BTN_L1;
+    ap__g.footer_overflow_opts.chord_b = AP_BTN_R1;
 
     uint32_t sdl_flags = SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS;
     #if !AP_PLATFORM_IS_DEVICE

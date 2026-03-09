@@ -23,6 +23,20 @@ static ap_color  g_fg;
 static ap_color  g_accent;
 static int       g_sw, g_sh, g_pad;
 
+static void push_footer_overflow_disabled(ap_footer_overflow_opts *saved) {
+    if (!saved) return;
+    ap_get_footer_overflow_opts(saved);
+
+    ap_footer_overflow_opts disabled = *saved;
+    disabled.enabled = false;
+    ap_set_footer_overflow_opts(&disabled);
+}
+
+static void pop_footer_overflow_opts(ap_footer_overflow_opts *saved) {
+    if (!saved) return;
+    ap_set_footer_overflow_opts(saved);
+}
+
 static void init_render_state(void) {
     g_body_font  = ap_get_font(AP_FONT_LARGE);
     g_hint_font  = ap_get_font(AP_FONT_SMALL);
@@ -33,23 +47,35 @@ static void init_render_state(void) {
     g_pad        = AP_DS(12);
 }
 
-/* Draw the live status below the instruction block, staying inside the safe content area. */
-static void draw_status(const char *status, SDL_Rect content_rect, int top_y) {
-    int x = g_pad;
-    int w = g_sw - g_pad * 2;
-    if (w < 1) w = 1;
-
+/* Draw the live status text and return its wrapped height. */
+static int draw_status(const char *status, int x, int y, int w, bool draw) {
     int status_h = ap_measure_wrapped_text_height(g_body_font, status, w);
     if (status_h < TTF_FontLineSkip(g_body_font)) {
         status_h = TTF_FontLineSkip(g_body_font);
     }
 
-    int y = top_y + AP_DS(12);
-    int max_y = content_rect.y + content_rect.h - status_h;
-    if (y > max_y) y = max_y;
-    if (y < top_y) y = top_y;
+    if (draw) {
+        ap_draw_text_wrapped(g_body_font, status, x, y, w, g_accent, AP_ALIGN_CENTER);
+    }
 
-    ap_draw_text_wrapped(g_body_font, status, x, y, w, g_accent, AP_ALIGN_CENTER);
+    return status_h;
+}
+
+/* Measure the total content height for a combo demo screen (shared by both demos). */
+static int combo_content_height(const char *help_text, const char *status, int content_w) {
+    int h = 0;
+    /* 3 chord/sequence header lines + 3 value lines, each with spacing */
+    h += TTF_FontLineSkip(g_hint_font); h += AP_DS(16);
+    h += TTF_FontLineSkip(g_hint_font); h += AP_DS(14);
+    h += TTF_FontLineSkip(g_hint_font); h += AP_DS(20);
+    h += TTF_FontLineSkip(g_hint_font); h += AP_DS(16);
+    h += TTF_FontLineSkip(g_hint_font); h += AP_DS(14);
+    h += TTF_FontLineSkip(g_hint_font); h += AP_DS(20);
+    /* help text + gap + status */
+    h += ap_measure_wrapped_text_height(g_hint_font, help_text, content_w);
+    h += AP_DS(12);
+    h += draw_status(status, 0, 0, content_w, false);
+    return h;
 }
 
 static bool register_polling_combos(void) {
@@ -90,10 +116,15 @@ static bool register_polling_combos(void) {
  * ────────────────────────────────────────────────────────────────────────── */
 
 static void run_polling_demo(void) {
+    ap_footer_overflow_opts saved_footer_overflow;
+    push_footer_overflow_disabled(&saved_footer_overflow);
+
     bool triggers_registered = register_polling_combos();
 
     char status[256] = "Waiting for combos...";
+    char last_status[256] = "Waiting for combos...";
     bool running = true;
+    int scroll_offset = 0;
 
     ap_footer_item footer[] = {
         { .button = AP_BTN_MENU, .label = "BACK" },
@@ -108,6 +139,11 @@ static void run_polling_demo(void) {
             if (!ev.pressed) continue;
             if (ev.button == AP_BTN_MENU) {
                 running = false;
+            } else if (ev.button == AP_BTN_LEFT) {
+                scroll_offset -= AP_DS(40);
+                if (scroll_offset < 0) scroll_offset = 0;
+            } else if (ev.button == AP_BTN_RIGHT) {
+                scroll_offset += AP_DS(40);
             } else if (ev.button == AP_BTN_X && triggers_registered) {
                 ap_unregister_combo("triggers");
                 triggers_registered = false;
@@ -133,38 +169,70 @@ static void run_polling_demo(void) {
             ap_log("poll combo: %s %s", combo.triggered ? "triggered" : "released", combo.id);
         }
 
+        bool status_changed = strcmp(status, last_status) != 0;
+        if (status_changed) {
+            snprintf(last_status, sizeof(last_status), "%s", status);
+        }
+
         ap_clear_screen();
         ap_draw_screen_title("Polling (classic)", NULL);
         SDL_Rect content_rect = ap_get_content_rect(true, true, false);
-        int y = content_rect.y;
-
-        ap_draw_text(g_hint_font, "Chords — press simultaneously:", g_pad, y, g_fg);
-        y += AP_DS(16);
-        ap_draw_text(g_hint_font, "  L1 + R1              \"shoulders\"", g_pad, y, g_fg);
-        y += AP_DS(14);
-        ap_draw_text(g_hint_font, "  L2 + R2              \"triggers\"", g_pad, y, g_fg);
-        y += AP_DS(20);
-
-        ap_draw_text(g_hint_font, "Sequences — press in order:", g_pad, y, g_fg);
-        y += AP_DS(16);
-        ap_draw_text(g_hint_font, "  UP UP DOWN DOWN      \"uudd\"", g_pad, y, g_fg);
-        y += AP_DS(14);
-        ap_draw_text(g_hint_font, "  A B A (strict)       \"aba_strict\"", g_pad, y, g_fg);
-        y += AP_DS(20);
-
+        int scrollbar_gutter = AP_S(16);
+        int content_x = g_pad;
+        int content_right = g_sw - g_pad - scrollbar_gutter;
+        if (content_right <= content_x) content_right = g_sw - g_pad;
+        int content_w = content_right - content_x;
+        if (content_w < 1) content_w = 1;
         const char *poll_help =
-            "Events are read by calling ap_poll_combo() each frame. "
-            "Press X to unregister the triggers chord, then Y to re-register all combos.";
-        ap_draw_text_wrapped(g_hint_font, poll_help, g_pad, y, g_sw - g_pad * 2, g_fg, AP_ALIGN_LEFT);
-        y += ap_measure_wrapped_text_height(g_hint_font, poll_help, g_sw - g_pad * 2);
+            "ap_poll_combo() returns chord and sequence events. "
+            "Press X to unregister the triggers chord, then Y to restore all combos. "
+            "Use LEFT/RIGHT to scroll.";
 
-        draw_status(status, content_rect, y);
+        int total_content_h = combo_content_height(poll_help, status, content_w);
+
+        int max_scroll = total_content_h - content_rect.h;
+        if (max_scroll < 0) max_scroll = 0;
+        if (status_changed && max_scroll > 0) scroll_offset = max_scroll;
+        if (scroll_offset > max_scroll) scroll_offset = max_scroll;
+
+        SDL_Rect clip = { content_x, content_rect.y, content_w, content_rect.h };
+        SDL_RenderSetClipRect(ap_get_renderer(), &clip);
+
+        int y = content_rect.y - scroll_offset;
+        ap_draw_text(g_hint_font, "Chords — press simultaneously:", content_x, y, g_fg);
+        y += AP_DS(16);
+        ap_draw_text(g_hint_font, "  L1 + R1              \"shoulders\"", content_x, y, g_fg);
+        y += AP_DS(14);
+        ap_draw_text(g_hint_font, "  L2 + R2              \"triggers\"", content_x, y, g_fg);
+        y += AP_DS(20);
+
+        ap_draw_text(g_hint_font, "Sequences — press in order:", content_x, y, g_fg);
+        y += AP_DS(16);
+        ap_draw_text(g_hint_font, "  UP UP DOWN DOWN      \"uudd\"", content_x, y, g_fg);
+        y += AP_DS(14);
+        ap_draw_text(g_hint_font, "  A B A (strict)       \"aba_strict\"", content_x, y, g_fg);
+        y += AP_DS(20);
+
+        ap_draw_text_wrapped(g_hint_font, poll_help, content_x, y, content_w, g_fg, AP_ALIGN_LEFT);
+        y += ap_measure_wrapped_text_height(g_hint_font, poll_help, content_w);
+        y += AP_DS(12);
+
+        draw_status(status, content_x, y, content_w, true);
+
+        SDL_RenderSetClipRect(ap_get_renderer(), NULL);
+
+        if (max_scroll > 0) {
+            ap_draw_scrollbar(content_right + AP_S(6), content_rect.y, content_rect.h,
+                              content_rect.h, total_content_h, scroll_offset);
+        }
+
         ap_draw_footer(footer, 3);
         ap_present();
         SDL_Delay(16);
     }
 
     ap_clear_combos();
+    pop_footer_overflow_opts(&saved_footer_overflow);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -192,6 +260,9 @@ static void on_combo_release(const char *id, ap_combo_type type, void *userdata)
 }
 
 static void run_callback_demo(void) {
+    ap_footer_overflow_opts saved_footer_overflow;
+    push_footer_overflow_disabled(&saved_footer_overflow);
+
     /* Chords: provide both on_trigger and on_release callbacks */
     ap_button shoulders[] = { AP_BTN_L1, AP_BTN_R1 };
     if (ap_register_chord_ex("shoulders_cb", shoulders, 2, 150,
@@ -215,7 +286,9 @@ static void run_callback_demo(void) {
         ap_log("Failed to register aba_cb sequence");
 
     snprintf(g_cb_status, sizeof(g_cb_status), "Waiting for combos...");
+    char last_status[256] = "Waiting for combos...";
     bool running = true;
+    int scroll_offset = 0;
 
     ap_footer_item footer[] = {
         { .button = AP_BTN_MENU, .label = "BACK" },
@@ -224,44 +297,84 @@ static void run_callback_demo(void) {
     while (running) {
         ap_input_event ev;
         while (ap_poll_input(&ev)) {
-            if (ev.button == AP_BTN_MENU && ev.pressed)
+            if (!ev.pressed) continue;
+            if (ev.button == AP_BTN_MENU)
                 running = false;
+            else if (ev.button == AP_BTN_LEFT) {
+                scroll_offset -= AP_DS(40);
+                if (scroll_offset < 0) scroll_offset = 0;
+            } else if (ev.button == AP_BTN_RIGHT) {
+                scroll_offset += AP_DS(40);
+            }
         }
 
         /* Callbacks have already fired — drain the queue to keep it clean. */
         ap_combo_event combo;
         while (ap_poll_combo(&combo)) { /* events still enqueued alongside callbacks */ }
 
+        bool status_changed = strcmp(g_cb_status, last_status) != 0;
+        if (status_changed) {
+            snprintf(last_status, sizeof(last_status), "%s", g_cb_status);
+        }
+
         ap_clear_screen();
         ap_draw_screen_title("Callbacks (_ex)", NULL);
         SDL_Rect content_rect = ap_get_content_rect(true, true, false);
-        int y = content_rect.y;
+        int scrollbar_gutter = AP_S(16);
+        int content_x = g_pad;
+        int content_right = g_sw - g_pad - scrollbar_gutter;
+        if (content_right <= content_x) content_right = g_sw - g_pad;
+        int content_w = content_right - content_x;
+        if (content_w < 1) content_w = 1;
+        const char *cb_help =
+            "on_trigger/on_release fire automatically; the demo only drains ap_poll_combo() to keep the queue clean. "
+            "Use LEFT/RIGHT to scroll.";
 
-        ap_draw_text(g_hint_font, "Chords — press simultaneously:", g_pad, y, g_fg);
+        int total_content_h = combo_content_height(cb_help, g_cb_status, content_w);
+
+        int max_scroll = total_content_h - content_rect.h;
+        if (max_scroll < 0) max_scroll = 0;
+        if (status_changed && max_scroll > 0) scroll_offset = max_scroll;
+        if (scroll_offset > max_scroll) scroll_offset = max_scroll;
+
+        SDL_Rect clip = { content_x, content_rect.y, content_w, content_rect.h };
+        SDL_RenderSetClipRect(ap_get_renderer(), &clip);
+
+        int y = content_rect.y - scroll_offset;
+        ap_draw_text(g_hint_font, "Chords — press simultaneously:", content_x, y, g_fg);
         y += AP_DS(16);
-        ap_draw_text(g_hint_font, "  L1 + R1              \"shoulders_cb\"", g_pad, y, g_fg);
+        ap_draw_text(g_hint_font, "  L1 + R1              \"shoulders_cb\"", content_x, y, g_fg);
         y += AP_DS(14);
-        ap_draw_text(g_hint_font, "  L2 + R2              \"triggers_cb\"", g_pad, y, g_fg);
+        ap_draw_text(g_hint_font, "  L2 + R2              \"triggers_cb\"", content_x, y, g_fg);
         y += AP_DS(20);
 
-        ap_draw_text(g_hint_font, "Sequences — press in order:", g_pad, y, g_fg);
+        ap_draw_text(g_hint_font, "Sequences — press in order:", content_x, y, g_fg);
         y += AP_DS(16);
-        ap_draw_text(g_hint_font, "  UP UP DOWN DOWN      \"uudd_cb\"", g_pad, y, g_fg);
+        ap_draw_text(g_hint_font, "  UP UP DOWN DOWN      \"uudd_cb\"", content_x, y, g_fg);
         y += AP_DS(14);
-        ap_draw_text(g_hint_font, "  A B A (strict)       \"aba_cb\"", g_pad, y, g_fg);
+        ap_draw_text(g_hint_font, "  A B A (strict)       \"aba_cb\"", content_x, y, g_fg);
         y += AP_DS(20);
 
-        const char *cb_help = "on_trigger/on_release fire automatically, so no poll loop is needed.";
-        ap_draw_text_wrapped(g_hint_font, cb_help, g_pad, y, g_sw - g_pad * 2, g_fg, AP_ALIGN_LEFT);
-        y += ap_measure_wrapped_text_height(g_hint_font, cb_help, g_sw - g_pad * 2);
+        ap_draw_text_wrapped(g_hint_font, cb_help, content_x, y, content_w, g_fg, AP_ALIGN_LEFT);
+        y += ap_measure_wrapped_text_height(g_hint_font, cb_help, content_w);
+        y += AP_DS(12);
 
-        draw_status(g_cb_status, content_rect, y);
+        draw_status(g_cb_status, content_x, y, content_w, true);
+
+        SDL_RenderSetClipRect(ap_get_renderer(), NULL);
+
+        if (max_scroll > 0) {
+            ap_draw_scrollbar(content_right + AP_S(6), content_rect.y, content_rect.h,
+                              content_rect.h, total_content_h, scroll_offset);
+        }
+
         ap_draw_footer(footer, 1);
         ap_present();
         SDL_Delay(16);
     }
 
     ap_clear_combos();
+    pop_footer_overflow_opts(&saved_footer_overflow);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────

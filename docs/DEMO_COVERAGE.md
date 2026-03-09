@@ -11,7 +11,7 @@ This matrix maps Apostrophe's public API surface to the demos that exercise it.
 | Drawing primitives, background, status bar, texture cache, text scrolling | `examples/demo/main.c` → `Drawing Primitives`, `Core API Lab` |
 | Input delay/repeat, face-button flip, button names, theme color | `examples/demo/main.c` → `Input & Theme` |
 | Screen fade | `examples/demo/main.c` → `Screen Fade` |
-| Combo registration, polling, callbacks, unregister | `examples/combo/main.c` |
+| Combo registration, polling, callbacks, unregister, footer overflow override | `examples/combo/main.c` |
 | CPU, fan, power-handler toggle | `examples/demo/main.c` → `CPU & Fan`, `Core API Lab` |
 
 ## Widget Coverage
@@ -19,7 +19,7 @@ This matrix maps Apostrophe's public API surface to the demos that exercise it.
 | Widget / Feature | Demo Coverage |
 |------------------|---------------|
 | List: basic select, help overlay | `examples/demo/main.c` → `Basic List` |
-| List: images, primary/secondary/tertiary actions | `examples/demo/main.c` → `Image List` |
+| List: images, primary/secondary/tertiary actions, footer overflow | `examples/demo/main.c` → `Image List` |
 | List: multi-select | `examples/demo/main.c` → `Multi-Select List` |
 | List: reorder | `examples/demo/main.c` → `Reorderable List` |
 | Options list: standard, keyboard, clickable, color picker, action buttons | `examples/demo/main.c` → `Options List` |
