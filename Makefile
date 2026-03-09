@@ -210,6 +210,9 @@ package: all
 				mkdir -p "$$pak_dir/lib"; \
 				cp -a "$(BUILD_DIR)/$$platform/$$example/lib/." "$$pak_dir/lib/"; \
 			fi; \
+			if [ "$$example" = "demo" ] && [ -f "$(RES_DIR)/demo_icon.png" ]; then \
+				cp -f "$(RES_DIR)/demo_icon.png" "$$pak_dir/demo_icon.png"; \
+			fi; \
 		done; \
 		cd $(STAGING_DIR) && zip -r "$(CURDIR)/$(DIST_DIR)/$${example}.pakz" . && cd $(CURDIR); \
 		rm -rf $(STAGING_DIR); \
@@ -271,6 +274,9 @@ deploy:
 			$$ADB push "$(BUILD_DIR)/$$PLATFORM/$$example/lib/." "$$pak_dir/lib/"; \
 		else \
 			$$ADB shell "rm -rf '$$pak_dir/lib'"; \
+		fi; \
+		if [ "$$example" = "demo" ] && [ -f "$(RES_DIR)/demo_icon.png" ]; then \
+			$$ADB push "$(RES_DIR)/demo_icon.png" "$$pak_dir/demo_icon.png"; \
 		fi; \
 	done
 	@echo "Deploy complete."

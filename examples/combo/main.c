@@ -33,11 +33,23 @@ static void init_render_state(void) {
     g_pad        = AP_DS(12);
 }
 
-/* Draw a centred status / last-event line */
-static void draw_status(const char *status) {
-    int tw = 0;
-    TTF_SizeUTF8(g_body_font, status, &tw, NULL);
-    ap_draw_text(g_body_font, status, (g_sw - tw) / 2, g_sh / 2 + AP_DS(10), g_accent);
+/* Draw the live status below the instruction block, staying inside the safe content area. */
+static void draw_status(const char *status, SDL_Rect content_rect, int top_y) {
+    int x = g_pad;
+    int w = g_sw - g_pad * 2;
+    if (w < 1) w = 1;
+
+    int status_h = ap_measure_wrapped_text_height(g_body_font, status, w);
+    if (status_h < TTF_FontLineSkip(g_body_font)) {
+        status_h = TTF_FontLineSkip(g_body_font);
+    }
+
+    int y = top_y + AP_DS(12);
+    int max_y = content_rect.y + content_rect.h - status_h;
+    if (y > max_y) y = max_y;
+    if (y < top_y) y = top_y;
+
+    ap_draw_text_wrapped(g_body_font, status, x, y, w, g_accent, AP_ALIGN_CENTER);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -109,9 +121,11 @@ static void run_polling_demo(void) {
         ap_draw_text(g_hint_font, "  A B A (strict)       \"aba_strict\"", g_pad, y, g_fg);
         y += AP_DS(20);
 
-        ap_draw_text(g_hint_font, "Events read by calling ap_poll_combo() each frame.", g_pad, y, g_fg);
+        const char *poll_help = "Events are read by calling ap_poll_combo() each frame.";
+        ap_draw_text_wrapped(g_hint_font, poll_help, g_pad, y, g_sw - g_pad * 2, g_fg, AP_ALIGN_LEFT);
+        y += ap_measure_wrapped_text_height(g_hint_font, poll_help, g_sw - g_pad * 2);
 
-        draw_status(status);
+        draw_status(status, content_rect, y);
         ap_draw_footer(footer, 1);
         ap_present();
         SDL_Delay(16);
@@ -198,9 +212,11 @@ static void run_callback_demo(void) {
         ap_draw_text(g_hint_font, "  A B A (strict)       \"aba_cb\"", g_pad, y, g_fg);
         y += AP_DS(20);
 
-        ap_draw_text(g_hint_font, "on_trigger/on_release fire automatically — no poll needed.", g_pad, y, g_fg);
+        const char *cb_help = "on_trigger/on_release fire automatically, so no poll loop is needed.";
+        ap_draw_text_wrapped(g_hint_font, cb_help, g_pad, y, g_sw - g_pad * 2, g_fg, AP_ALIGN_LEFT);
+        y += ap_measure_wrapped_text_height(g_hint_font, cb_help, g_sw - g_pad * 2);
 
-        draw_status(g_cb_status);
+        draw_status(g_cb_status, content_rect, y);
         ap_draw_footer(footer, 1);
         ap_present();
         SDL_Delay(16);
