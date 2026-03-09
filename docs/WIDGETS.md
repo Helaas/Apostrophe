@@ -346,8 +346,8 @@ Multi-threaded file downloader with per-file progress bars. Requires libcurl.
 
 Device builds use a bundled curl flow (`USE_BUNDLED_CURL=1`), which caches sources in
 `build/third_party/sources`, builds per-platform artifacts under `build/third_party/<platform>/...`,
-and stages pak runtime libs into `build/<platform>/download/lib`. Ensure the pak launcher prepends
-`$PAK_DIR/lib` to `LD_LIBRARY_PATH`.
+and stages the CA bundle into `build/<platform>/download/lib/cacert.pem`. Ensure the pak launcher sets
+`SSL_CERT_FILE=$PAK_DIR/lib/cacert.pem`.
 
 ```
 ┌───────────────────────────────────────┐
