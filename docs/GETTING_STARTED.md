@@ -66,7 +66,7 @@ You need Docker installed and running. The build system automatically pulls the 
 - Sources are downloaded once and cached in `build/third_party/sources`.
 - Built dependencies are stored per-platform under `build/third_party/<platform>/...`.
 - Device targets automatically build OpenSSL first, then curl (TLS-enabled).
-- Runtime shared libraries are staged into `build/<platform>/download/lib` and packaged into the pak.
+- Runtime assets (CA certificate bundle) are staged into `build/<platform>/download/lib` and packaged into the pak.
 
 You can force-enable it explicitly:
 
