@@ -26,7 +26,7 @@ Thanks to Brandon T. Kowalski (https://github.com/BrandonKowalski) for creating 
 
 ```bash
 git clone https://github.com/Helaas/apostrophe.git
-cd Apostrophe
+cd apostrophe
 ```
 
 ### 2. Build for macOS
