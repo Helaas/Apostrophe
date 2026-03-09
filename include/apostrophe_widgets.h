@@ -2290,9 +2290,28 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
         if (sec->title) total_content_h += section_title_h;
 
         switch (sec->type) {
-            case AP_SECTION_INFO:
-                total_content_h += sec->info_count * info_row_h;
+            case AP_SECTION_INFO: {
+                int kw_max = 0;
+                for (int p = 0; p < sec->info_count; p++) {
+                    if (sec->info_pairs[p].key) {
+                        int kw = ap_measure_text(key_font, sec->info_pairs[p].key);
+                        if (kw > kw_max) kw_max = kw;
+                    }
+                }
+                int vx = margin + kw_max + AP_S(16);
+                int max_vx = content_right - AP_S(120);
+                if (vx > max_vx) vx = max_vx;
+                if (vx < margin + AP_S(16)) vx = margin + AP_S(16);
+                int vw = content_right - vx;
+                if (vw < 1) vw = 1;
+                for (int p = 0; p < sec->info_count; p++) {
+                    int vh = sec->info_pairs[p].value
+                        ? ap_measure_wrapped_text_height(body_font, sec->info_pairs[p].value, vw)
+                        : 0;
+                    total_content_h += ap__max(key_line_h, vh) + AP_S(4);
+                }
                 break;
+            }
             case AP_SECTION_DESCRIPTION:
                 if (sec->description) {
                     total_content_h += ap_measure_wrapped_text_height(body_font, sec->description, content_w);
@@ -2378,22 +2397,24 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                             }
                         }
                         int val_x = margin + key_w_max + AP_S(16);
-                        int min_val_w = AP_S(120);
-                        int max_val_x = content_right - min_val_w;
+                        int max_val_x = content_right - AP_S(120);
                         if (val_x > max_val_x) val_x = max_val_x;
                         if (val_x < margin + AP_S(16)) val_x = margin + AP_S(16);
+                        int val_w = content_right - val_x;
+                        if (val_w < 1) val_w = 1;
 
                         for (int p = 0; p < sec->info_count; p++) {
                             if (sec->info_pairs[p].key) {
                                 ap_draw_text(key_font, sec->info_pairs[p].key,
                                     margin, draw_y, theme->hint);
                             }
+                            int vh = 0;
                             if (sec->info_pairs[p].value) {
-                                ap_draw_text_clipped(body_font, sec->info_pairs[p].value,
-                                    val_x, draw_y, theme->text,
-                                    content_right - val_x);
+                                ap_draw_text_wrapped(body_font, sec->info_pairs[p].value,
+                                    val_x, draw_y, val_w, theme->text, AP_ALIGN_LEFT);
+                                vh = ap_measure_wrapped_text_height(body_font, sec->info_pairs[p].value, val_w);
                             }
-                            draw_y += info_row_h;
+                            draw_y += ap__max(key_line_h, vh) + AP_S(4);
                         }
                     }
                     break;
