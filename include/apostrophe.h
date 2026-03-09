@@ -1234,47 +1234,63 @@ static ap_button ap__map_controller_button(uint8_t btn) {
 #if defined(PLATFORM_MY355)
 static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
     uint8_t sc = (uint8_t)kev->keysym.scancode;
+    ap_button mapped = AP_BTN_NONE;
     switch (sc) {
-        case AP__MY355_CODE_UP:     return AP_BTN_UP;
-        case AP__MY355_CODE_DOWN:   return AP_BTN_DOWN;
-        case AP__MY355_CODE_LEFT:   return AP_BTN_LEFT;
-        case AP__MY355_CODE_RIGHT:  return AP_BTN_RIGHT;
-        case AP__MY355_CODE_A:      return AP_BTN_A;
-        case AP__MY355_CODE_B:      return AP_BTN_B;
-        case AP__MY355_CODE_X:      return AP_BTN_X;
-        case AP__MY355_CODE_Y:      return AP_BTN_Y;
-        case AP__MY355_CODE_L1:     return AP_BTN_L1;
-        case AP__MY355_CODE_R1:     return AP_BTN_R1;
-        case AP__MY355_CODE_L2:     return AP_BTN_L2;
-        case AP__MY355_CODE_R2:     return AP_BTN_R2;
-        case AP__MY355_CODE_START:  return AP_BTN_START;
-        case AP__MY355_CODE_SELECT: return AP_BTN_SELECT;
-        case AP__MY355_CODE_MENU:   return AP_BTN_MENU;
-        case AP__MY355_CODE_POWER:  return AP_BTN_POWER;
-        default:                    return AP_BTN_NONE;
+        case AP__MY355_CODE_UP:     mapped = AP_BTN_UP;     break;
+        case AP__MY355_CODE_DOWN:   mapped = AP_BTN_DOWN;   break;
+        case AP__MY355_CODE_LEFT:   mapped = AP_BTN_LEFT;   break;
+        case AP__MY355_CODE_RIGHT:  mapped = AP_BTN_RIGHT;  break;
+        case AP__MY355_CODE_A:      mapped = AP_BTN_A;      break;
+        case AP__MY355_CODE_B:      mapped = AP_BTN_B;      break;
+        case AP__MY355_CODE_X:      mapped = AP_BTN_X;      break;
+        case AP__MY355_CODE_Y:      mapped = AP_BTN_Y;      break;
+        case AP__MY355_CODE_L1:     mapped = AP_BTN_L1;     break;
+        case AP__MY355_CODE_R1:     mapped = AP_BTN_R1;     break;
+        case AP__MY355_CODE_L2:     mapped = AP_BTN_L2;     break;
+        case AP__MY355_CODE_R2:     mapped = AP_BTN_R2;     break;
+        case AP__MY355_CODE_START:  mapped = AP_BTN_START;  break;
+        case AP__MY355_CODE_SELECT: mapped = AP_BTN_SELECT; break;
+        case AP__MY355_CODE_MENU:   mapped = AP_BTN_MENU;   break;
+        case AP__MY355_CODE_POWER:  mapped = AP_BTN_POWER;  break;
+        default: break;
     }
+    if (ap__g.face_buttons_flipped) {
+        if (mapped == AP_BTN_A) return AP_BTN_B;
+        if (mapped == AP_BTN_B) return AP_BTN_A;
+        if (mapped == AP_BTN_X) return AP_BTN_Y;
+        if (mapped == AP_BTN_Y) return AP_BTN_X;
+    }
+    return mapped;
 }
 #else
 static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
     /* Match Gabagool DefaultInputMapping() — letter keys for face buttons */
+    ap_button mapped = AP_BTN_NONE;
     switch (kev->keysym.sym) {
-        case SDLK_UP:        return AP_BTN_UP;
-        case SDLK_DOWN:      return AP_BTN_DOWN;
-        case SDLK_LEFT:      return AP_BTN_LEFT;
-        case SDLK_RIGHT:     return AP_BTN_RIGHT;
-        case SDLK_a:         return AP_BTN_A;
-        case SDLK_b:         return AP_BTN_B;
-        case SDLK_x:         return AP_BTN_X;
-        case SDLK_y:         return AP_BTN_Y;
-        case SDLK_l:         return AP_BTN_L1;
-        case SDLK_SEMICOLON: return AP_BTN_L2;
-        case SDLK_r:         return AP_BTN_R1;
-        case SDLK_t:         return AP_BTN_R2;
-        case SDLK_RETURN:    return AP_BTN_START;
-        case SDLK_SPACE:     return AP_BTN_SELECT;
-        case SDLK_h:         return AP_BTN_MENU;
-        default:             return AP_BTN_NONE;
+        case SDLK_UP:        mapped = AP_BTN_UP;     break;
+        case SDLK_DOWN:      mapped = AP_BTN_DOWN;   break;
+        case SDLK_LEFT:      mapped = AP_BTN_LEFT;   break;
+        case SDLK_RIGHT:     mapped = AP_BTN_RIGHT;  break;
+        case SDLK_a:         mapped = AP_BTN_A;      break;
+        case SDLK_b:         mapped = AP_BTN_B;      break;
+        case SDLK_x:         mapped = AP_BTN_X;      break;
+        case SDLK_y:         mapped = AP_BTN_Y;      break;
+        case SDLK_l:         mapped = AP_BTN_L1;     break;
+        case SDLK_SEMICOLON: mapped = AP_BTN_L2;     break;
+        case SDLK_r:         mapped = AP_BTN_R1;     break;
+        case SDLK_t:         mapped = AP_BTN_R2;     break;
+        case SDLK_RETURN:    mapped = AP_BTN_START;  break;
+        case SDLK_SPACE:     mapped = AP_BTN_SELECT; break;
+        case SDLK_h:         mapped = AP_BTN_MENU;   break;
+        default: break;
     }
+    if (ap__g.face_buttons_flipped) {
+        if (mapped == AP_BTN_A) return AP_BTN_B;
+        if (mapped == AP_BTN_B) return AP_BTN_A;
+        if (mapped == AP_BTN_X) return AP_BTN_Y;
+        if (mapped == AP_BTN_Y) return AP_BTN_X;
+    }
+    return mapped;
 }
 #endif
 
