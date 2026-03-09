@@ -527,6 +527,9 @@ void           ap_draw_image(SDL_Texture *tex, int x, int y, int w, int h);
 SDL_Texture   *ap_load_image(const char *path);
 void           ap_draw_scrollbar(int x, int y, int h, int visible, int total, int offset);
 void           ap_draw_progress_bar(int x, int y, int w, int h, float progress, ap_color fg, ap_color bg);
+SDL_Rect       ap_get_content_rect(bool has_title, bool has_footer, bool has_status_bar);
+void           ap_draw_screen_title(const char *title, ap_status_bar_opts *status_bar);
+int            ap_measure_wrapped_text_height(TTF_Font *font, const char *text, int max_w);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public API — Text Scrolling
@@ -2183,11 +2186,122 @@ void ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int ma
     }
 }
 
+static int ap__wrapped_line_count(TTF_Font *font, const char *text, int max_w) {
+    if (!font || !text || !text[0] || max_w <= 0) return 0;
+
+    char buf[4096];
+    strncpy(buf, text, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    int lines = 0;
+    char *line_start = buf;
+
+    while (*line_start) {
+        if (*line_start == '\n') {
+            lines++;
+            line_start++;
+            continue;
+        }
+
+        char *best_break = NULL;
+        char *p = line_start;
+
+        while (*p) {
+            char *word_end = p;
+            while (*word_end && *word_end != ' ' && *word_end != '\n') word_end++;
+
+            char saved = *word_end;
+            *word_end = '\0';
+
+            int tw = 0;
+            TTF_SizeUTF8(font, line_start, &tw, NULL);
+
+            *word_end = saved;
+
+            if (tw > max_w && best_break) break;
+
+            best_break = word_end;
+
+            if (*word_end == '\n') {
+                best_break = word_end;
+                break;
+            }
+
+            if (*word_end == '\0') break;
+            p = word_end + 1;
+        }
+
+        if (!best_break || best_break == line_start) {
+            best_break = line_start + strlen(line_start);
+        }
+
+        lines++;
+
+        if (*best_break == ' ' || *best_break == '\n')
+            line_start = best_break + 1;
+        else
+            line_start = best_break;
+    }
+
+    return lines;
+}
+
 int ap_measure_text(TTF_Font *font, const char *text) {
     if (!font || !text || !text[0]) return 0;
     int w = 0;
     TTF_SizeUTF8(font, text, &w, NULL);
     return w;
+}
+
+int ap_measure_wrapped_text_height(TTF_Font *font, const char *text, int max_w) {
+    if (!font || !text || !text[0] || max_w <= 0) return 0;
+    return ap__wrapped_line_count(font, text, max_w) * TTF_FontLineSkip(font);
+}
+
+SDL_Rect ap_get_content_rect(bool has_title, bool has_footer, bool has_status_bar) {
+    SDL_Rect rect = { 0, 0, ap_get_screen_width(), ap_get_screen_height() };
+
+    int top = 0;
+    if (has_title || has_status_bar) {
+        top = ap__max(AP_DS(40), ap_get_status_bar_height());
+    }
+
+    int bottom = has_footer ? ap_get_footer_height() : 0;
+    rect.y = top;
+    rect.h = ap_get_screen_height() - top - bottom;
+    if (rect.h < 0) rect.h = 0;
+
+    return rect;
+}
+
+void ap_draw_screen_title(const char *title, ap_status_bar_opts *status_bar) {
+    if (!title || !title[0]) return;
+
+    int margin = AP_DS(ap__g.device_padding + 5);
+    int max_w = ap_get_screen_width() - margin * 2;
+    if (status_bar) {
+        int status_bar_w = ap_get_status_bar_width(status_bar);
+        if (status_bar_w > 0) max_w -= status_bar_w + AP_S(10);
+    }
+    if (max_w < 1) max_w = 1;
+
+    static const ap_font_tier title_tiers[] = {
+        AP_FONT_EXTRA_LARGE,
+        AP_FONT_LARGE,
+        AP_FONT_MEDIUM,
+    };
+
+    TTF_Font *font = NULL;
+    for (size_t i = 0; i < sizeof(title_tiers) / sizeof(title_tiers[0]); i++) {
+        TTF_Font *candidate = ap_get_font(title_tiers[i]);
+        if (!candidate) continue;
+        font = candidate;
+        if (ap_measure_text(candidate, title) <= max_w) break;
+    }
+
+    if (!font) return;
+
+    ap_draw_text_clipped(font, title, margin, 0, ap_get_theme()->text, max_w);
 }
 
 void ap_draw_image(SDL_Texture *tex, int x, int y, int w, int h) {

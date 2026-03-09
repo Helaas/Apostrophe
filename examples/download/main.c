@@ -51,11 +51,12 @@ static void demo_downloads(void) {
     };
     int count = sizeof(downloads) / sizeof(downloads[0]);
 
+    const char *headers[] = { "X-Demo-Header: Apostrophe/1.0", "Accept: */*" };
     ap_download_opts opts = {
         .max_concurrent  = 2,
         .skip_ssl_verify = false,
-        .headers         = NULL,
-        .header_count    = 0,
+        .headers         = headers,
+        .header_count    = 2,
     };
 
     ap_download_result result;

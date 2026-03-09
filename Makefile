@@ -85,6 +85,7 @@ mac-%:
 		$(CURL_LDFLAGS) \
 		-lm -lpthread
 	@cp -f $(RES_DIR)/font.ttf $(BUILD_DIR)/mac/$*/font.ttf
+	@cp -f $(RES_DIR)/*.png $(BUILD_DIR)/mac/$*/ 2>/dev/null || true
 	@echo "→ $(BUILD_DIR)/mac/$*/$*"
 
 run-mac-%: mac-%
@@ -110,6 +111,7 @@ linux-%:
 		$(CURL_LDFLAGS) \
 		-lm -lpthread
 	@cp -f $(RES_DIR)/font.ttf $(BUILD_DIR)/linux/$*/font.ttf
+	@cp -f $(RES_DIR)/*.png $(BUILD_DIR)/linux/$*/ 2>/dev/null || true
 	@echo "→ $(BUILD_DIR)/linux/$*/$*"
 
 run-linux-%: linux-%
@@ -135,6 +137,7 @@ windows-%:
 		$(CURL_LDFLAGS) \
 		-lm
 	@cp -f $(RES_DIR)/font.ttf $(BUILD_DIR)/windows/$*/font.ttf
+	@cp -f $(RES_DIR)/*.png $(BUILD_DIR)/windows/$*/ 2>/dev/null || true
 	@echo "→ $(BUILD_DIR)/windows/$*/$*.exe"
 
 run-windows-%: windows-%

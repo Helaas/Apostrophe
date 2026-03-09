@@ -17,7 +17,6 @@
  * Shared render state (set up once after ap_init)
  * ────────────────────────────────────────────────────────────────────────── */
 
-static TTF_Font *g_title_font;
 static TTF_Font *g_body_font;
 static TTF_Font *g_hint_font;
 static ap_color  g_fg;
@@ -25,7 +24,6 @@ static ap_color  g_accent;
 static int       g_sw, g_sh, g_pad;
 
 static void init_render_state(void) {
-    g_title_font = ap_get_font(AP_FONT_EXTRA_LARGE);
     g_body_font  = ap_get_font(AP_FONT_LARGE);
     g_hint_font  = ap_get_font(AP_FONT_SMALL);
     g_fg         = ap_get_theme()->text;
@@ -93,9 +91,9 @@ static void run_polling_demo(void) {
         }
 
         ap_clear_screen();
-        int y = g_pad;
-        ap_draw_text(g_title_font, "Polling (classic)", g_pad, y, g_fg);
-        y += AP_DS(30);
+        ap_draw_screen_title("Polling (classic)", NULL);
+        SDL_Rect content_rect = ap_get_content_rect(true, true, false);
+        int y = content_rect.y;
 
         ap_draw_text(g_hint_font, "Chords — press simultaneously:", g_pad, y, g_fg);
         y += AP_DS(16);
@@ -182,9 +180,9 @@ static void run_callback_demo(void) {
         while (ap_poll_combo(&combo)) { /* events still enqueued alongside callbacks */ }
 
         ap_clear_screen();
-        int y = g_pad;
-        ap_draw_text(g_title_font, "Callbacks (_ex)", g_pad, y, g_fg);
-        y += AP_DS(30);
+        ap_draw_screen_title("Callbacks (_ex)", NULL);
+        SDL_Rect content_rect = ap_get_content_rect(true, true, false);
+        int y = content_rect.y;
 
         ap_draw_text(g_hint_font, "Chords — press simultaneously:", g_pad, y, g_fg);
         y += AP_DS(16);
@@ -262,9 +260,9 @@ int main(int argc, char *argv[]) {
         }
 
         ap_clear_screen();
-        int y = g_pad;
-        ap_draw_text(g_title_font, "Combo Demo", g_pad, y, g_fg);
-        y += AP_DS(30);
+        ap_draw_screen_title("Combo Demo", NULL);
+        SDL_Rect content_rect = ap_get_content_rect(true, true, false);
+        int y = content_rect.y;
         ap_draw_text(g_hint_font, "Choose a demo mode:", g_pad, y, g_fg);
         y += AP_DS(24);
 

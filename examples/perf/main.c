@@ -20,7 +20,6 @@
  * Shared render state
  * ────────────────────────────────────────────────────────────────────────── */
 
-static TTF_Font *g_title_font;
 static TTF_Font *g_body_font;
 static TTF_Font *g_hint_font;
 static ap_color  g_fg;
@@ -28,7 +27,6 @@ static ap_color  g_accent;
 static int       g_sw, g_sh, g_pad;
 
 static void init_render_state(void) {
-    g_title_font = ap_get_font(AP_FONT_EXTRA_LARGE);
     g_body_font  = ap_get_font(AP_FONT_LARGE);
     g_hint_font  = ap_get_font(AP_FONT_SMALL);
     g_fg         = ap_get_theme()->text;
@@ -65,6 +63,7 @@ static const struct { const char *label; ap_cpu_speed preset; } g_cpu_presets[] 
 };
 #define CPU_PRESET_COUNT 4
 
+#if defined(PLATFORM_TG5050)
 static const char *fan_mode_label(ap_fan_mode mode) {
     switch (mode) {
         case AP_FAN_MODE_MANUAL:           return "Manual";
@@ -74,6 +73,7 @@ static const char *fan_mode_label(ap_fan_mode mode) {
         default:                           return "N/A";
     }
 }
+#endif
 
 static void run_cpu_screen(void) {
     int sel     = 2; /* default cursor on Normal */
@@ -102,9 +102,9 @@ static void run_cpu_screen(void) {
         }
 
         ap_clear_screen();
-        int y = g_pad;
-        ap_draw_text(g_title_font, "CPU Speed", g_pad, y, g_fg);
-        y += AP_DS(30);
+        ap_draw_screen_title("CPU Speed", NULL);
+        SDL_Rect content_rect = ap_get_content_rect(true, true, false);
+        int y = content_rect.y;
 
         ap_draw_text(g_hint_font, "Select a preset and press A to apply:", g_pad, y, g_fg);
         y += AP_DS(20);
@@ -135,6 +135,7 @@ static void run_cpu_screen(void) {
  * Sub-screen: Fan mode / speed picker (TG5050 only)
  * ────────────────────────────────────────────────────────────────────────── */
 
+#if defined(PLATFORM_TG5050)
 static const struct {
     const char *label;
     bool        auto_mode;
@@ -157,6 +158,7 @@ static const struct {
     { "100%",               false, AP_FAN_MODE_MANUAL,          100  },
 };
 #define FAN_LEVEL_COUNT ((int)(sizeof(g_fan_levels) / sizeof(g_fan_levels[0])))
+#endif
 
 static void run_fan_screen(void) {
     ap_footer_item footer[] = {
@@ -194,9 +196,9 @@ static void run_fan_screen(void) {
         }
 
         ap_clear_screen();
-        int y = g_pad;
-        ap_draw_text(g_title_font, "Fan Speed", g_pad, y, g_fg);
-        y += AP_DS(30);
+        ap_draw_screen_title("Fan Speed", NULL);
+        SDL_Rect content_rect = ap_get_content_rect(true, true, false);
+        int y = content_rect.y;
         ap_draw_text(g_hint_font, "Fan control is only available on TG5050.", g_pad, y, g_fg);
         y += AP_DS(18);
         ap_draw_text(g_hint_font, "This device has no fan hardware.", g_pad, y, g_fg);
@@ -265,9 +267,9 @@ int main(int argc, char *argv[]) {
         ap_fan_mode fan_mode = ap_get_fan_mode();
 
         ap_clear_screen();
-        int y = g_pad;
-        ap_draw_text(g_title_font, "Performance", g_pad, y, g_fg);
-        y += AP_DS(30);
+        ap_draw_screen_title("Performance", NULL);
+        SDL_Rect content_rect = ap_get_content_rect(true, true, false);
+        int y = content_rect.y;
 
         /* ── Live sensor readout ── */
         char b1[32], b2[32], b3[32];

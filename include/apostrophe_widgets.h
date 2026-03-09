@@ -326,102 +326,6 @@ int ap_download_manager(ap_download *downloads, int count,
 /* ─── Internal widget helpers ────────────────────────────────────────────── */
 
 
-/* Draw title bar text at top of screen — ExtraLarge font matching Gabagool */
-static void ap__draw_title(const char *title) {
-    if (!title || !title[0]) return;
-    TTF_Font *font = ap_get_font(AP_FONT_EXTRA_LARGE);
-    if (!font) return;
-
-    int margin = AP_DS(ap__g.device_padding + 5); /* inset from screen edge */
-    int title_y = 0;
-    ap_draw_text(font, title, margin, title_y, ap_get_theme()->text);
-}
-
-/* Draw title with width reduced by status bar to prevent overlap */
-static void ap__draw_title_clipped(const char *title, int status_bar_w) {
-    if (!title || !title[0]) return;
-    TTF_Font *font = ap_get_font(AP_FONT_EXTRA_LARGE);
-    if (!font) return;
-
-    int margin = AP_DS(ap__g.device_padding + 5);
-    int title_y = 0;
-    int max_w = ap_get_screen_width() - margin * 2 - status_bar_w;
-    ap_draw_text_clipped(font, title, margin, title_y, ap_get_theme()->text, max_w);
-}
-
-/* Calculate the usable content area (below title, above footer) */
-static void ap__content_area(int *y, int *h, bool has_title, bool has_footer) {
-    int top = 0;
-    if (has_title) top = AP_DS(40);  /* title zone: EXTRA_LARGE font height + gap */
-    int bottom = 0;
-    if (has_footer) bottom = ap_get_footer_height();
-    *y = top;
-    *h = ap_get_screen_height() - top - bottom;
-}
-
-/* Count wrapped lines using the same word-break behavior as ap_draw_text_wrapped() */
-static int ap__wrapped_line_count(TTF_Font *font, const char *text, int max_w) {
-    if (!font || !text || !text[0] || max_w <= 0) return 0;
-
-    char buf[4096];
-    strncpy(buf, text, sizeof(buf) - 1);
-    buf[sizeof(buf) - 1] = '\0';
-
-    int lines = 0;
-    char *line_start = buf;
-
-    while (*line_start) {
-        /* Preserve explicit blank lines ("\n\n") to match ap_draw_text_wrapped(). */
-        if (*line_start == '\n') {
-            lines++;
-            line_start++;
-            continue;
-        }
-
-        char *best_break = NULL;
-        char *p = line_start;
-
-        while (*p) {
-            char *word_end = p;
-            while (*word_end && *word_end != ' ' && *word_end != '\n') word_end++;
-
-            char saved = *word_end;
-            *word_end = '\0';
-
-            int tw = 0;
-            TTF_SizeUTF8(font, line_start, &tw, NULL);
-
-            *word_end = saved;
-
-            if (tw > max_w && best_break) break;
-
-            best_break = word_end;
-
-            if (*word_end == '\n') {
-                best_break = word_end;
-                break;
-            }
-
-            if (*word_end == '\0') break;
-            p = word_end + 1;
-        }
-
-        if (!best_break || best_break == line_start) {
-            best_break = line_start + strlen(line_start);
-        }
-
-        lines++;
-
-        if (*best_break == ' ' || *best_break == '\n')
-            line_start = best_break + 1;
-        else
-            line_start = best_break;
-    }
-
-    return lines;
-}
-
-
 /* ═══════════════════════════════════════════════════════════════════════════
  * LIST WIDGET Implementation
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -484,8 +388,10 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     int image_pad  = opts->show_images ? AP_DS(6) : 0;
 
     /* Content area */
-    int content_y, content_h;
-    ap__content_area(&content_y, &content_h, opts->title != NULL, opts->footer_count > 0);
+    SDL_Rect content_rect = ap_get_content_rect(opts->title != NULL, opts->footer_count > 0,
+                                                opts->status_bar != NULL);
+    int content_y = content_rect.y;
+    int content_h = content_rect.h;
 
     /* Calculate visible items */
     int max_visible = content_h / (pill_h + item_gap);
@@ -680,13 +586,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         ap_draw_background();
 
         /* Title (clipped if status bar present) */
-        if (opts->title) {
-            int sb_w = opts->status_bar ? ap_get_status_bar_width(opts->status_bar) : 0;
-            if (sb_w > 0)
-                ap__draw_title_clipped(opts->title, sb_w + AP_S(10));
-            else
-                ap__draw_title(opts->title);
-        }
+        if (opts->title) ap_draw_screen_title(opts->title, opts->status_bar);
 
         /* Status bar */
         if (opts->status_bar) ap_draw_status_bar(opts->status_bar);
@@ -871,8 +771,10 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
     int item_gap = AP_DS(2);
     int arrow_w  = AP_DS(12);
 
-    int content_y, content_h;
-    ap__content_area(&content_y, &content_h, opts->title != NULL, opts->footer_count > 0);
+    SDL_Rect content_rect = ap_get_content_rect(opts->title != NULL, opts->footer_count > 0,
+                                                opts->status_bar != NULL);
+    int content_y = content_rect.y;
+    int content_h = content_rect.h;
     int max_visible = content_h / (pill_h + item_gap);
     if (max_visible < 1) max_visible = 1;
 
@@ -1006,7 +908,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
 
         /* Render */
         ap_draw_background();
-        if (opts->title) ap__draw_title(opts->title);
+        if (opts->title) ap_draw_screen_title(opts->title, opts->status_bar);
         if (opts->status_bar) ap_draw_status_bar(opts->status_bar);
 
         int available_w = screen_w - margin * 2;
@@ -2261,21 +2163,23 @@ int ap_process_message(ap_process_opts *opts, ap_process_fn fn, void *userdata) 
         }
 
         /* Dynamic message */
+        int dyn_line_h = dyn_font ? TTF_FontHeight(dyn_font) : AP_S(16);
+        int dyn_lines = opts->dynamic_message ? (opts->message_lines > 0 ? opts->message_lines : 1) : 0;
+        int dyn_y = center_y - AP_S(20);
+
         if (opts->dynamic_message && *opts->dynamic_message) {
-            int dyn_y = center_y - AP_S(20);
-            int lines = opts->message_lines > 0 ? opts->message_lines : 1;
-            /* Show last N lines of dynamic message */
             ap_draw_text_wrapped(dyn_font, *opts->dynamic_message,
                 AP_S(40), dyn_y,
                 screen_w - AP_S(80),
                 theme->hint, AP_ALIGN_CENTER);
-            (void)lines; /* TODO: implement multi-line truncation */
         }
 
-        /* Progress bar */
+        /* Progress bar — position below dynamic message area when present */
         if (opts->show_progress && opts->progress) {
             float prog = *opts->progress;
-            int bar_y = center_y + AP_S(30);
+            int bar_y = (dyn_lines > 0)
+                ? dyn_y + dyn_lines * dyn_line_h + AP_S(12)
+                : center_y + AP_S(30);
 
             ap_color bar_bg = theme->accent;
             bar_bg.a = 80;
@@ -2391,8 +2295,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                 break;
             case AP_SECTION_DESCRIPTION:
                 if (sec->description) {
-                    int line_count = ap__wrapped_line_count(body_font, sec->description, content_w);
-                    total_content_h += line_count * body_line_h;
+                    total_content_h += ap_measure_wrapped_text_height(body_font, sec->description, content_w);
                 }
                 break;
             case AP_SECTION_IMAGE:
@@ -2407,8 +2310,10 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
         total_content_h += section_gap;
     }
 
-    int content_y, content_h;
-    ap__content_area(&content_y, &content_h, opts->title != NULL, opts->footer_count > 0);
+    SDL_Rect content_rect = ap_get_content_rect(opts->title != NULL, opts->footer_count > 0,
+                                                opts->status_bar != NULL);
+    int content_y = content_rect.y;
+    int content_h = content_rect.h;
 
     int scroll_offset = 0;
     int max_scroll = total_content_h - content_h;
@@ -2444,7 +2349,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
 
         /* Render */
         ap_draw_background();
-        if (opts->title) ap__draw_title(opts->title);
+        if (opts->title) ap_draw_screen_title(opts->title, opts->status_bar);
         if (opts->status_bar) ap_draw_status_bar(opts->status_bar);
 
         /* Clip to content area */
@@ -2499,7 +2404,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                             margin, draw_y,
                             content_w,
                             theme->text, AP_ALIGN_LEFT);
-                        draw_y += ap__wrapped_line_count(body_font, sec->description, content_w) * body_line_h;
+                        draw_y += ap_measure_wrapped_text_height(body_font, sec->description, content_w);
                     }
                     break;
 
@@ -3182,7 +3087,7 @@ int ap_download_manager(ap_download *downloads, int count,
             } else {
                 snprintf(title_buf, sizeof(title_buf), "Downloading... %d/%d", done_count, count);
             }
-            ap__draw_title(title_buf);
+            ap_draw_screen_title(title_buf, NULL);
         }
 
         /* Download items */
