@@ -54,6 +54,8 @@ EXAMPLES := hello demo download combo perf
 
 native: $(NATIVE_PLATFORM)
 run-native: run-$(NATIVE_PLATFORM)
+run-native-%:
+	$(MAKE) run-$(NATIVE_PLATFORM)-$*
 
 all: tg5040 tg5050 my355
 
@@ -296,6 +298,7 @@ help:
 	@echo "  Development (native):"
 	@echo "  make native         Build for current host OS (detected: $(NATIVE_PLATFORM))"
 	@echo "  make run-native     Build + run hello on current host OS"
+	@echo "  make run-native-<x> Build + run example <x> on current host OS"
 	@echo "  make mac            Build examples for macOS"
 	@echo "  make linux          Build examples for Linux"
 	@echo "  make windows        Build examples for Windows (MSYS2/MinGW)"
