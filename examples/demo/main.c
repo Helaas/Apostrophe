@@ -17,7 +17,29 @@ static void demo_process_advanced(void);
 static void demo_drawing_primitives(void);
 static void demo_screen_fade(void);
 static void demo_help_overlay_screen(void);
+static void demo_core_api_lab(void);
 static void demo_input_theme(void);
+
+static void demo_show_message(const char *message) {
+    ap_footer_item ok_foot[] = {
+        { .button = AP_BTN_A, .label = "OK", .is_confirm = true },
+    };
+    ap_message_opts opts = {
+        .message      = message,
+        .footer       = ok_foot,
+        .footer_count = 1,
+    };
+    ap_confirm_result result;
+    ap_confirmation(&opts, &result);
+}
+
+static const char *demo_option_display(ap_options_item *item, const char *fallback) {
+    if (!item || !item->options || item->option_count <= 0) return fallback;
+    if (item->selected_option < 0 || item->selected_option >= item->option_count) return fallback;
+    if (item->options[item->selected_option].label) return item->options[item->selected_option].label;
+    if (item->options[item->selected_option].value) return item->options[item->selected_option].value;
+    return fallback;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Demo: List (basic)
@@ -156,6 +178,14 @@ static void demo_reorder(void) {
  *  Demo: Options list (settings-style)
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void demo_options_list(void) {
+    ap_color orig_accent = ap_get_theme()->accent;
+    char orig_hex[8];
+    char accent_hex[8];
+
+    snprintf(orig_hex, sizeof(orig_hex), "#%02X%02X%02X",
+             orig_accent.r, orig_accent.g, orig_accent.b);
+    snprintf(accent_hex, sizeof(accent_hex), "%s", orig_hex);
+
     /* Volume option: standard cycle */
     ap_option vol_opts[] = {
         { .label = "Off",   .value = "0"   },
@@ -170,6 +200,14 @@ static void demo_options_list(void) {
         { .label = "Dark",   .value = "dark"  },
         { .label = "Light",  .value = "light" },
         { .label = "Retro",  .value = "retro" },
+    };
+
+    ap_option name_opt[] = {
+        { .label = "Player 1", .value = "Player 1" },
+    };
+
+    ap_option accent_opt[] = {
+        { .label = accent_hex, .value = accent_hex },
     };
 
     ap_options_item settings[] = {
@@ -190,8 +228,8 @@ static void demo_options_list(void) {
         {
             .label           = "Name",
             .type            = AP_OPT_KEYBOARD,
-            .options         = NULL,
-            .option_count    = 0,
+            .options         = name_opt,
+            .option_count    = 1,
             .selected_option = 0,
         },
         {
@@ -204,8 +242,8 @@ static void demo_options_list(void) {
         {
             .label           = "Accent Color",
             .type            = AP_OPT_COLOR_PICKER,
-            .options         = NULL,
-            .option_count    = 0,
+            .options         = accent_opt,
+            .option_count    = 1,
             .selected_option = 0,
         },
     };
@@ -213,6 +251,9 @@ static void demo_options_list(void) {
 
     ap_footer_item footer[] = {
         { .button = AP_BTN_B,     .label = "BACK" },
+        { .button = AP_BTN_A,     .label = "EDIT" },
+        { .button = AP_BTN_X,     .label = "SUMMARY" },
+        { .button = AP_BTN_Y,     .label = "RESET" },
         { .button = AP_BTN_START, .label = "SAVE", .is_confirm = true },
     };
 
@@ -221,7 +262,9 @@ static void demo_options_list(void) {
         .items        = settings,
         .item_count   = count,
         .footer       = footer,
-        .footer_count = 2,
+        .footer_count = 5,
+        .action_button = AP_BTN_X,
+        .secondary_action_button = AP_BTN_Y,
         .confirm_button = AP_BTN_START,
     };
 
@@ -241,8 +284,49 @@ static void demo_options_list(void) {
             demo_detail();
             continue;
         }
+
+        if (rc == AP_OK && result.action == AP_ACTION_TRIGGERED) {
+            char msg[512];
+            snprintf(msg, sizeof(msg),
+                     "Volume: %s\nTheme: %s\nName: %s\nAccent: %s",
+                     demo_option_display(&settings[0], "Mid"),
+                     demo_option_display(&settings[1], "Dark"),
+                     demo_option_display(&settings[2], "Player 1"),
+                     demo_option_display(&settings[4], orig_hex));
+            demo_show_message(msg);
+            continue;
+        }
+
+        if (rc == AP_OK && result.action == AP_ACTION_SECONDARY_TRIGGERED) {
+            switch (result.focused_index) {
+                case 0:
+                    settings[0].selected_option = 2;
+                    demo_show_message("Reset Volume to Mid.");
+                    break;
+                case 1:
+                    settings[1].selected_option = 0;
+                    demo_show_message("Reset Theme to Dark.");
+                    break;
+                case 2:
+                    name_opt[0].label = "Player 1";
+                    name_opt[0].value = "Player 1";
+                    demo_show_message("Reset Name to Player 1.");
+                    break;
+                case 4:
+                    accent_opt[0].label = orig_hex;
+                    accent_opt[0].value = orig_hex;
+                    demo_show_message("Reset Accent Color to the current theme color.");
+                    break;
+                default:
+                    demo_show_message("Nothing to reset on this row.");
+                    break;
+            }
+            continue;
+        }
         break;
     }
+
+    ap_set_theme_color(orig_hex);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -285,11 +369,15 @@ static void demo_keyboard(void) {
         if (idx == 3) {
             /* Custom URL keyboard with shortcut keys */
             const char *shortcuts[] = { ".io", ".dev", ".app", "https://", "http://" };
+            const char *url_help =
+                "Custom URL keyboard.\n\n"
+                "Shortcuts: .io, .dev, .app, https://, http://\n"
+                "Use MENU to reopen this help overlay.";
             ap_url_keyboard_config url_cfg = {
                 .shortcut_keys  = shortcuts,
                 .shortcut_count = 5,
             };
-            rc = ap_url_keyboard(modes[idx].initial, modes[idx].prompt, &url_cfg, &result);
+            rc = ap_url_keyboard(modes[idx].initial, url_help, &url_cfg, &result);
         } else {
             rc = ap_keyboard(modes[idx].initial, modes[idx].prompt, modes[idx].layout, &result);
         }
@@ -542,6 +630,7 @@ static void demo_image_list(void) {
 
     ap_footer_item footer[] = {
         { .button = AP_BTN_B,      .label = "BACK" },
+        { .button = AP_BTN_START,  .label = "ACTION" },
         { .button = AP_BTN_Y,      .label = "INFO" },
         { .button = AP_BTN_SELECT, .label = "EXTRA" },
         { .button = AP_BTN_A,      .label = "OPEN", .is_confirm = true },
@@ -549,7 +638,8 @@ static void demo_image_list(void) {
 
     ap_list_opts opts = ap_list_default_opts("Image Gallery", items, count);
     opts.footer                  = footer;
-    opts.footer_count            = 4;
+    opts.footer_count            = 5;
+    opts.action_button           = AP_BTN_START;
     opts.show_images             = true;
     opts.secondary_action_button = AP_BTN_Y;
     opts.tertiary_action_button  = AP_BTN_SELECT;
@@ -559,7 +649,8 @@ static void demo_image_list(void) {
 
     if (rc == AP_OK && result.selected_index >= 0) {
         const char *action_name = "Selected";
-        if (result.action == AP_ACTION_SECONDARY_TRIGGERED) action_name = "Info (Y)";
+        if (result.action == AP_ACTION_TRIGGERED) action_name = "Action (START)";
+        else if (result.action == AP_ACTION_SECONDARY_TRIGGERED) action_name = "Info (Y)";
         else if (result.action == AP_ACTION_TERTIARY_TRIGGERED) action_name = "Extra (SELECT)";
 
         char msg[256];
@@ -735,6 +826,7 @@ static void demo_drawing_primitives(void) {
         { .button = AP_BTN_B,     .label = "BACK" },
         { .button = AP_BTN_LEFT,  .label = "PREV" },
         { .button = AP_BTN_RIGHT, .label = "NEXT" },
+        { .button = AP_BTN_X,     .label = "RESET" },
     };
 
     while (running) {
@@ -760,6 +852,11 @@ static void demo_drawing_primitives(void) {
                 case AP_BTN_RIGHT:
                     page = (page + 1) % page_count;
                     page_scroll[page] = 0;
+                    break;
+                case AP_BTN_X:
+                    if (page == 1) {
+                        ap_text_scroll_reset(&scroll);
+                    }
                     break;
                 case AP_BTN_B:
                     running = false;
@@ -951,7 +1048,7 @@ static void demo_drawing_primitives(void) {
                               content_rect.h, page_content_h[page], page_scroll[page]);
         }
 
-        ap_draw_footer(footer, 3);
+        ap_draw_footer(footer, 4);
         ap_present();
         SDL_Delay(16);
     }
@@ -1070,6 +1167,287 @@ static void demo_help_overlay_screen(void) {
         ap_draw_footer(footer, 2);
         ap_present();
         SDL_Delay(16);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: Core API Lab
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void demo_core_api_lab(void) {
+    TTF_Font *title_font = ap_get_font(AP_FONT_LARGE);
+    TTF_Font *body_font  = ap_get_font(AP_FONT_SMALL);
+    TTF_Font *tiny_font  = ap_get_font(AP_FONT_TINY);
+    ap_theme *theme = ap_get_theme();
+    ap_color fg   = theme->text;
+    ap_color hint = theme->hint;
+    ap_status_bar_opts status_bar = {
+        .show_clock = AP_CLOCK_SHOW,
+        .use_24h    = true,
+        .show_battery = true,
+        .show_wifi    = true,
+    };
+    static const char *page_names[] = {
+        "Metrics",
+        "Log & Error",
+        "Window & Device",
+    };
+
+    ap_text_scroll scroll = {0};
+    ap_text_scroll_init(&scroll);
+
+    char default_log_path[1024] = {0};
+    const char *resolved_log = ap_resolve_log_path("demo");
+    bool have_default_log = false;
+    if (resolved_log) {
+        strncpy(default_log_path, resolved_log, sizeof(default_log_path) - 1);
+        have_default_log = true;
+    }
+
+    bool using_alt_log = false;
+    bool power_handler_enabled = AP_PLATFORM_IS_DEVICE;
+    int  page = 0;
+    int  last_init_rc = AP_OK;
+    int  last_theme_rc = AP_OK;
+    char last_error[256] = "No duplicate-init check has been run yet.";
+    char device_status[256] = "No action triggered yet.";
+    bool running = true;
+    uint32_t last_tick = SDL_GetTicks();
+
+    while (running) {
+        uint32_t now = SDL_GetTicks();
+        uint32_t dt = now - last_tick;
+        last_tick = now;
+
+        ap_input_event ev;
+        while (ap_poll_input(&ev)) {
+            if (!ev.pressed) continue;
+            switch (ev.button) {
+                case AP_BTN_LEFT:
+                    page = (page - 1 + 3) % 3;
+                    break;
+                case AP_BTN_RIGHT:
+                    page = (page + 1) % 3;
+                    break;
+                case AP_BTN_B:
+                    running = false;
+                    break;
+                case AP_BTN_X:
+                    if (page == 0) {
+                        ap_text_scroll_reset(&scroll);
+                    } else if (page == 1) {
+                        last_init_rc = ap_init(NULL);
+                        snprintf(last_error, sizeof(last_error),
+                                 "Duplicate init rc=%d, error=%.220s",
+                                 last_init_rc, ap_get_error());
+                    } else if (AP_PLATFORM_IS_DEVICE) {
+                        last_theme_rc = ap_theme_load_nextui();
+                        snprintf(device_status, sizeof(device_status),
+                                 "Theme reload rc=%d", last_theme_rc);
+                    } else {
+                        snprintf(device_status, sizeof(device_status),
+                                 "Theme reload is device-only.");
+                    }
+                    break;
+                case AP_BTN_A:
+                    if (page == 1) {
+                        if (!using_alt_log) {
+                            ap_set_log_path("demo-alt.log");
+                            ap_log("core lab: switched to demo-alt.log");
+                            using_alt_log = true;
+                        } else {
+                            ap_set_log_path(have_default_log ? default_log_path : NULL);
+                            ap_log("core lab: restored default log target");
+                            using_alt_log = false;
+                        }
+                    } else if (page == 2 && AP_PLATFORM_IS_DEVICE) {
+                        power_handler_enabled = !power_handler_enabled;
+                        ap_set_power_handler(power_handler_enabled);
+                        snprintf(device_status, sizeof(device_status),
+                                 "Power handler %s",
+                                 power_handler_enabled ? "enabled" : "disabled");
+                    }
+                    break;
+                case AP_BTN_START:
+                    if (page == 2 && !AP_PLATFORM_IS_DEVICE) {
+                        if (ap_get_window()) {
+                            ap_hide_window();
+                            SDL_Delay(200);
+                            ap_show_window();
+                            snprintf(device_status, sizeof(device_status),
+                                     "Window blinked via ap_hide_window()/ap_show_window().");
+                        } else {
+                            snprintf(device_status, sizeof(device_status),
+                                     "No SDL window is available.");
+                        }
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        ap_draw_background();
+        ap_draw_status_bar(&status_bar);
+
+        int pad = AP_DS(12);
+        int title_max_w = ap_get_screen_width() - pad * 2 - ap_get_status_bar_width(&status_bar) - AP_S(8);
+        if (title_max_w < AP_DS(120)) title_max_w = ap_get_screen_width() - pad * 2;
+        char title[96];
+        snprintf(title, sizeof(title), "Core API Lab: %s", page_names[page]);
+        ap_draw_text_clipped(title_font, title, pad, AP_DS(10), fg, title_max_w);
+
+        SDL_Rect content_rect = ap_get_content_rect(true, true, true);
+        int x = pad;
+        int y = content_rect.y;
+        int w = ap_get_screen_width() - pad * 2;
+        if (w < 1) w = 1;
+
+        if (page == 0) {
+            char line[256];
+            snprintf(line, sizeof(line), "Scale factor: %.3f", ap_get_scale_factor());
+            ap_draw_text(body_font, line, x, y, fg);
+            y += AP_DS(20);
+
+            snprintf(line, sizeof(line), "ap_scale(20)=%d, ap_font_size_for_resolution(16)=%d",
+                     ap_scale(20), ap_font_size_for_resolution(16));
+            ap_draw_text_clipped(body_font, line, x, y, fg, w);
+            y += AP_DS(20);
+
+            SDL_Rect usable = ap_get_content_rect(true, true, true);
+            snprintf(line, sizeof(line), "Content rect: x=%d y=%d w=%d h=%d",
+                     usable.x, usable.y, usable.w, usable.h);
+            ap_draw_text_clipped(body_font, line, x, y, fg, w);
+            y += AP_DS(20);
+
+            snprintf(line, sizeof(line), "Footer=%d  Status=%d x %d",
+                     ap_get_footer_height(),
+                     ap_get_status_bar_width(&status_bar),
+                     ap_get_status_bar_height());
+            ap_draw_text_clipped(body_font, line, x, y, fg, w);
+            y += AP_DS(24);
+
+            ap_draw_text(tiny_font, "ap_text_scroll_reset(): press X to reset the marquee.", x, y, hint);
+            y += AP_DS(18);
+
+            const char *scroll_text =
+                "Long text preview for ap_text_scroll_reset, scaling, and direct background rendering.";
+            int scroll_w = w - AP_DS(20);
+            if (scroll_w < AP_DS(80)) scroll_w = AP_DS(80);
+            int text_w = ap_measure_text(body_font, scroll_text);
+            ap_text_scroll_update(&scroll, text_w, scroll_w, dt);
+
+            SDL_Rect scroll_clip = { x, y, scroll_w, AP_DS(20) };
+            SDL_RenderSetClipRect(ap_get_renderer(), &scroll_clip);
+            ap_draw_text(body_font, scroll_text, x - scroll.offset, y, fg);
+            SDL_RenderSetClipRect(ap_get_renderer(), NULL);
+            ap_draw_rect(x + scroll_w, y, 1, AP_DS(20), theme->accent);
+            y += AP_DS(32);
+
+            ap_draw_text(body_font,
+                         ap_is_cancelled(AP_CANCELLED) ? "ap_is_cancelled(AP_CANCELLED) => true"
+                                                       : "ap_is_cancelled(AP_CANCELLED) => false",
+                         x, y, fg);
+
+            ap_footer_item footer[] = {
+                { .button = AP_BTN_B,     .label = "BACK" },
+                { .button = AP_BTN_LEFT,  .label = "PREV" },
+                { .button = AP_BTN_RIGHT, .label = "NEXT" },
+                { .button = AP_BTN_X,     .label = "RESET" },
+            };
+            ap_draw_footer(footer, 4);
+        } else if (page == 1) {
+            char line[256];
+            snprintf(line, sizeof(line), "Current log target: %.234s",
+                     using_alt_log ? "demo-alt.log" :
+                     (have_default_log ? default_log_path : "stderr only"));
+            ap_draw_text_clipped(body_font, line, x, y, fg, w);
+            y += AP_DS(20);
+
+            ap_draw_text_clipped(body_font, "Press A to toggle ap_set_log_path().", x, y, fg, w);
+            y += AP_DS(20);
+
+            snprintf(line, sizeof(line), "Last duplicate init rc: %d", last_init_rc);
+            ap_draw_text(body_font, line, x, y, fg);
+            y += AP_DS(20);
+
+            ap_draw_text_clipped(body_font, last_error, x, y, fg, w);
+            y += ap_measure_wrapped_text_height(body_font, last_error, w) + AP_DS(10);
+
+            snprintf(line, sizeof(line), "ap_is_cancelled(last_rc): %s",
+                     ap_is_cancelled(last_init_rc) ? "true" : "false");
+            ap_draw_text(body_font, line, x, y, fg);
+            y += AP_DS(20);
+
+            ap_draw_text_clipped(tiny_font,
+                                 "Press X to call ap_init(NULL) again and read ap_get_error().",
+                                 x, y, hint, w);
+
+            ap_footer_item footer[] = {
+                { .button = AP_BTN_B,     .label = "BACK" },
+                { .button = AP_BTN_LEFT,  .label = "PREV" },
+                { .button = AP_BTN_RIGHT, .label = "NEXT" },
+                { .button = AP_BTN_A,     .label = "LOG" },
+                { .button = AP_BTN_X,     .label = "ERROR" },
+            };
+            ap_draw_footer(footer, 5);
+        } else {
+            char line[256];
+            snprintf(line, sizeof(line), "Window pointer: %p", (void *)ap_get_window());
+            ap_draw_text_clipped(body_font, line, x, y, fg, w);
+            y += AP_DS(20);
+
+            if (AP_PLATFORM_IS_DEVICE) {
+                snprintf(line, sizeof(line), "Power handler: %s",
+                         power_handler_enabled ? "enabled" : "disabled");
+                ap_draw_text(body_font, line, x, y, fg);
+                y += AP_DS(20);
+
+                snprintf(line, sizeof(line), "Theme reload rc: %d", last_theme_rc);
+                ap_draw_text(body_font, line, x, y, fg);
+                y += AP_DS(20);
+
+                ap_draw_text_clipped(body_font, device_status, x, y, fg, w);
+                y += ap_measure_wrapped_text_height(body_font, device_status, w) + AP_DS(10);
+
+                ap_draw_text_clipped(tiny_font,
+                                     "A toggles ap_set_power_handler(). X reloads ap_theme_load_nextui().",
+                                     x, y, hint, w);
+
+                ap_footer_item footer[] = {
+                    { .button = AP_BTN_B,     .label = "BACK" },
+                    { .button = AP_BTN_LEFT,  .label = "PREV" },
+                    { .button = AP_BTN_RIGHT, .label = "NEXT" },
+                    { .button = AP_BTN_A,     .label = "POWER" },
+                    { .button = AP_BTN_X,     .label = "THEME" },
+                };
+                ap_draw_footer(footer, 5);
+            } else {
+                ap_draw_text_clipped(body_font,
+                                     "Press START to blink the desktop window via ap_hide_window()/ap_show_window().",
+                                     x, y, fg, w);
+                y += ap_measure_wrapped_text_height(body_font,
+                                                    "Press START to blink the desktop window via ap_hide_window()/ap_show_window().",
+                                                    w) + AP_DS(10);
+
+                ap_draw_text_clipped(body_font, device_status, x, y, fg, w);
+
+                ap_footer_item footer[] = {
+                    { .button = AP_BTN_B,     .label = "BACK" },
+                    { .button = AP_BTN_LEFT,  .label = "PREV" },
+                    { .button = AP_BTN_RIGHT, .label = "NEXT" },
+                    { .button = AP_BTN_START, .label = "BLINK" },
+                };
+                ap_draw_footer(footer, 4);
+            }
+        }
+
+        ap_present();
+        SDL_Delay(16);
+    }
+
+    ap_set_log_path(have_default_log ? default_log_path : NULL);
+    if (AP_PLATFORM_IS_DEVICE && !power_handler_enabled) {
+        ap_set_power_handler(true);
     }
 }
 
@@ -1497,6 +1875,7 @@ static const struct {
     { "Advanced Process",    demo_process_advanced    },
     { "Detail Screen",       demo_detail              },
     { "Color Picker",        demo_color_picker        },
+    { "Core API Lab",        demo_core_api_lab        },
     { "Drawing Primitives",  demo_drawing_primitives  },
     { "Screen Fade",         demo_screen_fade         },
     { "Help Overlay",        demo_help_overlay_screen },

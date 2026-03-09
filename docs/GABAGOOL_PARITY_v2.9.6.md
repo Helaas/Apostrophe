@@ -5,7 +5,7 @@ This document tracks Apostrophe parity against Gabagool `v2.9.6`.
 ## Sources
 
 - `go doc` output for `github.com/BrandonKowalski/gabagool/v2/pkg/gabagool` and `.../constants`
-- Usage scan of `/Users/kevinvranken/GitHub/nextui-scrapegoat-pak`
+- Usage scan of a NextUI pak project built with Gabagool
 - Apostrophe public headers in `include/apostrophe.h` and `include/apostrophe_widgets.h`
 
 ## Status Legend

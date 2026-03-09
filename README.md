@@ -25,7 +25,7 @@ Thanks to Brandon T. Kowalski (https://github.com/BrandonKowalski) for creating 
 ### 1. Clone
 
 ```bash
-git clone https://github.com/LoveRetro/Apostrophe.git
+git clone https://github.com/Helaas/apostrophe.git
 cd Apostrophe
 ```
 
@@ -158,6 +158,7 @@ The **combo system** adds support for chords (simultaneous button presses like L
 
 - [Getting Started](docs/GETTING_STARTED.md) — Step-by-step setup guide
 - [API Reference](docs/API.md) — Complete function/struct reference
+- [Demo Coverage](docs/DEMO_COVERAGE.md) — Demo-to-API coverage matrix
 - [Widget Catalog](docs/WIDGETS.md) — Visual guide to every widget
 - [Porting from Gabagool](docs/PORTING_FROM_GABAGOOL.md) — Migration guide from Go to C
 - [Gabagool Parity v2.9.6](docs/GABAGOOL_PARITY_v2.9.6.md) — Feature parity matrix and backlog

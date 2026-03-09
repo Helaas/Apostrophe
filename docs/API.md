@@ -15,6 +15,7 @@ Complete reference for all public functions, types, and macros in `apostrophe.h`
   - [Fonts](#fonts)
   - [Input](#input)
   - [Drawing Primitives](#drawing-primitives)
+  - [Screen Fade](#screen-fade)
   - [Footer & Status Bar](#footer--status-bar)
   - [Text Scrolling](#text-scrolling)
   - [Texture Cache](#texture-cache)
@@ -138,6 +139,7 @@ typedef struct {
     const char *primary_color_hex; // Override accent "#RRGGBB"
     bool        disable_background; // Set true to skip bg.png
     bool        is_nextui;         // Load theme from nextval.elf
+    ap_cpu_speed cpu_speed;        // Set CPU at init; 0 = AP_CPU_SPEED_DEFAULT (no-op)
 } ap_config;
 ```
 
@@ -310,6 +312,10 @@ Render multi-line word-wrapped text.
 
 Measure text width without rendering.
 
+#### `int ap_measure_wrapped_text_height(TTF_Font *font, const char *text, int max_w)`
+
+Measure the total height in pixels that word-wrapped text would occupy at the given `max_w` constraint, without rendering. Useful for pre-calculating layout sizes.
+
 #### `void ap_draw_rect(int x, int y, int w, int h, ap_color color)`
 
 Draw a filled rectangle.
@@ -341,6 +347,41 @@ Draw a vertical scrollbar track and thumb. The thumb size and position are compu
 #### `void ap_draw_progress_bar(int x, int y, int w, int h, float progress, ap_color fg, ap_color bg)`
 
 Draw a rounded progress bar. `progress` is clamped to 0.0–1.0.
+
+#### `SDL_Rect ap_get_content_rect(bool has_title, bool has_footer, bool has_status_bar)`
+
+Calculate the usable content area of the screen, accounting for title bar, footer, and status bar. Returns an `SDL_Rect` with `x`, `y`, `w`, `h` in pixels. Use this to position widget content within the available space.
+
+#### `void ap_draw_screen_title(const char *title, ap_status_bar_opts *status_bar)`
+
+Draw a title at the top-left of the screen. If `status_bar` is non-NULL, the status bar is also drawn at the top-right and the title is clipped to avoid overlapping it.
+
+### Screen Fade
+
+Fade-in/fade-out overlay for scene transitions.
+
+#### `ap_fade`
+
+```c
+typedef struct {
+    uint32_t start_ms;     // SDL_GetTicks() value when fade began
+    int      duration_ms;  // Total duration of the fade
+    bool     fade_in;      // true = black->transparent, false = transparent->black
+    bool     active;       // false = not animating
+} ap_fade;
+```
+
+#### `void ap_fade_begin_in(ap_fade *f, int duration_ms)`
+
+Start a fade-in: the screen transitions from fully black to transparent over `duration_ms` milliseconds.
+
+#### `void ap_fade_begin_out(ap_fade *f, int duration_ms)`
+
+Start a fade-out: the screen transitions from transparent to fully black over `duration_ms` milliseconds.
+
+#### `bool ap_fade_draw(ap_fade *f)`
+
+Draw the fade overlay. Call after drawing your scene and before `ap_present()`. Returns `true` while the fade is still animating, `false` when complete.
 
 ### Footer & Status Bar
 
@@ -555,6 +596,14 @@ Get the underlying SDL renderer.
 
 Get the underlying SDL window.
 
+#### `void ap_show_window(void)`
+
+Show the SDL window. Primarily useful on desktop builds where the window may be hidden at startup.
+
+#### `void ap_hide_window(void)`
+
+Hide the SDL window. No-op if the window has not been created.
+
 ### Power
 
 #### `void ap_set_power_handler(bool enabled)`
@@ -669,7 +718,7 @@ Read the current fan speed as a 0–100 percentage. Returns `0` on non-TG5050 pl
 
 | Platform | CPU sysfs | Fan |
 |----------|-----------|-----|
-| MY355 (Miyoo Mini Plus) | `cpufreq/policy0/scaling_setspeed` | None |
+| MY355 (Miyoo Flip) | `cpufreq/policy0/scaling_setspeed` | None |
 | TG5040 (Trimui Brick) | `cpu0/cpufreq/scaling_setspeed` | None |
 | TG5050 (Trimui Smart Pro S) | `cpu4/cpufreq/scaling_setspeed` (big core) | `cooling_device0/cur_state` (0–31), plus `fancontrol` helper auto curves |
 | Desktop | No-op | No-op |

@@ -52,6 +52,36 @@ static void draw_status(const char *status, SDL_Rect content_rect, int top_y) {
     ap_draw_text_wrapped(g_body_font, status, x, y, w, g_accent, AP_ALIGN_CENTER);
 }
 
+static bool register_polling_combos(void) {
+    bool ok = true;
+
+    ap_button shoulders[] = { AP_BTN_L1, AP_BTN_R1 };
+    if (ap_register_chord("shoulders", shoulders, 2, 150) != AP_OK) {
+        ap_log("Failed to register shoulders chord");
+        ok = false;
+    }
+
+    ap_button triggers[] = { AP_BTN_L2, AP_BTN_R2 };
+    if (ap_register_chord("triggers", triggers, 2, 150) != AP_OK) {
+        ap_log("Failed to register triggers chord");
+        ok = false;
+    }
+
+    ap_button uudd[] = { AP_BTN_UP, AP_BTN_UP, AP_BTN_DOWN, AP_BTN_DOWN };
+    if (ap_register_sequence("uudd", uudd, 4, 500, false) != AP_OK) {
+        ap_log("Failed to register uudd sequence");
+        ok = false;
+    }
+
+    ap_button aba[] = { AP_BTN_A, AP_BTN_B, AP_BTN_A };
+    if (ap_register_sequence("aba_strict", aba, 3, 400, true) != AP_OK) {
+        ap_log("Failed to register aba_strict sequence");
+        ok = false;
+    }
+
+    return ok;
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
  * Demo A: Polling (classic)
  *
@@ -60,35 +90,36 @@ static void draw_status(const char *status, SDL_Rect content_rect, int top_y) {
  * ────────────────────────────────────────────────────────────────────────── */
 
 static void run_polling_demo(void) {
-    /* Chord: L1 + R1 together within 150ms */
-    ap_button shoulders[] = { AP_BTN_L1, AP_BTN_R1 };
-    ap_register_chord("shoulders", shoulders, 2, 150);
-
-    /* Chord: L2 + R2 together within 150ms */
-    ap_button triggers[] = { AP_BTN_L2, AP_BTN_R2 };
-    ap_register_chord("triggers", triggers, 2, 150);
-
-    /* Sequence: Up Up Down Down — each press within 500ms of the previous */
-    ap_button uudd[] = { AP_BTN_UP, AP_BTN_UP, AP_BTN_DOWN, AP_BTN_DOWN };
-    ap_register_sequence("uudd", uudd, 4, 500, false);
-
-    /* Sequence: A B A — strict mode (no extra presses allowed) */
-    ap_button aba[] = { AP_BTN_A, AP_BTN_B, AP_BTN_A };
-    ap_register_sequence("aba_strict", aba, 3, 400, true);
+    bool triggers_registered = register_polling_combos();
 
     char status[256] = "Waiting for combos...";
     bool running = true;
 
     ap_footer_item footer[] = {
         { .button = AP_BTN_MENU, .label = "BACK" },
+        { .button = AP_BTN_X,    .label = "UNREG" },
+        { .button = AP_BTN_Y,    .label = "REREG" },
     };
 
     while (running) {
         /* Normal input — MENU to go back */
         ap_input_event ev;
         while (ap_poll_input(&ev)) {
-            if (ev.button == AP_BTN_MENU && ev.pressed)
+            if (!ev.pressed) continue;
+            if (ev.button == AP_BTN_MENU) {
                 running = false;
+            } else if (ev.button == AP_BTN_X && triggers_registered) {
+                ap_unregister_combo("triggers");
+                triggers_registered = false;
+                snprintf(status, sizeof(status), "Unregistered chord: triggers");
+                ap_log("poll combo: unregistered triggers");
+            } else if (ev.button == AP_BTN_Y && !triggers_registered) {
+                ap_clear_combos();
+                triggers_registered = register_polling_combos();
+                snprintf(status, sizeof(status), "%s",
+                         triggers_registered ? "Re-registered all combos." : "Re-register failed.");
+                ap_log("poll combo: re-register %s", triggers_registered ? "ok" : "failed");
+            }
         }
 
         /* Poll combo events — ap_combo_event.type distinguishes chord vs sequence */
@@ -121,12 +152,14 @@ static void run_polling_demo(void) {
         ap_draw_text(g_hint_font, "  A B A (strict)       \"aba_strict\"", g_pad, y, g_fg);
         y += AP_DS(20);
 
-        const char *poll_help = "Events are read by calling ap_poll_combo() each frame.";
+        const char *poll_help =
+            "Events are read by calling ap_poll_combo() each frame. "
+            "Press X to unregister the triggers chord, then Y to re-register all combos.";
         ap_draw_text_wrapped(g_hint_font, poll_help, g_pad, y, g_sw - g_pad * 2, g_fg, AP_ALIGN_LEFT);
         y += ap_measure_wrapped_text_height(g_hint_font, poll_help, g_sw - g_pad * 2);
 
         draw_status(status, content_rect, y);
-        ap_draw_footer(footer, 1);
+        ap_draw_footer(footer, 3);
         ap_present();
         SDL_Delay(16);
     }
@@ -161,19 +194,25 @@ static void on_combo_release(const char *id, ap_combo_type type, void *userdata)
 static void run_callback_demo(void) {
     /* Chords: provide both on_trigger and on_release callbacks */
     ap_button shoulders[] = { AP_BTN_L1, AP_BTN_R1 };
-    ap_register_chord_ex("shoulders_cb", shoulders, 2, 150,
-                         on_combo_trigger, on_combo_release, NULL);
+    if (ap_register_chord_ex("shoulders_cb", shoulders, 2, 150,
+                             on_combo_trigger, on_combo_release, NULL) != AP_OK)
+        ap_log("Failed to register shoulders_cb chord");
 
     ap_button triggers[] = { AP_BTN_L2, AP_BTN_R2 };
-    ap_register_chord_ex("triggers_cb", triggers, 2, 150,
-                         on_combo_trigger, on_combo_release, NULL);
+    if (ap_register_chord_ex("triggers_cb", triggers, 2, 150,
+                             on_combo_trigger, on_combo_release, NULL) != AP_OK)
+        ap_log("Failed to register triggers_cb chord");
 
     /* Sequences: only on_trigger (no release event for sequences) */
     ap_button uudd[] = { AP_BTN_UP, AP_BTN_UP, AP_BTN_DOWN, AP_BTN_DOWN };
-    ap_register_sequence_ex("uudd_cb", uudd, 4, 500, false, on_combo_trigger, NULL);
+    if (ap_register_sequence_ex("uudd_cb", uudd, 4, 500, false,
+                                on_combo_trigger, NULL) != AP_OK)
+        ap_log("Failed to register uudd_cb sequence");
 
     ap_button aba[] = { AP_BTN_A, AP_BTN_B, AP_BTN_A };
-    ap_register_sequence_ex("aba_cb", aba, 3, 400, true, on_combo_trigger, NULL);
+    if (ap_register_sequence_ex("aba_cb", aba, 3, 400, true,
+                                on_combo_trigger, NULL) != AP_OK)
+        ap_log("Failed to register aba_cb sequence");
 
     snprintf(g_cb_status, sizeof(g_cb_status), "Waiting for combos...");
     bool running = true;

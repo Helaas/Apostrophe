@@ -2,7 +2,7 @@
  * Apostrophe Download Manager & Status Bar Demo
  *
  * Demonstrates:
- *   - Status bar with clock and custom icons
+ *   - Status bar with clock, battery, and wifi indicators
  *   - Download manager with progress UI (requires libcurl)
  *   - Conditional compilation with AP_ENABLE_CURL
  */
@@ -30,22 +30,22 @@ static void demo_downloads(void) {
     ap_download downloads[] = {
         {
             .url       = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-            .dest_path = "/tmp/apostrophe_demo_dummy.pdf",
+            .dest_path = "apostrophe_demo_dummy.pdf",
             .label     = "dummy.pdf",
         },
         {
             .url       = "https://filesamples.com/samples/document/txt/sample1.txt",
-            .dest_path = "/tmp/apostrophe_demo_sample1.txt",
+            .dest_path = "apostrophe_demo_sample1.txt",
             .label     = "sample1.txt",
         },
         {
             .url       = "https://filesamples.com/samples/document/txt/sample2.txt",
-            .dest_path = "/tmp/apostrophe_demo_sample2.txt",
+            .dest_path = "apostrophe_demo_sample2.txt",
             .label     = "sample2.txt",
         },
         {
             .url       = "https://filesamples.com/samples/document/txt/sample3.txt",
-            .dest_path = "/tmp/apostrophe_demo_sample3.txt",
+            .dest_path = "apostrophe_demo_sample3.txt",
             .label     = "sample3.txt",
         },
     };
@@ -128,7 +128,7 @@ static void demo_status_bar_detail(void) {
     ap_detail_info_pair info[] = {
         { .key = "Widget",   .value = "Status Bar"      },
         { .key = "Clock",    .value = "24-hour format"   },
-        { .key = "Icons",    .value = "2 custom icons"   },
+        { .key = "Indicators", .value = "Battery + WiFi" },
     };
 
     ap_detail_section sections[] = {
@@ -143,7 +143,8 @@ static void demo_status_bar_detail(void) {
             .title       = "About",
             .description = "The status bar is rendered in the top-right corner "
                            "as a pill with accent background. It supports a clock "
-                           "(12h or 24h) and custom Unicode icon strings. Any screen "
+                           "(12h or 24h), plus battery and wifi indicators from the "
+                           "active platform theme assets. Any screen "
                            "that accepts a status_bar pointer will render it automatically.",
         },
     };

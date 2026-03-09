@@ -861,9 +861,19 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                     } else if (item->type == AP_OPT_COLOR_PICKER) {
                         ap_color initial_color = {255, 255, 255, 255};
                         ap_color picked;
+                        int sel = ap__options_valid_index(item);
+                        if (sel >= 0 && item->options[sel].value &&
+                            item->options[sel].value[0] == '#') {
+                            initial_color = ap_hex_to_color(item->options[sel].value);
+                        }
                         if (ap_color_picker(initial_color, &picked) == AP_OK) {
-                            /* Store color as hex string */
-                            /* Caller handles this via result */
+                            char hex[8];
+                            snprintf(hex, sizeof(hex), "#%02X%02X%02X",
+                                     picked.r, picked.g, picked.b);
+                            if (sel >= 0) {
+                                item->options[sel].value = strdup(hex);
+                                item->options[sel].label = strdup(hex);
+                            }
                         }
                     } else if (item->type == AP_OPT_STANDARD) {
                         /* Cycle forward on A for standard options */
@@ -1728,7 +1738,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
                     if (text_cursor < (int)strlen(result->text)) text_cursor++;
                     break;
                 case AP_BTN_MENU:
-                    ap_show_help_overlay(ap__kb_help_url);
+                    ap_show_help_overlay(help_text ? help_text : ap__kb_help_url);
                     break;
                 default: break;
             }

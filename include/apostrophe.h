@@ -12,7 +12,7 @@
  *               my355 (Miyoo Mini Flip), macOS, Linux, Windows (dev/testing)
  *
  * License: MIT
- * https://github.com/LoveRetro/Apostrophe
+ * https://github.com/Helaas/apostrophe
  */
 
 #ifndef APOSTROPHE_H
@@ -519,8 +519,8 @@ void           ap_draw_rounded_rect(int x, int y, int w, int h, int r, ap_color 
 void           ap_draw_pill(int x, int y, int w, int h, ap_color c);
 void           ap_draw_rect(int x, int y, int w, int h, ap_color c);
 void           ap_draw_circle(int cx, int cy, int r, ap_color c);
-int            ap_draw_text(TTF_Font *font, const char *text, int x, int y, ap_color color);
-int            ap_draw_text_clipped(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w);
+int            ap_draw_text(TTF_Font *font, const char *text, int x, int y, ap_color color);          /* returns rendered width in pixels */
+int            ap_draw_text_clipped(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w); /* returns rendered width */
 void           ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align);
 int            ap_measure_text(TTF_Font *font, const char *text);
 void           ap_draw_image(SDL_Texture *tex, int x, int y, int w, int h);
