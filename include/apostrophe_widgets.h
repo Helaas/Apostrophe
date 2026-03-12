@@ -31,6 +31,7 @@ typedef struct {
     const char  *label;
     const char  *metadata;    /* Arbitrary string stored with item (e.g. path) */
     SDL_Texture *image;       /* Optional preview image, NULL = none */
+    SDL_Texture *background_image; /* Optional fullscreen preview for the focused item */
     bool         selected;    /* For multi-select: is this item checked? */
 } ap_list_item;
 
@@ -584,6 +585,11 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
 
         /* Render */
         ap_draw_background();
+        if (opts->show_images && cursor >= 0 && cursor < opts->item_count &&
+            opts->items[cursor].background_image) {
+            ap_draw_image(opts->items[cursor].background_image, 0, 0,
+                          ap_get_screen_width(), ap_get_screen_height());
+        }
 
         /* Title (clipped if status bar present) */
         if (opts->title) ap_draw_screen_title(opts->title, opts->status_bar);
