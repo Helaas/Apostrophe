@@ -1069,13 +1069,6 @@ int ap_theme_load_nextui(void) {
 int ap_reload_background(const char *bg_path) {
     const char *resolved = bg_path;
 
-    if (ap__g.bg_texture) {
-        SDL_DestroyTexture(ap__g.bg_texture);
-        ap__g.bg_texture = NULL;
-    }
-
-    ap__g.theme.bg_image_path[0] = '\0';
-
     if (!resolved || !resolved[0]) {
     #if AP_PLATFORM_IS_DEVICE
         resolved = "/mnt/SDCARD/bg.png";
@@ -1088,11 +1081,16 @@ int ap_reload_background(const char *bg_path) {
         return AP_OK;
     }
 
-    ap__g.bg_texture = ap_load_image(resolved);
-    if (!ap__g.bg_texture) {
+    SDL_Texture *new_tex = ap_load_image(resolved);
+    if (!new_tex) {
         ap_log("Warning: could not reload background: %s", resolved);
         return AP_ERROR;
     }
+
+    if (ap__g.bg_texture) {
+        SDL_DestroyTexture(ap__g.bg_texture);
+    }
+    ap__g.bg_texture = new_tex;
 
     strncpy(ap__g.theme.bg_image_path, resolved, sizeof(ap__g.theme.bg_image_path) - 1);
     ap__g.theme.bg_image_path[sizeof(ap__g.theme.bg_image_path) - 1] = '\0';

@@ -31,8 +31,8 @@ typedef struct {
     const char  *label;
     const char  *metadata;    /* Arbitrary string stored with item (e.g. path) */
     SDL_Texture *image;       /* Optional preview image, NULL = none */
-    SDL_Texture *background_image; /* Optional fullscreen preview for the focused item */
     bool         selected;    /* For multi-select: is this item checked? */
+    SDL_Texture *background_image; /* Optional fullscreen preview for the focused item */
 } ap_list_item;
 
 /* Options controlling list behavior */

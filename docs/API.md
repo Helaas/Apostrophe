@@ -810,8 +810,8 @@ typedef struct {
     const char  *label;
     const char  *metadata;
     SDL_Texture *image;            // Optional thumbnail (shown when show_images = true)
-    SDL_Texture *background_image; // Optional fullscreen preview for the focused item
     bool         selected;         // For multi-select
+    SDL_Texture *background_image; // Optional fullscreen preview for the focused item
 } ap_list_item;
 ```
 

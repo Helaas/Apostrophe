@@ -1863,6 +1863,11 @@ static void demo_color_picker(void) {
 static void demo_background_preview(void) {
     SDL_Texture *icon = ap_load_image("demo_icon.png");
 
+    /* Save the current background path so we can restore it later */
+    char prev_bg[512];
+    strncpy(prev_bg, ap_get_theme()->bg_image_path, sizeof(prev_bg) - 1);
+    prev_bg[sizeof(prev_bg) - 1] = '\0';
+
     ap_list_item items[] = {
         { .label = "Default",  .metadata = "bg" },
         { .label = "Preview",  .metadata = "bg", .background_image = icon },
@@ -1887,10 +1892,10 @@ static void demo_background_preview(void) {
         /* Swap the global background to the selected image */
         ap_reload_background("demo_icon.png");
         demo_show_message("Background changed to demo_icon.png.\n"
-                          "Press OK to restore the default.");
+                          "Press OK to restore the previous background.");
 
-        /* Restore the original background */
-        ap_reload_background(NULL);
+        /* Restore the previous background */
+        ap_reload_background(prev_bg[0] ? prev_bg : NULL);
     }
 
     if (icon) SDL_DestroyTexture(icon);
