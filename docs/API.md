@@ -262,6 +262,10 @@ Parse a `#RRGGBB` hex string and return the corresponding `ap_color` (with alpha
 
 Parse a `#RRGGBB` string and apply it as the theme accent color: `ap_set_theme_color("#FF6600");`
 
+#### `int ap_reload_background(const char *bg_path)`
+
+Reload the background image at runtime. Destroys the current background texture and loads a new one from `bg_path`. If `bg_path` is NULL or empty, falls back to `/mnt/SDCARD/bg.png` on device or the `AP_BACKGROUND_PATH` environment variable on desktop. Returns `AP_OK` on success (or if no fallback path is available), `AP_ERROR` if the image cannot be loaded.
+
 ### Fonts
 
 #### `TTF_Font *ap_get_font(ap_font_tier tier)`
@@ -805,8 +809,9 @@ Footer hints are visual only. Behavior is driven by the action button fields in 
 typedef struct {
     const char  *label;
     const char  *metadata;
-    SDL_Texture *image;
-    bool         selected;  // For multi-select
+    SDL_Texture *image;            // Optional thumbnail (shown when show_images = true)
+    SDL_Texture *background_image; // Optional fullscreen preview for the focused item
+    bool         selected;         // For multi-select
 } ap_list_item;
 ```
 

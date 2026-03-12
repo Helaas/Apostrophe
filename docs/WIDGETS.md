@@ -34,6 +34,7 @@ A scrollable list of items with cursor navigation.
 - Multi-select: Toggle with A, show checkboxes
 - Reorder: Toggle reorder mode with a button, then D-Pad to move items
 - Images: Optional thumbnail column on the left
+- Background preview: Per-item fullscreen background image shown when the item is focused
 - Text scroll: Long labels auto-scroll horizontally
 - Help overlay: L1 shows scrollable help text
 - Explicit action bindings for Start/Y/Menu via `ap_list_opts` action fields

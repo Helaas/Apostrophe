@@ -585,7 +585,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
 
         /* Render */
         ap_draw_background();
-        if (opts->show_images && cursor >= 0 && cursor < opts->item_count &&
+        if (cursor >= 0 && cursor < opts->item_count &&
             opts->items[cursor].background_image) {
             ap_draw_image(opts->items[cursor].background_image, 0, 0,
                           ap_get_screen_width(), ap_get_screen_height());
