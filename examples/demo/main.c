@@ -1869,10 +1869,10 @@ static void demo_background_preview(void) {
     prev_bg[sizeof(prev_bg) - 1] = '\0';
 
     ap_list_item items[] = {
-        { .label = "Default",  .metadata = "bg" },
-        { .label = "Preview",  .metadata = "bg", .background_image = icon },
-        { .label = "Plain",    .metadata = "bg" },
-        { .label = "Preview 2", .metadata = "bg", .background_image = icon },
+        { .label = "Default",   .metadata = NULL },
+        { .label = "Preview",   .metadata = "demo_icon.png", .background_image = icon },
+        { .label = "Plain",     .metadata = NULL },
+        { .label = "Preview 2", .metadata = "demo_icon.png", .background_image = icon },
     };
     int count = sizeof(items) / sizeof(items[0]);
 
@@ -1890,9 +1890,18 @@ static void demo_background_preview(void) {
 
     if (rc == AP_OK && result.selected_index >= 0) {
         /* Swap the global background to the selected image */
-        ap_reload_background("demo_icon.png");
-        demo_show_message("Background changed to demo_icon.png.\n"
-                          "Press OK to restore the previous background.");
+        const char *path = items[result.selected_index].metadata;
+        int reload_rc = ap_reload_background(path);
+        if (reload_rc == AP_OK) {
+            char msg[640];
+            snprintf(msg, sizeof(msg),
+                     "Background changed to %s.\n"
+                     "Press OK to restore the previous background.",
+                     path ? path : "(default)");
+            demo_show_message(msg);
+        } else {
+            demo_show_message("Failed to load background image.");
+        }
 
         /* Restore the previous background */
         ap_reload_background(prev_bg[0] ? prev_bg : NULL);
