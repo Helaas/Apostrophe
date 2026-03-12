@@ -19,6 +19,7 @@ static void demo_screen_fade(void);
 static void demo_help_overlay_screen(void);
 static void demo_core_api_lab(void);
 static void demo_input_theme(void);
+static void demo_background_preview(void);
 
 static void demo_show_message(const char *message) {
     ap_footer_item ok_foot[] = {
@@ -1857,6 +1858,59 @@ static void demo_color_picker(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: Background Preview (list with per-item fullscreen background images)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void demo_background_preview(void) {
+    SDL_Texture *icon = ap_load_image("demo_icon.png");
+
+    /* Save the current background path so we can restore it later */
+    char prev_bg[512];
+    strncpy(prev_bg, ap_get_theme()->bg_image_path, sizeof(prev_bg) - 1);
+    prev_bg[sizeof(prev_bg) - 1] = '\0';
+
+    ap_list_item items[] = {
+        { .label = "Default",   .metadata = NULL },
+        { .label = "Preview",   .metadata = "demo_icon.png", .background_image = icon },
+        { .label = "Plain",     .metadata = NULL },
+        { .label = "Preview 2", .metadata = "demo_icon.png", .background_image = icon },
+    };
+    int count = sizeof(items) / sizeof(items[0]);
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "SELECT", .is_confirm = true },
+    };
+
+    ap_list_opts opts = ap_list_default_opts("Background Preview", items, count);
+    opts.footer       = footer;
+    opts.footer_count = 2;
+
+    ap_list_result result;
+    int rc = ap_list(&opts, &result);
+
+    if (rc == AP_OK && result.selected_index >= 0) {
+        /* Swap the global background to the selected image */
+        const char *path = items[result.selected_index].metadata;
+        int reload_rc = ap_reload_background(path);
+        if (reload_rc == AP_OK) {
+            char msg[640];
+            snprintf(msg, sizeof(msg),
+                     "Background changed to %s.\n"
+                     "Press OK to restore the previous background.",
+                     path ? path : "(default)");
+            demo_show_message(msg);
+        } else {
+            demo_show_message("Failed to load background image.");
+        }
+
+        /* Restore the previous background */
+        ap_reload_background(prev_bg[0] ? prev_bg : NULL);
+    }
+
+    if (icon) SDL_DestroyTexture(icon);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Main menu
  * ═══════════════════════════════════════════════════════════════════════════ */
 typedef void (*demo_fn)(void);
@@ -1883,6 +1937,7 @@ static const struct {
     { "Help Overlay",        demo_help_overlay_screen },
     { "Input & Theme",       demo_input_theme         },
     { "CPU & Fan",           demo_cpu_fan             },
+    { "Background Preview",  demo_background_preview  },
 };
 
 #define DEMO_COUNT (int)(sizeof(demos) / sizeof(demos[0]))

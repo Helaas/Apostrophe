@@ -20,6 +20,7 @@ This matrix maps Apostrophe's public API surface to the demos that exercise it.
 |------------------|---------------|
 | List: basic select, help overlay | `examples/demo/main.c` → `Basic List` |
 | List: images, primary/secondary/tertiary actions, footer overflow | `examples/demo/main.c` → `Image List` |
+| List: background preview, `ap_reload_background()` | `examples/demo/main.c` → `Background Preview` |
 | List: multi-select | `examples/demo/main.c` → `Multi-Select List` |
 | List: reorder | `examples/demo/main.c` → `Reorderable List` |
 | Options list: standard, keyboard, clickable, color picker, action buttons | `examples/demo/main.c` → `Options List` |

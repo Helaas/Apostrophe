@@ -26,13 +26,38 @@
  * List Widget
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* A single item in a list */
+/* A single item in a list.
+ *
+ * NOTE: Always use designated initializers (e.g. { .label = "Foo" }) or the
+ * AP_LIST_ITEM / AP_LIST_ITEM_BG helper macros below when creating items.
+ * New fields may be added in future releases; positional initializers
+ * (e.g. { "Foo", NULL, NULL, false, NULL }) will break at compile time when
+ * that happens.
+ */
 typedef struct {
     const char  *label;
     const char  *metadata;    /* Arbitrary string stored with item (e.g. path) */
     SDL_Texture *image;       /* Optional preview image, NULL = none */
     bool         selected;    /* For multi-select: is this item checked? */
+    SDL_Texture *background_image; /* Optional fullscreen preview for the focused item */
 } ap_list_item;
+
+/* Convenience initializers for ap_list_item.
+ * AP_LIST_ITEM        — label + metadata; all other fields zeroed/NULL.
+ * AP_LIST_ITEM_BG     — same, plus a fullscreen background_image.
+ * Using these macros (or designated initializers) is strongly preferred
+ * over positional initializers to avoid breakage when fields are added.
+ *
+ * Example:
+ *   ap_list_item items[] = {
+ *       AP_LIST_ITEM("Alpha", "/path/alpha"),
+ *       AP_LIST_ITEM_BG("Beta", "/path/beta", bg_tex),
+ *   };
+ */
+#define AP_LIST_ITEM(lbl, meta) \
+    { .label = (lbl), .metadata = (meta) }
+#define AP_LIST_ITEM_BG(lbl, meta, bg) \
+    { .label = (lbl), .metadata = (meta), .background_image = (bg) }
 
 /* Options controlling list behavior */
 typedef struct {
@@ -584,6 +609,11 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
 
         /* Render */
         ap_draw_background();
+        if (cursor >= 0 && cursor < opts->item_count &&
+            opts->items[cursor].background_image) {
+            ap_draw_image(opts->items[cursor].background_image, 0, 0,
+                          ap_get_screen_width(), ap_get_screen_height());
+        }
 
         /* Title (clipped if status bar present) */
         if (opts->title) ap_draw_screen_title(opts->title, opts->status_bar);

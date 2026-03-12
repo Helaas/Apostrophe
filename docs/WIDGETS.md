@@ -34,6 +34,7 @@ A scrollable list of items with cursor navigation.
 - Multi-select: Toggle with A, show checkboxes
 - Reorder: Toggle reorder mode with a button, then D-Pad to move items
 - Images: Optional thumbnail column on the left
+- Background preview: Per-item fullscreen background image shown when the item is focused
 - Text scroll: Long labels auto-scroll horizontally
 - Help overlay: L1 shows scrollable help text
 - Explicit action bindings for Start/Y/Menu via `ap_list_opts` action fields
@@ -41,14 +42,20 @@ A scrollable list of items with cursor navigation.
 **Usage**:
 ```c
 ap_list_item items[] = {
-    { .label = "Alpha" },
-    { .label = "Bravo" },
+    AP_LIST_ITEM("Alpha", "/path/alpha"),
+    AP_LIST_ITEM("Bravo", "/path/bravo"),
+    AP_LIST_ITEM_BG("Charlie", "/path/charlie", bg_tex), /* with background preview */
 };
-ap_list_opts opts = ap_list_default_opts("Title", items, 2);
+ap_list_opts opts = ap_list_default_opts("Title", items, 3);
 opts.confirm_button = AP_BTN_START; // Footer hints are visual-only
 ap_list_result result;
 ap_list(&opts, &result);
 ```
+
+> **Note:** Always use designated initializers (e.g. `{ .label = "Foo" }`) or the
+> `AP_LIST_ITEM` / `AP_LIST_ITEM_BG` convenience macros when creating `ap_list_item`
+> values. New fields may be added in future releases; positional initializers
+> (e.g. `{ "Foo", NULL, NULL, false, NULL }`) will break at compile time if that happens.
 
 ---
 
