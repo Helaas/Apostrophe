@@ -1884,13 +1884,13 @@ static void demo_background_preview(void) {
     int rc = ap_list(&opts, &result);
 
     if (rc == AP_OK && result.selected_index >= 0) {
-        /* Demonstrate ap_reload_background — reload default background */
-        ap_reload_background(NULL);
+        /* Swap the global background to the selected image */
+        ap_reload_background("demo_icon.png");
+        demo_show_message("Background changed to demo_icon.png.\n"
+                          "Press OK to restore the default.");
 
-        char msg[256];
-        snprintf(msg, sizeof(msg), "Selected: %s\nBackground reloaded to default.",
-                 items[result.selected_index].label);
-        demo_show_message(msg);
+        /* Restore the original background */
+        ap_reload_background(NULL);
     }
 
     if (icon) SDL_DestroyTexture(icon);
