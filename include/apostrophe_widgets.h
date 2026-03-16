@@ -2288,7 +2288,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
     TTF_Font *section_font = opts->section_title_font ? opts->section_title_font : ap_get_font(AP_FONT_SMALL);
     TTF_Font *body_font    = opts->body_font           ? opts->body_font           : ap_get_font(AP_FONT_TINY);
     TTF_Font *key_font     = opts->key_font            ? opts->key_font            : ap_get_font(AP_FONT_TINY);
-    if (!title_font || !body_font) return AP_ERROR;
+    if (!title_font || !section_font || !body_font || !key_font) return AP_ERROR;
 
     int margin = AP_S(20);
     int section_gap = AP_S(24);

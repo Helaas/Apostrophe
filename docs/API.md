@@ -1010,7 +1010,7 @@ typedef struct {
     ...
     bool        center_title;
     bool        show_section_separator;
-    ap_color   *key_color;
+    const ap_color *key_color;
     TTF_Font   *body_font;           // Override body/value text (default: AP_FONT_TINY)
     TTF_Font   *section_title_font;  // Override section headers (default: AP_FONT_SMALL)
     TTF_Font   *key_font;            // Override info-pair key text (default: AP_FONT_TINY)
