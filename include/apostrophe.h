@@ -507,6 +507,7 @@ void           ap_set_theme_color(const char *hex);
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 TTF_Font      *ap_get_font(ap_font_tier tier);
+int            ap_get_font_bump(void);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Public API — Input
