@@ -437,6 +437,12 @@ typedef struct {
     int           device_padding; /* NextUI's PADDING constant (unscaled) */
     int           font_bump;     /* additive bump applied to base font sizes (0–5) */
 
+    /* WiFi signal strength cache (device only, matches NextUI 5s poll interval) */
+    #if AP_PLATFORM_IS_DEVICE
+    int           cached_wifi_strength;     /* 0=off, 1=low, 2=med, 3=high */
+    uint32_t      wifi_cache_time_ms;       /* SDL_GetTicks() when last polled */
+    #endif
+
     /* Power button handling */
     bool          power_handler_enabled;
     #if AP_PLATFORM_IS_DEVICE
@@ -3299,6 +3305,8 @@ int ap_get_fan_speed(void) {
 }
 
 #if AP_PLATFORM_IS_DEVICE
+#define AP__WIFI_CACHE_TTL_MS 5000  /* Match NextUI's 5-second polling interval */
+
 static int ap__map_rssi_to_wifi_strength(int rssi) {
     /* Match NextUI thresholds:
        0   = disconnected
@@ -3380,20 +3388,30 @@ static int ap__read_wifi_rssi_wpa_cli(void) {
 }
 
 /* Returns wifi signal strength: 0=off, 1=low, 2=med, 3=high
-   Uses iw first; falls back to wpa_cli signal_poll on my355 where iw may be unavailable. */
+   Uses iw first; falls back to wpa_cli signal_poll on my355 where iw may be unavailable.
+   Results are cached for AP__WIFI_CACHE_TTL_MS to match NextUI's polling cadence. */
 static int ap__get_wifi_strength(void) {
+    uint32_t now = SDL_GetTicks();
+
+    /* Return cached value if within TTL window */
+    if (ap__g.wifi_cache_time_ms != 0 &&
+        (now - ap__g.wifi_cache_time_ms) < AP__WIFI_CACHE_TTL_MS) {
+        return ap__g.cached_wifi_strength;
+    }
+
     const int unavailable = -10000;
+    int result;
 
     /* Check if interface is up */
     FILE *f = fopen("/sys/class/net/wlan0/operstate", "r");
-    if (!f) return 0;
+    if (!f) { result = 0; goto cache; }
     char state[16] = {0};
     if (fgets(state, sizeof(state), f)) {
         char *nl = strchr(state, '\n');
         if (nl) *nl = '\0';
     }
     fclose(f);
-    if (strcmp(state, "up") != 0) return 0;
+    if (strcmp(state, "up") != 0) { result = 0; goto cache; }
 
     /* Read signal via iw first, then wpa_cli fallback */
     int rssi = ap__read_wifi_rssi_iw();
@@ -3402,8 +3420,12 @@ static int ap__get_wifi_strength(void) {
     }
 
     /* Keep icon visible when interface is up but RSSI source is unavailable */
-    if (rssi == unavailable) return 1;
-    return ap__map_rssi_to_wifi_strength(rssi);
+    result = (rssi == unavailable) ? 1 : ap__map_rssi_to_wifi_strength(rssi);
+
+cache:
+    ap__g.cached_wifi_strength = result;
+    ap__g.wifi_cache_time_ms = now;
+    return result;
 }
 #endif /* AP_PLATFORM_IS_DEVICE */
 
@@ -3529,10 +3551,12 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     ap_draw_pill(pill_x, pill_y, pill_w, pill_h, ap__g.theme.accent);
 
     /* Determine actual wifi visibility (same logic as ap_get_status_bar_width) */
+    int wifi_strength = 0;
     bool wifi_visible = false;
     if (opts->show_wifi) {
         #if AP_PLATFORM_IS_DEVICE
-        wifi_visible = (ap__get_wifi_strength() > 0);
+        wifi_strength = ap__get_wifi_strength();
+        wifi_visible = (wifi_strength > 0);
         #else
         wifi_visible = true;
         #endif
@@ -3614,10 +3638,9 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
 
         #if AP_PLATFORM_IS_DEVICE
         if (ap__g.status_assets) {
-            int strength = ap__get_wifi_strength();
-            if (strength > 0) {           /* hide icon entirely when disconnected */
+            if (wifi_strength > 0) {      /* hide icon entirely when disconnected */
                 int sx;
-                switch (strength) {
+                switch (wifi_strength) {
                     case 3:  sx = 1;  break;  /* high */
                     case 2:  sx = 14; break;  /* med */
                     case 1:  sx = 27; break;  /* low */
