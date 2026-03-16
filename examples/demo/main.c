@@ -12,6 +12,7 @@
 
 /* Forward declarations */
 static void demo_detail(void);
+static void demo_detail_custom_fonts(void);
 static void demo_image_list(void);
 static void demo_process_advanced(void);
 static void demo_drawing_primitives(void);
@@ -659,6 +660,54 @@ static void demo_detail_styled(void) {
         .center_title           = true,
         .show_section_separator = true,
         .key_color              = &key_col,
+    };
+
+    ap_detail_result result;
+    ap_detail_screen(&opts, &result);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: Detail Screen (Custom Fonts) — per-widget font overrides
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void demo_detail_custom_fonts(void) {
+    ap_detail_info_pair info[] = {
+        { .key = "Name",      .value = "Apostrophe" },
+        { .key = "Version",   .value = "1.0.0" },
+        { .key = "Platform",  .value = "All supported devices" },
+        { .key = "License",   .value = "MIT" },
+    };
+
+    ap_detail_section sections[] = {
+        {
+            .type       = AP_SECTION_INFO,
+            .title      = "Project",
+            .info_pairs = info,
+            .info_count = (int)(sizeof(info) / sizeof(info[0])),
+        },
+        {
+            .type        = AP_SECTION_DESCRIPTION,
+            .title       = "About Custom Fonts",
+            .description = "This demo uses SMALL for body text instead of the "
+                           "default TINY, and MEDIUM for section headers. Compare "
+                           "with the default detail screen to see the difference. "
+                           "Font overrides are opt-in — omit them or pass NULL to "
+                           "keep the widget defaults.",
+        },
+    };
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B, .label = "BACK" },
+    };
+
+    ap_detail_opts opts = {
+        .title              = "Custom Fonts",
+        .sections           = sections,
+        .section_count      = (int)(sizeof(sections) / sizeof(sections[0])),
+        .footer             = footer,
+        .footer_count       = 1,
+        .body_font          = ap_get_font(AP_FONT_SMALL),
+        .section_title_font = ap_get_font(AP_FONT_MEDIUM),
+        .key_font           = ap_get_font(AP_FONT_SMALL),
     };
 
     ap_detail_result result;
@@ -2041,6 +2090,7 @@ static const struct {
     { "Advanced Process",    demo_process_advanced    },
     { "Detail Screen",       demo_detail              },
     { "Detail Screen (Styled)", demo_detail_styled    },
+    { "Detail Screen (Fonts)", demo_detail_custom_fonts },
     { "Color Picker",        demo_color_picker        },
     { "Core API Lab",        demo_core_api_lab        },
     { "Drawing Primitives",  demo_drawing_primitives  },
