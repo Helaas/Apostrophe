@@ -370,6 +370,10 @@ Calculate the usable content area of the screen, accounting for title bar, foote
 
 Draw a title at the top-left of the screen. If `status_bar` is non-NULL, the status bar is also drawn at the top-right and the title is clipped to avoid overlapping it.
 
+#### `void ap_draw_screen_title_centered(const char *title, ap_status_bar_opts *status_bar)`
+
+Draw a title centered horizontally in the available space. Behaves like `ap_draw_screen_title` but centers the text instead of left-aligning it. Uses the same progressive font-tier fallback (extra-large → large → medium) and clips to avoid overlapping the status bar.
+
 ### Screen Fade
 
 Fade-in/fade-out overlay for scene transitions.
