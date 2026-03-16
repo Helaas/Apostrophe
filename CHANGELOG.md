@@ -4,6 +4,14 @@ All notable changes to Apostrophe will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Detail screen styling options** (`apostrophe_widgets.h`): `center_title` (centered screen title), `show_section_separator` (accent line under section headers), `key_color` (override info-pair key color). All opt-in; zero-initialized structs are unaffected.
+- **`ap_draw_screen_title_centered()`** (`apostrophe.h`): new core drawing function for centered screen titles.
+- **Demo**: `Detail Screen (Styled)` entry in the demo app exercising all three new options.
+
 ## [v0.0.1] - 2026-03-10
 
 ### Added

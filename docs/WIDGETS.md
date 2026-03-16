@@ -291,6 +291,28 @@ Scrollable multi-section information view.
 
 Image sections are loaded once per detail-screen session and reused every frame for better performance.
 
+**Optional styling** (all opt-in, zero-initialize safe):
+
+| Option | Effect |
+|--------|--------|
+| `center_title = true` | Center the screen title instead of left-aligning it |
+| `show_section_separator = true` | Draw an accent-colored line under each section header |
+| `key_color = &color` | Override the info-pair key color (default: `theme->hint`) |
+
+```c
+ap_color key_col = ap_get_theme()->text;
+ap_detail_opts opts = {
+    .title                  = "Styled Detail",
+    .sections               = sections,
+    .section_count          = 2,
+    .footer                 = footer,
+    .footer_count           = 2,
+    .center_title           = true,
+    .show_section_separator = true,
+    .key_color              = &key_col,
+};
+```
+
 ---
 
 ## Color Picker (`ap_color_picker`)

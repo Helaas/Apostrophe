@@ -550,6 +550,7 @@ void           ap_draw_scrollbar(int x, int y, int h, int visible, int total, in
 void           ap_draw_progress_bar(int x, int y, int w, int h, float progress, ap_color fg, ap_color bg);
 SDL_Rect       ap_get_content_rect(bool has_title, bool has_footer, bool has_status_bar);
 void           ap_draw_screen_title(const char *title, ap_status_bar_opts *status_bar);
+void           ap_draw_screen_title_centered(const char *title, ap_status_bar_opts *status_bar);
 int            ap_measure_wrapped_text_height(TTF_Font *font, const char *text, int max_w);
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2439,7 +2440,7 @@ SDL_Rect ap_get_content_rect(bool has_title, bool has_footer, bool has_status_ba
     return rect;
 }
 
-void ap_draw_screen_title(const char *title, ap_status_bar_opts *status_bar) {
+static void ap__draw_screen_title_impl(const char *title, ap_status_bar_opts *status_bar, bool center) {
     if (!title || !title[0]) return;
 
     int margin = AP_DS(ap__g.device_padding + 5);
@@ -2466,7 +2467,21 @@ void ap_draw_screen_title(const char *title, ap_status_bar_opts *status_bar) {
 
     if (!font) return;
 
-    ap_draw_text_clipped(font, title, margin, 0, ap_get_theme()->text, max_w);
+    int x = margin;
+    if (center) {
+        int text_w = ap_measure_text(font, title);
+        if (text_w > max_w) text_w = max_w;
+        x = margin + (max_w - text_w) / 2;
+    }
+    ap_draw_text_clipped(font, title, x, 0, ap_get_theme()->text, max_w);
+}
+
+void ap_draw_screen_title(const char *title, ap_status_bar_opts *status_bar) {
+    ap__draw_screen_title_impl(title, status_bar, false);
+}
+
+void ap_draw_screen_title_centered(const char *title, ap_status_bar_opts *status_bar) {
+    ap__draw_screen_title_impl(title, status_bar, true);
 }
 
 void ap_draw_image(SDL_Texture *tex, int x, int y, int w, int h) {
