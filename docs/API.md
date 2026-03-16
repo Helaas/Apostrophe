@@ -835,8 +835,11 @@ typedef struct {
     ap_button tertiary_action_button;
     int       initial_index;
     int       visible_start_index;
+    TTF_Font *item_font;           // Override list item text (default: AP_FONT_LARGE)
 } ap_list_opts;
 ```
+
+`item_font` overrides the font used to render list item labels. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)`. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
 
 **`ap_list_result`**:
 ```c
@@ -876,8 +879,12 @@ typedef struct {
     ap_button action_button;
     ap_button secondary_action_button;
     ap_button confirm_button;
+    TTF_Font *label_font;          // Override option label text (default: AP_FONT_LARGE)
+    TTF_Font *value_font;          // Override option value text (default: AP_FONT_TINY)
 } ap_options_list_opts;
 ```
+
+`label_font` overrides the font used for option labels; `value_font` overrides the font used for option values. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)` and `ap_get_font(AP_FONT_TINY)` respectively. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
 
 **`ap_options_list_result`**:
 ```c
@@ -996,6 +1003,21 @@ typedef enum {
     AP_DETAIL_ACTION      // User pressed the action button
 } ap_detail_action;
 ```
+
+**`ap_detail_opts`** (styling fields):
+```c
+typedef struct {
+    ...
+    bool        center_title;
+    bool        show_section_separator;
+    ap_color   *key_color;
+    TTF_Font   *body_font;           // Override body/value text (default: AP_FONT_TINY)
+    TTF_Font   *section_title_font;  // Override section headers (default: AP_FONT_SMALL)
+    TTF_Font   *key_font;            // Override info-pair key text (default: AP_FONT_TINY)
+} ap_detail_opts;
+```
+
+`body_font` overrides the font used for description text and info-pair values. `section_title_font` overrides section header text. `key_font` overrides info-pair key (left-hand) text. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_TINY)` for body and key text, and `ap_get_font(AP_FONT_SMALL)` for section titles. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
 
 **`ap_detail_result`**:
 ```c

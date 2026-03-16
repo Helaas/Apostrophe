@@ -78,6 +78,7 @@ typedef struct {
     uint32_t         input_delay;      /* Override input debounce (0 = default) */
     int              initial_index;    /* Starting cursor position */
     int              visible_start_index; /* Initial scroll top index */
+    TTF_Font        *item_font;          /* Override list item text (default: AP_FONT_LARGE) */
 } ap_list_opts;
 
 /* Result from closing a list */
@@ -133,6 +134,8 @@ typedef struct {
     ap_button          confirm_button;  /* Button that confirms/exits (e.g. START) */
     const char        *help_text;
     uint32_t           input_delay;
+    TTF_Font          *label_font;       /* Override option label text (default: AP_FONT_LARGE) */
+    TTF_Font          *value_font;       /* Override option value text (default: AP_FONT_TINY) */
 } ap_options_list_opts;
 
 typedef struct {
@@ -279,6 +282,9 @@ typedef struct {
     bool               center_title;           /* Center the screen title (default: left-aligned) */
     bool               show_section_separator;  /* Draw accent line under section headers (default: off) */
     const ap_color    *key_color;              /* Override info pair key color (default: NULL = theme->hint) */
+    TTF_Font          *body_font;              /* Override body/value text (default: AP_FONT_TINY) */
+    TTF_Font          *section_title_font;     /* Override section headers (default: AP_FONT_SMALL) */
+    TTF_Font          *key_font;               /* Override info-pair key text (default: AP_FONT_TINY) */
 } ap_detail_opts;
 
 typedef struct {
@@ -404,7 +410,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     int screen_w = ap_get_screen_width();
 
     TTF_Font *title_font = ap_get_font(AP_FONT_EXTRA_LARGE);
-    TTF_Font *item_font  = ap_get_font(AP_FONT_LARGE); /* NextUI uses font.large for menu items */
+    TTF_Font *item_font  = opts->item_font ? opts->item_font : ap_get_font(AP_FONT_LARGE);
     if (!title_font || !item_font) return AP_ERROR;
 
     /* Layout constants — match NextUI: PILL_SIZE × device_scale, no gap */
@@ -794,8 +800,8 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
     ap_theme *theme = ap_get_theme();
     int screen_w = ap_get_screen_width();
 
-    TTF_Font *label_font = ap_get_font(AP_FONT_LARGE); /* NextUI uses font.large for option labels */
-    TTF_Font *value_font = ap_get_font(AP_FONT_TINY);
+    TTF_Font *label_font = opts->label_font ? opts->label_font : ap_get_font(AP_FONT_LARGE);
+    TTF_Font *value_font = opts->value_font ? opts->value_font : ap_get_font(AP_FONT_TINY);
     if (!label_font || !value_font) return AP_ERROR;
 
     int margin   = AP_DS(ap__g.device_padding);
@@ -2279,9 +2285,9 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
     int screen_w = ap_get_screen_width();
 
     TTF_Font *title_font   = ap_get_font(AP_FONT_SMALL);
-    TTF_Font *section_font = ap_get_font(AP_FONT_SMALL);
-    TTF_Font *body_font    = ap_get_font(AP_FONT_TINY);
-    TTF_Font *key_font     = ap_get_font(AP_FONT_TINY);
+    TTF_Font *section_font = opts->section_title_font ? opts->section_title_font : ap_get_font(AP_FONT_SMALL);
+    TTF_Font *body_font    = opts->body_font           ? opts->body_font           : ap_get_font(AP_FONT_TINY);
+    TTF_Font *key_font     = opts->key_font            ? opts->key_font            : ap_get_font(AP_FONT_TINY);
     if (!title_font || !body_font) return AP_ERROR;
 
     int margin = AP_S(20);

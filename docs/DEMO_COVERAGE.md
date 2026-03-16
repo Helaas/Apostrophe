@@ -30,6 +30,7 @@ This matrix maps Apostrophe's public API surface to the demos that exercise it.
 | Process message: progress, cancel, dynamic text | `examples/demo/main.c` → `Process Message`, `Advanced Process` |
 | Detail screen | `examples/demo/main.c` → `Detail Screen` |
 | Detail screen: centered title, section separators, key color override | `examples/demo/main.c` → `Detail Screen (Styled)` |
+| Detail screen: custom font overrides | `examples/demo/main.c` → `Detail Screen (Fonts)` |
 | Color picker | `examples/demo/main.c` → `Color Picker` |
 | Help overlay | `examples/demo/main.c` → `Help Overlay` |
 | Download manager | `examples/download/main.c` |

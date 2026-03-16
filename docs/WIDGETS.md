@@ -57,6 +57,8 @@ ap_list(&opts, &result);
 > values. New fields may be added in future releases; positional initializers
 > (e.g. `{ "Foo", NULL, NULL, false, NULL }`) will break at compile time if that happens.
 
+**Font override**: Set `item_font` in `ap_list_opts` to override the list item text font (default: `AP_FONT_LARGE`). Pass `NULL` (zero-init default) to keep the widget default.
+
 ---
 
 ## Options List (`ap_options_list`)
@@ -106,6 +108,8 @@ ap_options_list_opts opts = {
 ap_options_list_result result;
 ap_options_list(&opts, &result);
 ```
+
+**Font overrides**: Set `label_font` and `value_font` in `ap_options_list_opts` to override the option label font (default: `AP_FONT_LARGE`) and option value font (default: `AP_FONT_TINY`) respectively. Pass `NULL` (zero-init default) to keep the widget defaults.
 
 ---
 
@@ -298,6 +302,9 @@ Image sections are loaded once per detail-screen session and reused every frame 
 | `center_title = true` | Center the screen title instead of left-aligning it |
 | `show_section_separator = true` | Draw an accent-colored line under each section header |
 | `key_color = &color` | Override the info-pair key color (default: `theme->hint`) |
+| `body_font = ap_get_font(tier)` | Override body/value text font (default: `AP_FONT_TINY`) |
+| `section_title_font = ap_get_font(tier)` | Override section header font (default: `AP_FONT_SMALL`) |
+| `key_font = ap_get_font(tier)` | Override info-pair key text font (default: `AP_FONT_TINY`) |
 
 ```c
 ap_color key_col = ap_get_theme()->text;
