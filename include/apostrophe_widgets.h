@@ -276,6 +276,9 @@ typedef struct {
     ap_footer_item    *footer;
     int                footer_count;
     ap_status_bar_opts *status_bar;
+    bool               center_title;           /* Center the screen title (default: left-aligned) */
+    bool               show_section_separator;  /* Draw accent line under section headers (default: off) */
+    ap_color          *key_color;              /* Override info pair key color (default: NULL = theme->hint) */
 } ap_detail_opts;
 
 typedef struct {
@@ -2408,8 +2411,16 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
 
         /* Render */
         ap_draw_background();
-        if (opts->title) ap_draw_screen_title(opts->title, opts->status_bar);
+        if (opts->title) {
+            if (opts->center_title)
+                ap_draw_screen_title_centered(opts->title, opts->status_bar);
+            else
+                ap_draw_screen_title(opts->title, opts->status_bar);
+        }
         if (opts->status_bar) ap_draw_status_bar(opts->status_bar);
+
+        /* Resolve optional key color override */
+        ap_color info_key_color = opts->key_color ? *opts->key_color : theme->hint;
 
         /* Clip to content area */
         SDL_Rect clip = {content_x, content_y, content_w, content_h};
@@ -2423,6 +2434,12 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
             /* Section title */
             if (sec->title) {
                 ap_draw_text(section_font, sec->title, margin, draw_y, theme->accent);
+                if (opts->show_section_separator) {
+                    int line_y = draw_y + TTF_FontLineSkip(section_font) + AP_S(2);
+                    SDL_SetRenderDrawColor(ap_get_renderer(),
+                        theme->accent.r, theme->accent.g, theme->accent.b, theme->accent.a);
+                    SDL_RenderDrawLine(ap_get_renderer(), margin, line_y, content_right, line_y);
+                }
                 draw_y += section_title_h;
             }
 
@@ -2446,7 +2463,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                         for (int p = 0; p < sec->info_count; p++) {
                             if (sec->info_pairs[p].key) {
                                 ap_draw_text(key_font, sec->info_pairs[p].key,
-                                    margin, draw_y, theme->hint);
+                                    margin, draw_y, info_key_color);
                             }
                             int vh = 0;
                             if (sec->info_pairs[p].value) {

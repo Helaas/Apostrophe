@@ -615,6 +615,57 @@ static void demo_detail(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: Detail Screen (Styled) — centered title, separators, custom key color
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void demo_detail_styled(void) {
+    ap_detail_info_pair info[] = {
+        { .key = "Status",   .value = "Enabled" },
+        { .key = "IP",       .value = "192.168.1.42" },
+        { .key = "Port",     .value = "22" },
+        { .key = "Connect",  .value = "ssh root@192.168.1.42 -p 22" },
+        { .key = "Password", .value = "tina" },
+    };
+
+    ap_detail_section sections[] = {
+        {
+            .type       = AP_SECTION_INFO,
+            .title      = "SSH",
+            .info_pairs = info,
+            .info_count = (int)(sizeof(info) / sizeof(info[0])),
+        },
+        {
+            .type        = AP_SECTION_DESCRIPTION,
+            .title       = "About",
+            .description = "This demo shows the styled detail screen options: "
+                           "centered title, section separator lines, and "
+                           "custom key colors. These are all opt-in — existing "
+                           "apps that zero-initialize ap_detail_opts are unaffected.",
+        },
+    };
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "ACTION", .is_confirm = true },
+    };
+
+    ap_color key_col = ap_get_theme()->text;
+
+    ap_detail_opts opts = {
+        .title                  = "Styled Detail",
+        .sections               = sections,
+        .section_count          = (int)(sizeof(sections) / sizeof(sections[0])),
+        .footer                 = footer,
+        .footer_count           = 2,
+        .center_title           = true,
+        .show_section_separator = true,
+        .key_color              = &key_col,
+    };
+
+    ap_detail_result result;
+    ap_detail_screen(&opts, &result);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Demo: Image List (list with thumbnails + extra action buttons)
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void demo_image_list(void) {
@@ -1930,6 +1981,7 @@ static const struct {
     { "Process Message",     demo_process             },
     { "Advanced Process",    demo_process_advanced    },
     { "Detail Screen",       demo_detail              },
+    { "Detail Screen (Styled)", demo_detail_styled    },
     { "Color Picker",        demo_color_picker        },
     { "Core API Lab",        demo_core_api_lab        },
     { "Drawing Primitives",  demo_drawing_primitives  },
