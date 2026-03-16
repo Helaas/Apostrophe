@@ -278,7 +278,7 @@ typedef struct {
     ap_status_bar_opts *status_bar;
     bool               center_title;           /* Center the screen title (default: left-aligned) */
     bool               show_section_separator;  /* Draw accent line under section headers (default: off) */
-    ap_color          *key_color;              /* Override info pair key color (default: NULL = theme->hint) */
+    const ap_color    *key_color;              /* Override info pair key color (default: NULL = theme->hint) */
 } ap_detail_opts;
 
 typedef struct {
