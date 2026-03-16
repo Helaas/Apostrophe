@@ -7,7 +7,7 @@ This matrix maps Apostrophe's public API surface to the demos that exercise it.
 | API Group | Demo Coverage |
 |----------|---------------|
 | Lifecycle, renderer/window accessors, logging, error helpers | `examples/demo/main.c` → `Core API Lab` |
-| Scaling, content layout, footer/status metrics | `examples/demo/main.c` → `Core API Lab` |
+| Scaling, content layout, footer/status metrics, font bump | `examples/demo/main.c` → `Core API Lab` |
 | Drawing primitives, background, status bar, texture cache, text scrolling | `examples/demo/main.c` → `Drawing Primitives`, `Core API Lab` |
 | Input delay/repeat, face-button flip, button names, theme color | `examples/demo/main.c` → `Input & Theme` |
 | Screen fade | `examples/demo/main.c` → `Screen Fade` |

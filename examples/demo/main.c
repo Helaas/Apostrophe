@@ -1242,6 +1242,7 @@ static void demo_core_api_lab(void) {
     };
     static const char *page_names[] = {
         "Metrics",
+        "Font Bump",
         "Log & Error",
         "Window & Device",
     };
@@ -1264,6 +1265,8 @@ static void demo_core_api_lab(void) {
     int  last_theme_rc = AP_OK;
     char last_error[256] = "No duplicate-init check has been run yet.";
     char device_status[256] = "No action triggered yet.";
+    int  font_bump_scroll = 0;
+    int  font_bump_content_h = 0;
     bool running = true;
     uint32_t last_tick = SDL_GetTicks();
 
@@ -1277,10 +1280,10 @@ static void demo_core_api_lab(void) {
             if (!ev.pressed) continue;
             switch (ev.button) {
                 case AP_BTN_LEFT:
-                    page = (page - 1 + 3) % 3;
+                    page = (page - 1 + 4) % 4;
                     break;
                 case AP_BTN_RIGHT:
-                    page = (page + 1) % 3;
+                    page = (page + 1) % 4;
                     break;
                 case AP_BTN_B:
                     running = false;
@@ -1288,7 +1291,7 @@ static void demo_core_api_lab(void) {
                 case AP_BTN_X:
                     if (page == 0) {
                         ap_text_scroll_reset(&scroll);
-                    } else if (page == 1) {
+                    } else if (page == 2) {
                         last_init_rc = ap_init(NULL);
                         snprintf(last_error, sizeof(last_error),
                                  "Duplicate init rc=%d, error=%.220s",
@@ -1303,7 +1306,7 @@ static void demo_core_api_lab(void) {
                     }
                     break;
                 case AP_BTN_A:
-                    if (page == 1) {
+                    if (page == 2) {
                         if (!using_alt_log) {
                             ap_set_log_path("demo-alt.log");
                             ap_log("core lab: switched to demo-alt.log");
@@ -1313,7 +1316,7 @@ static void demo_core_api_lab(void) {
                             ap_log("core lab: restored default log target");
                             using_alt_log = false;
                         }
-                    } else if (page == 2 && AP_PLATFORM_IS_DEVICE) {
+                    } else if (page == 3 && AP_PLATFORM_IS_DEVICE) {
                         power_handler_enabled = !power_handler_enabled;
                         ap_set_power_handler(power_handler_enabled);
                         snprintf(device_status, sizeof(device_status),
@@ -1322,7 +1325,7 @@ static void demo_core_api_lab(void) {
                     }
                     break;
                 case AP_BTN_START:
-                    if (page == 2 && !AP_PLATFORM_IS_DEVICE) {
+                    if (page == 3 && !AP_PLATFORM_IS_DEVICE) {
                         if (ap_get_window()) {
                             ap_hide_window();
                             SDL_Delay(200);
@@ -1334,6 +1337,12 @@ static void demo_core_api_lab(void) {
                                      "No SDL window is available.");
                         }
                     }
+                    break;
+                case AP_BTN_UP:
+                    if (page == 1) font_bump_scroll -= AP_DS(30);
+                    break;
+                case AP_BTN_DOWN:
+                    if (page == 1) font_bump_scroll += AP_DS(30);
                     break;
                 default:
                     break;
@@ -1358,8 +1367,9 @@ static void demo_core_api_lab(void) {
 
         if (page == 0) {
             char line[256];
-            snprintf(line, sizeof(line), "Scale factor: %.3f", ap_get_scale_factor());
-            ap_draw_text(body_font, line, x, y, fg);
+            snprintf(line, sizeof(line), "Scale factor: %.3f, Font bump: %d/%d",
+                     ap_get_scale_factor(), ap_get_font_bump(), AP_FONT_BUMP_MAX);
+            ap_draw_text_clipped(body_font, line, x, y, fg, w);
             y += AP_DS(20);
 
             snprintf(line, sizeof(line), "ap_scale(20)=%d, ap_font_size_for_resolution(16)=%d",
@@ -1410,6 +1420,55 @@ static void demo_core_api_lab(void) {
             };
             ap_draw_footer(footer, 4);
         } else if (page == 1) {
+            /* Font Bump page — render each tier with its label and effective size */
+            static const char *tier_names[] = {
+                "EXTRA_LARGE", "LARGE", "MEDIUM", "SMALL", "TINY", "MICRO"
+            };
+
+            /* Clamp scroll */
+            int max_scroll = font_bump_content_h - content_rect.h;
+            if (max_scroll < 0) max_scroll = 0;
+            if (font_bump_scroll < 0) font_bump_scroll = 0;
+            if (font_bump_scroll > max_scroll) font_bump_scroll = max_scroll;
+
+            SDL_Rect clip = { x, content_rect.y, w, content_rect.h };
+            SDL_RenderSetClipRect(ap_get_renderer(), &clip);
+
+            y -= font_bump_scroll;
+            int y_start = y;
+
+            char line[256];
+            int bump = ap_get_font_bump();
+            snprintf(line, sizeof(line), "Font bump: %d/%d  (base sizes + %d before x%d scale)",
+                     bump, AP_FONT_BUMP_MAX, bump, ap_font_size_for_resolution(1));
+            ap_draw_text_clipped(body_font, line, x, y, hint, w);
+            y += AP_DS(20);
+
+            for (int t = 0; t < AP_FONT_TIER_COUNT; t++) {
+                TTF_Font *f = ap_get_font((ap_font_tier)t);
+                int h;
+                TTF_SizeUTF8(f, "Ag", NULL, &h);
+                snprintf(line, sizeof(line), "%s (%dpx)", tier_names[t], h);
+                ap_draw_text_clipped(f, line, x, y, fg, w);
+                y += h + AP_DS(4);
+            }
+
+            font_bump_content_h = y - y_start;
+            SDL_RenderSetClipRect(ap_get_renderer(), NULL);
+
+            if (max_scroll > 0) {
+                ap_draw_scrollbar(x + w - AP_S(6), content_rect.y,
+                                  content_rect.h, content_rect.h,
+                                  font_bump_content_h, font_bump_scroll);
+            }
+
+            ap_footer_item footer[] = {
+                { .button = AP_BTN_B,     .label = "BACK" },
+                { .button = AP_BTN_LEFT,  .label = "PREV" },
+                { .button = AP_BTN_RIGHT, .label = "NEXT" },
+            };
+            ap_draw_footer(footer, 3);
+        } else if (page == 2) {
             char line[256];
             snprintf(line, sizeof(line), "Current log target: %.234s",
                      using_alt_log ? "demo-alt.log" :

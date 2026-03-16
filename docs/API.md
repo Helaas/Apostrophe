@@ -88,7 +88,7 @@ AP_FONT_TINY         // 10 × device_scale (multi-char button label — NextUI F
 AP_FONT_MICRO        //  7 × device_scale (overlay text — NextUI FONT_MICRO)
 ```
 
-Font sizes use integer `device_scale` (2 for MY355/TG5050/TG5040 handheld, 3 for TG5040 brick), matching NextUI's `SCALE1(FONT_*)` exactly.
+Font sizes use integer `device_scale` (2 for MY355/TG5050/TG5040 handheld, 3 for TG5040 brick), matching NextUI's `SCALE1(FONT_*)` exactly. On screens with more logical pixels than the 320×240 baseline (MY355), an automatic font bump of 0–5 is added to each base size before scaling. See `ap_get_font_bump()`.
 
 #### `ap_text_align`
 
@@ -140,6 +140,7 @@ typedef struct {
     bool        disable_background; // Set true to skip bg.png
     bool        is_nextui;         // Load theme from nextval.elf
     ap_cpu_speed cpu_speed;        // Set CPU at init; 0 = AP_CPU_SPEED_DEFAULT (no-op)
+    bool        disable_font_bump; // Set true to disable automatic font bumping
 } ap_config;
 ```
 
@@ -271,6 +272,10 @@ Reload the background image at runtime. Destroys the current background texture 
 #### `TTF_Font *ap_get_font(ap_font_tier tier)`
 
 Get a pre-loaded, pre-scaled font for the given tier. Returns NULL if not loaded.
+
+#### `int ap_get_font_bump(void)`
+
+Get the automatic font bump computed at init (0–5). The bump is added to each base font size before `device_scale` multiplication. Computed from the logical resolution (`screen / device_scale`) relative to the 320×240 baseline (MY355). Returns 0 on MY355 and TG5040 brick, typically 2 on TG5050. Set `ap_config.disable_font_bump = true` to force 0.
 
 ### Input
 

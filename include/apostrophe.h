@@ -116,6 +116,12 @@
 /* Scaling damping factor for screens wider than reference */
 #define AP_SCALE_DAMPING 0.75f
 
+/* Font bump: additive increase to base font sizes on larger logical screens.
+   Reference is MY355 logical resolution (640/2 × 480/2 = 320×240). */
+#define AP_FONT_BUMP_MAX           5
+#define AP_FONT_BUMP_REF_LOGICAL_W 320
+#define AP_FONT_BUMP_REF_LOGICAL_H 240
+
 /* Input timing defaults (milliseconds) */
 #define AP_INPUT_REPEAT_DELAY  300
 #define AP_INPUT_REPEAT_RATE   100
@@ -344,6 +350,7 @@ typedef struct {
     bool        disable_background;  /* Set true to skip bg.png rendering */
     bool        is_nextui;        /* Load theme from NextUI's nextval.elf */
     ap_cpu_speed cpu_speed;       /* Set CPU at init; 0 = AP_CPU_SPEED_DEFAULT (no-op) */
+    bool        disable_font_bump;   /* Set true to disable automatic font bumping */
 } ap_config;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -428,6 +435,7 @@ typedef struct {
     /* Integer device scale matching NextUI's FIXED_SCALE (for pixel-perfect bars) */
     int           device_scale;   /* typically 2 (handheld) or 3 (brick) */
     int           device_padding; /* NextUI's PADDING constant (unscaled) */
+    int           font_bump;     /* additive bump applied to base font sizes (0–5) */
 
     /* Power button handling */
     bool          power_handler_enabled;
@@ -1152,6 +1160,18 @@ static int ap__read_nextui_setting_int(const char *key, int default_val) {
 
 /* ─── Font Management ────────────────────────────────────────────────────── */
 
+static int ap__compute_font_bump(void) {
+    int ds = ap__g.device_scale ? ap__g.device_scale : 2;
+    int logical_w = ap__g.screen_w / ds;
+    int logical_h = ap__g.screen_h / ds;
+    int bump_w = ((logical_w - AP_FONT_BUMP_REF_LOGICAL_W) * AP_FONT_BUMP_MAX)
+                 / AP_FONT_BUMP_REF_LOGICAL_W;
+    int bump_h = ((logical_h - AP_FONT_BUMP_REF_LOGICAL_H) * AP_FONT_BUMP_MAX)
+                 / AP_FONT_BUMP_REF_LOGICAL_H;
+    int bump = (bump_w < bump_h) ? bump_w : bump_h;
+    return ap__clamp(bump, 0, AP_FONT_BUMP_MAX);
+}
+
 static TTF_Font *ap__open_font(const char *path, int size) {
     TTF_Font *f = TTF_OpenFont(path, size);
     if (f) TTF_SetFontStyle(f, TTF_STYLE_BOLD); /* match NextUI: all fonts loaded bold */
@@ -1206,9 +1226,9 @@ static int ap__load_fonts(const char *user_font_path) {
     strncpy(ap__g.theme.font_path, font_path, sizeof(ap__g.theme.font_path) - 1);
     ap_log("Loading font: %s", font_path);
 
-    /* Open at each tier size */
+    /* Open at each tier size (base + font_bump, then × device_scale) */
     for (int i = 0; i < AP_FONT_TIER_COUNT; i++) {
-        int size = ap_font_size_for_resolution(ap__font_base_sizes[i]);
+        int size = ap_font_size_for_resolution(ap__font_base_sizes[i] + ap__g.font_bump);
         if (size < 8) size = 8;
         ap__g.fonts[i] = ap__open_font(font_path, size);
         if (!ap__g.fonts[i]) {
@@ -1224,6 +1244,10 @@ static int ap__load_fonts(const char *user_font_path) {
 TTF_Font *ap_get_font(ap_font_tier tier) {
     if (tier < 0 || tier >= AP_FONT_TIER_COUNT) return ap__g.fonts[AP_FONT_SMALL];
     return ap__g.fonts[tier];
+}
+
+int ap_get_font_bump(void) {
+    return ap__g.font_bump;
 }
 
 /* ─── Input System ───────────────────────────────────────────────────────── */
@@ -4096,6 +4120,13 @@ int ap_init(ap_config *cfg) {
     ap__g.device_padding = 10;
     #endif
     ap_log("Device scale: %d, padding: %d", ap__g.device_scale, ap__g.device_padding);
+
+    /* Compute font bump (must be after device_scale, before font loading) */
+    if (cfg && cfg->disable_font_bump)
+        ap__g.font_bump = 0;
+    else
+        ap__g.font_bump = ap__compute_font_bump();
+    ap_log("Font bump: %d", ap__g.font_bump);
 
     /* Create window */
     uint32_t win_flags = SDL_WINDOW_SHOWN;
