@@ -1010,6 +1010,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                         max_label_w = half;                    /* both long — split */
                 }
             }
+            if (max_label_w < 0) max_label_w = 0;
 
             if (is_selected) {
                 /* Full-width pill */

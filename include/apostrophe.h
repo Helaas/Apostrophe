@@ -2314,7 +2314,12 @@ int ap_draw_text_ellipsized(TTF_Font *font, const char *text, int x, int y, ap_c
     int target_w = max_w - ellipsis_w;
     int len = (int)strlen(text);
     int lo = 0, hi = len, best = 0;
-    char buf[1024];
+
+    /* Use stack buffer for typical labels, heap for unusually long strings */
+    char stack_buf[1024];
+    int buf_size = len + 4;  /* +4 for "..." and NUL */
+    char *buf = buf_size <= (int)sizeof(stack_buf) ? stack_buf : (char *)malloc(buf_size);
+    if (!buf) return ap_draw_text_clipped(font, text, x, y, color, max_w);
 
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
@@ -2322,9 +2327,8 @@ int ap_draw_text_ellipsized(TTF_Font *font, const char *text, int x, int y, ap_c
         int safe = mid;
         while (safe > 0 && (text[safe] & 0xC0) == 0x80) safe--;
 
-        int n = safe < (int)sizeof(buf) - 1 ? safe : (int)sizeof(buf) - 1;
-        memcpy(buf, text, n);
-        buf[n] = '\0';
+        memcpy(buf, text, safe);
+        buf[safe] = '\0';
 
         int tw = 0;
         TTF_SizeUTF8(font, buf, &tw, NULL);
@@ -2340,14 +2344,15 @@ int ap_draw_text_ellipsized(TTF_Font *font, const char *text, int x, int y, ap_c
     /* Strip trailing spaces before ellipsis */
     while (best > 0 && text[best - 1] == ' ') best--;
 
-    int n = best < (int)sizeof(buf) - 4 ? best : (int)sizeof(buf) - 4;
-    memcpy(buf, text, n);
-    buf[n]     = '.';
-    buf[n + 1] = '.';
-    buf[n + 2] = '.';
-    buf[n + 3] = '\0';
+    memcpy(buf, text, best);
+    buf[best]     = '.';
+    buf[best + 1] = '.';
+    buf[best + 2] = '.';
+    buf[best + 3] = '\0';
 
-    return ap_draw_text(font, buf, x, y, color);
+    int result = ap_draw_text(font, buf, x, y, color);
+    if (buf != stack_buf) free(buf);
+    return result;
 }
 
 void ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align) {
