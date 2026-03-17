@@ -1992,6 +1992,7 @@ int ap_confirmation(ap_message_opts *opts, ap_confirm_result *result) {
     int screen_w = ap_get_screen_width();
     int screen_h = ap_get_screen_height();
     int msg_max_w = screen_w - AP_S(80);
+    if (msg_max_w < 1) msg_max_w = (screen_w > 0) ? screen_w : 1;
 
     TTF_Font *msg_font = ap_get_font(AP_FONT_MEDIUM);
     if (!msg_font) return AP_ERROR;
@@ -2046,6 +2047,8 @@ int ap_confirmation(ap_message_opts *opts, ap_confirm_result *result) {
         total_h += msg_h;
 
         int base_y = (screen_h - total_h - ap_get_footer_height()) / 2;
+        int min_base_y = AP_DS(ap__g.device_padding + 5);
+        if (base_y < min_base_y) base_y = min_base_y;
 
         /* Image */
         if (img_tex) {
