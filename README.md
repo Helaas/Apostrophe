@@ -165,4 +165,6 @@ The **combo system** adds support for chords (simultaneous button presses like L
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apostrophe source code is MIT-licensed — see [LICENSE](LICENSE).
+
+The bundled [res/font.ttf](res/font.ttf) is distributed separately under the SIL Open Font License 1.1. See [res/font.LICENSE.txt](res/font.LICENSE.txt).

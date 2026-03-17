@@ -161,8 +161,11 @@ typedef struct {
     ap_button    button;
     const char  *label;
     bool         is_confirm;  // true = right-aligned group
+    const char  *button_text; // optional display-only override for the button pill text
 } ap_footer_item;
 ```
+
+`button_text` only affects what is drawn in the footer. It does not change input handling, which still comes from your widget logic and button bindings.
 
 #### `ap_footer_overflow_opts`
 
