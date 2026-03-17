@@ -441,6 +441,25 @@ static void demo_confirmation(void) {
         ap_confirm_result cr;
         ap_confirmation(&m, &cr);
     }
+
+    /* Long wrapped confirmation for vertical centering checks */
+    ap_message_opts long_opts = {
+        .message      = "Create shortcut?\n\nDragon Warrior Monsters 2: Tara's Adventure (GBC)\n\nConsole: Game Boy Color\nROM: Dragon Warrior Monsters 2 - Tara's Adventure (USA, Europe) (Rev 1).gbc",
+        .image_path   = NULL,
+        .footer       = footer,
+        .footer_count = 2,
+    };
+
+    ap_confirm_result long_result;
+    rc = ap_confirmation(&long_opts, &long_result);
+
+    if (rc == AP_OK) {
+        const char *msg = long_result.confirmed ? "You created the long confirmation case." : "You cancelled the long confirmation case.";
+        ap_footer_item ok_foot[] = {{ .button = AP_BTN_A, .label = "OK", .is_confirm = true }};
+        ap_message_opts m = { .message = msg, .footer = ok_foot, .footer_count = 1 };
+        ap_confirm_result cr;
+        ap_confirmation(&m, &cr);
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

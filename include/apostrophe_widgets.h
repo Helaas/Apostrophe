@@ -1991,9 +1991,14 @@ int ap_confirmation(ap_message_opts *opts, ap_confirm_result *result) {
     ap_theme *theme = ap_get_theme();
     int screen_w = ap_get_screen_width();
     int screen_h = ap_get_screen_height();
+    int msg_max_w = screen_w - AP_S(80);
+    if (msg_max_w < 1) msg_max_w = (screen_w > 0) ? screen_w : 1;
 
     TTF_Font *msg_font = ap_get_font(AP_FONT_MEDIUM);
     if (!msg_font) return AP_ERROR;
+    int msg_h = opts->message
+        ? ap_measure_wrapped_text_height(msg_font, opts->message, msg_max_w)
+        : 0;
 
     /* Load image if specified */
     SDL_Texture *img_tex = NULL;
@@ -2039,10 +2044,11 @@ int ap_confirmation(ap_message_opts *opts, ap_confirm_result *result) {
         /* Center the content vertically */
         int total_h = 0;
         if (img_tex) total_h += img_h + AP_S(20);
-        int msg_h = TTF_FontHeight(msg_font);
         total_h += msg_h;
 
         int base_y = (screen_h - total_h - ap_get_footer_height()) / 2;
+        int min_base_y = AP_DS(ap__g.device_padding + 5);
+        if (base_y < min_base_y) base_y = min_base_y;
 
         /* Image */
         if (img_tex) {
@@ -2055,7 +2061,7 @@ int ap_confirmation(ap_message_opts *opts, ap_confirm_result *result) {
         if (opts->message) {
             ap_draw_text_wrapped(msg_font, opts->message,
                 AP_S(40), base_y,
-                screen_w - AP_S(80),
+                msg_max_w,
                 theme->text, AP_ALIGN_CENTER);
         }
 
