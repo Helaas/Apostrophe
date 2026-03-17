@@ -4218,8 +4218,10 @@ int ap_init(ap_config *cfg) {
     ap_log("Scale factor: %.3f", ap__g.scale_factor);
 
     /* Compute device scale & padding before loading fonts.
-       Desktop/dev previews follow the same resolution-based profile selection
-       as device builds so AP_WINDOW_WIDTH/AP_WINDOW_HEIGHT match hardware. */
+       Desktop/dev previews now use the same resolution-based profile
+       selection as device builds, based on the effective screen size
+       (from AP_WINDOW_WIDTH/AP_WINDOW_HEIGHT in dev mode or native
+       resolution). */
     ap__resolve_device_metrics();
     ap_log("Device scale: %d, padding: %d", ap__g.device_scale, ap__g.device_padding);
 
