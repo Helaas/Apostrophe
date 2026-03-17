@@ -312,7 +312,7 @@ Clear the screen to the theme background color (or render bg image if configured
 
 #### `void ap_present(void)`
 
-Present the rendered frame. Call after all drawing for the frame.
+Present the rendered frame. Call after all drawing for the frame. When the renderer does not have vsync (e.g. software fallback), this function automatically throttles to ~60 fps via `SDL_Delay` to prevent CPU hot-spinning.
 
 #### `void ap_draw_background(void)`
 

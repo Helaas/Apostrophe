@@ -367,6 +367,8 @@ typedef struct {
     SDL_Texture        *bg_texture;
     int                 screen_w;
     int                 screen_h;
+    bool                renderer_has_vsync;
+    uint32_t            last_present_ms;
 
     /* Scaling */
     float         scale_factor;
@@ -2102,6 +2104,14 @@ void ap_clear_screen(void) {
 
 void ap_present(void) {
     SDL_RenderPresent(ap__g.renderer);
+    if (!ap__g.renderer_has_vsync) {
+        uint32_t now = SDL_GetTicks();
+        uint32_t elapsed = now - ap__g.last_present_ms;
+        if (elapsed < 16) {
+            SDL_Delay(16 - elapsed);
+        }
+        ap__g.last_present_ms = SDL_GetTicks();
+    }
 }
 
 void ap_draw_background(void) {
@@ -4280,12 +4290,22 @@ int ap_init(ap_config *cfg) {
     SDL_RenderSetLogicalSize(ap__g.renderer, ap__g.screen_w, ap__g.screen_h);
     SDL_ShowCursor(SDL_DISABLE);
 
+    SDL_RendererInfo renderer_info;
+    if (SDL_GetRendererInfo(ap__g.renderer, &renderer_info) == 0) {
+        ap__g.renderer_has_vsync =
+            (renderer_info.flags & SDL_RENDERER_PRESENTVSYNC) != 0;
+    } else {
+        ap__g.renderer_has_vsync = false;
+    }
+    ap_log("Renderer vsync: %s", ap__g.renderer_has_vsync ? "yes" : "no");
+
     /* Framebuffer sync workaround — render 3 black frames */
     for (int i = 0; i < 3; i++) {
         SDL_SetRenderDrawColor(ap__g.renderer, 0, 0, 0, 255);
         SDL_RenderClear(ap__g.renderer);
         SDL_RenderPresent(ap__g.renderer);
     }
+    ap__g.last_present_ms = SDL_GetTicks();
 
     /* Load theme from NextUI if requested */
     if (cfg && cfg->is_nextui) {
