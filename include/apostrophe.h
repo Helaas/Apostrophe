@@ -1139,6 +1139,29 @@ static void ap__compute_scale_factor(void) {
         ap__g.scale_factor = raw;
 }
 
+static void ap__resolve_device_metrics(void) {
+#if defined(PLATFORM_TG5040) || !AP_PLATFORM_IS_DEVICE
+    /* Match TG5040 preview profiles by resolution: Brick 1024×768 uses 3/5,
+       handheld-style layouts use 2/10. Desktop previews follow the same rule. */
+    if (ap__g.screen_w <= 1024 && ap__g.screen_h >= 768) {
+        ap__g.device_scale = 3;
+        ap__g.device_padding = 5;
+    } else {
+        ap__g.device_scale = 2;
+        ap__g.device_padding = 10;
+    }
+#elif defined(PLATFORM_TG5050)
+    ap__g.device_scale = 2;
+    ap__g.device_padding = 10;
+#elif defined(PLATFORM_MY355)
+    ap__g.device_scale = 2;
+    ap__g.device_padding = 10;
+#else
+    ap__g.device_scale = 2;
+    ap__g.device_padding = 10;
+#endif
+}
+
 /* ─── NextUI settings reader ─────────────────────────────────────────────── */
 
 #if AP_PLATFORM_IS_DEVICE
@@ -4194,35 +4217,12 @@ int ap_init(ap_config *cfg) {
     ap__compute_scale_factor();
     ap_log("Scale factor: %.3f", ap__g.scale_factor);
 
-    /* Compute device scale & padding matching NextUI's FIXED_SCALE / PADDING.
-       Must be set before font loading since fonts use device_scale. */
-    #if AP_PLATFORM_IS_DEVICE
-    {
-        #if defined(PLATFORM_TG5040)
-        /* TG5040 brick: 1024×768 scale=3 padding=5, handheld: 1280×720 scale=2 padding=10 */
-        if (ap__g.screen_w <= 1024 && ap__g.screen_h >= 768) {
-            ap__g.device_scale = 3;
-            ap__g.device_padding = 5;
-        } else {
-            ap__g.device_scale = 2;
-            ap__g.device_padding = 10;
-        }
-        #elif defined(PLATFORM_TG5050)
-        ap__g.device_scale = 2;
-        ap__g.device_padding = 10;
-        #elif defined(PLATFORM_MY355)
-        ap__g.device_scale = 2;
-        ap__g.device_padding = 10;
-        #else
-        ap__g.device_scale = 2;
-        ap__g.device_padding = 10;
-        #endif
-    }
-    #else
-    /* Non-device (macOS / desktop): use scale 2 as reasonable default */
-    ap__g.device_scale = 2;
-    ap__g.device_padding = 10;
-    #endif
+    /* Compute device scale & padding before loading fonts.
+       Desktop/dev previews now use the same resolution-based profile
+       selection as device builds, based on the effective screen size
+       (from AP_WINDOW_WIDTH/AP_WINDOW_HEIGHT in dev mode or native
+       resolution). */
+    ap__resolve_device_metrics();
     ap_log("Device scale: %d, padding: %d", ap__g.device_scale, ap__g.device_padding);
 
     /* Compute font bump (must be after device_scale, before font loading) */

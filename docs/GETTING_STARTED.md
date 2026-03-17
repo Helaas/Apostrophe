@@ -191,6 +191,12 @@ if (rc == AP_OK) {
 ```bash
 make native
 make run-native
+
+# Override the desktop preview resolution to match device targets
+# Substitute other width/height values as needed.
+AP_WINDOW_WIDTH=1024 AP_WINDOW_HEIGHT=768 make run-native-demo   # Brick
+AP_WINDOW_WIDTH=1280 AP_WINDOW_HEIGHT=720 make run-native-demo   # Smart Pro / Smart Pro S
+AP_WINDOW_WIDTH=640 AP_WINDOW_HEIGHT=480 make run-native-demo    # Miyoo Flip
 ```
 
 ### macOS
@@ -198,6 +204,10 @@ make run-native
 ```bash
 make mac
 make run-mac
+
+# Same preview override when running the macOS target directly
+# Substitute other width/height values as needed.
+AP_WINDOW_WIDTH=1024 AP_WINDOW_HEIGHT=768 make run-mac-demo
 ```
 
 ### Linux
