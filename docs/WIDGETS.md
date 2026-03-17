@@ -103,9 +103,9 @@ ap_options_item items[] = {
       .options = values, .option_count = 2, .selected_option = 1 },
 };
 ap_footer_item footer[] = {
-    { .button = AP_BTN_B,    .label = "Back" },
-    { .button = AP_BTN_LEFT, .label = "Change", .button_text = "←/→" },
-    { .button = AP_BTN_A,    .label = "Save", .is_confirm = true },
+    { .button = AP_BTN_B,    .label = "BACK" },
+    { .button = AP_BTN_LEFT, .label = "CHANGE", .button_text = "←/→" },
+    { .button = AP_BTN_A,    .label = "SAVE", .is_confirm = true },
 };
 ap_options_list_opts opts = {
     .title = "Settings", .items = items, .item_count = 1,
