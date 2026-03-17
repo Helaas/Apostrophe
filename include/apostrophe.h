@@ -2774,16 +2774,16 @@ static const char *ap__footer_button_text(ap_footer_item *item) {
     return ap_button_name(item->button);
 }
 
-static bool ap__footer_button_text_is_single_glyph(const char *text) {
+static bool ap__footer_button_text_is_single_codepoint(const char *text) {
     return ap__utf8_codepoint_count(text) == 1;
 }
 
 static TTF_Font *ap__footer_button_font(const char *btn_name) {
     if (!btn_name || !btn_name[0]) return ap_get_font(AP_FONT_SMALL);
-    if (ap__footer_button_text_is_single_glyph(btn_name)) {
-        return ap_get_font(AP_FONT_MEDIUM); /* NextUI: single-glyph button label */
+    if (ap__footer_button_text_is_single_codepoint(btn_name)) {
+        return ap_get_font(AP_FONT_MEDIUM); /* NextUI: single-codepoint button label */
     }
-    return ap_get_font(AP_FONT_TINY); /* NextUI: multi-glyph button label */
+    return ap_get_font(AP_FONT_TINY); /* NextUI: multi-codepoint button label */
 }
 
 static int ap__footer_item_width(ap_footer_item *item, TTF_Font *hint_font, int btn_margin) {
@@ -2793,7 +2793,7 @@ static int ap__footer_item_width(ap_footer_item *item, TTF_Font *hint_font, int 
     if (!btn_font) btn_font = hint_font;
 
     int btn_tw = ap_measure_text(btn_font, btn_name);
-    int btn_w = ap__footer_button_text_is_single_glyph(btn_name)
+    int btn_w = ap__footer_button_text_is_single_codepoint(btn_name)
         ? AP_DS(AP__BUTTON_SIZE)
         : (AP_DS(AP__BUTTON_SIZE) / 2 + btn_tw);
     int label_w = ap_measure_text(hint_font, label);
@@ -2832,7 +2832,7 @@ static void ap__footer_draw_item(int *cx, int btn_y, int inner_h, int btn_margin
 
     int btn_font_h = TTF_FontHeight(btn_font);
     int btn_tw = ap_measure_text(btn_font, btn_name);
-    int btn_pill_w = ap__footer_button_text_is_single_glyph(btn_name)
+    int btn_pill_w = ap__footer_button_text_is_single_codepoint(btn_name)
         ? AP_DS(AP__BUTTON_SIZE)
         : (AP_DS(AP__BUTTON_SIZE) / 2 + btn_tw);
 
