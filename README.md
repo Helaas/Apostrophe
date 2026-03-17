@@ -18,7 +18,7 @@ Thanks to Brandon T. Kowalski (https://github.com/BrandonKowalski) for creating 
 | `tg5040` | TrimUI Smart Brick (`tg3040` hardware) | 1024×768 | Allwinner A133 Plus – Quad-core Cortex-A53 |
 | `tg5050` | TrimUI Smart Pro S | 1280×720 | Allwinner A523 – Octa-core Cortex-A55 |
 | `my355`  | Miyoo Flip | 640×480 | Rockchip RK3566 – Quad-core Cortex-A55 |
-| `mac`    | macOS (dev/testing) | 1024×768 windowed | native host CPU |
+| `mac`    | macOS (dev/testing) | Windowed preview (default 1024×768) | native host CPU |
 
 ## Quick Start
 
@@ -41,6 +41,12 @@ brew install curl
 make mac
 make run-mac          # Runs the hello world example
 make run-mac-demo     # Runs the widget demo
+
+# Preview other device resolutions on desktop
+# Substitute other width/height values as needed.
+AP_WINDOW_WIDTH=1024 AP_WINDOW_HEIGHT=768 make run-mac-demo   # Brick
+AP_WINDOW_WIDTH=1280 AP_WINDOW_HEIGHT=720 make run-mac-demo   # Smart Pro / Smart Pro S
+AP_WINDOW_WIDTH=640 AP_WINDOW_HEIGHT=480 make run-mac-demo    # Miyoo Flip
 ```
 
 ### 3. Build for Device

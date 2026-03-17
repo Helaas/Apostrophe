@@ -525,7 +525,7 @@ static void demo_detail(void) {
     const char *row0[] = { "MY355",  "640x480",   "2x" };
     const char *row1[] = { "TG5040", "1024x768",  "3x" };
     const char *row2[] = { "TG5050", "1280x720",  "2x" };
-    const char *row3[] = { "macOS",  "1024x768",  "1x" };
+    const char *row3[] = { "macOS",  "1024x768",  "3x" };
     const char **table_rows[] = { row0, row1, row2, row3 };
 
     ap_detail_section sections[] = {
