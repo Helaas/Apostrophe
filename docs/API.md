@@ -854,7 +854,7 @@ typedef struct {
 
 D-Pad Left/Right skip forward/backward by one page (`max_visible` items) in `ap_list`. L1/R1 jump between alphabetical letter groups (items should be pre-sorted for best results). Both are always available and require no configuration.
 
-The help overlay (previously triggered by L1) is now triggered by the Menu button. If `help_text` is set, Menu shows the help overlay. If hidden footer items exist (footer overflow), Menu shows those instead. When both are present, Menu shows help first, then footer overflow sequentially.
+The help overlay (previously triggered by L1) is now triggered by the Menu button. When `help_text` is set, Menu shows the help overlay first; if hidden footer items also exist, the footer overflow overlay follows. When no `help_text` is set, Menu opens the footer overflow directly.
 
 **`ap_list_result`**:
 ```c
