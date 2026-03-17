@@ -52,6 +52,7 @@ This document tracks Apostrophe parity against Gabagool `v2.9.6`.
 | Selection message | `ap_selection` | Implemented | |
 | Confirmation message | `ap_confirmation` | Implemented | |
 | Process message | `ap_process_message` | Implemented (behavior differs) | Generic Go return values are mapped to C callback/userdata patterns. |
+| Frame-rate limiting (vsync fallback) | `ap_present()` auto-throttle | Implemented | Detects vsync at init; software-delays to ~60 fps when vsync is absent, matching Gabagool present-loop behavior. |
 | Download manager | `ap_download_manager` | Implemented | |
 | Detail/info screen | `ap_detail_screen` | Implemented | |
 | Color picker | `ap_color_picker` | Implemented | |
