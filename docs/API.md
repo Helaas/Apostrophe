@@ -866,12 +866,16 @@ Settings-style list where each row has a label and a configurable value area:
 
 | Type | Behavior |
 |------|----------|
-| `AP_OPT_STANDARD` | Left/Right cycles through predefined values |
-| `AP_OPT_KEYBOARD` | A opens keyboard for text input |
+| `AP_OPT_STANDARD` | Left/Right cycles through predefined values; if `confirm_button == AP_BTN_A`, A confirms instead of cycling |
+| `AP_OPT_KEYBOARD` | A opens keyboard for text input; if `confirm_button == AP_BTN_A`, confirming text also confirms the list |
 | `AP_OPT_CLICKABLE` | A triggers a navigation/action callback |
-| `AP_OPT_COLOR_PICKER` | A opens the color picker |
+| `AP_OPT_COLOR_PICKER` | A opens the color picker; if `confirm_button == AP_BTN_A`, picking a color also confirms the list |
 
 Action buttons are explicit in `ap_options_list_opts` (`action_button`, `secondary_action_button`, `confirm_button`), and footer hints remain visual-only.
+When `confirm_button` is set to `AP_BTN_A`, A takes on a "confirm and exit" role across all item types:
+- **Standard items**: A confirms immediately (use Left/Right to change values).
+- **Keyboard/Color picker items**: A opens the sub-editor; confirming inside it also exits the options list with `AP_ACTION_CONFIRMED`. Cancelling the sub-editor returns to the list.
+- **Clickable items**: Unchanged — A exits with `AP_ACTION_SELECTED`.
 When option storage is malformed (`options == NULL` or out-of-range `selected_option`), Apostrophe safely clamps/ignores the invalid value instead of dereferencing invalid memory.
 
 **`ap_options_list_opts`** (action/scroll fields):

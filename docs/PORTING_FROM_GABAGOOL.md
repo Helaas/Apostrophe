@@ -103,6 +103,7 @@ ap_options_list(&opts, &result);
 ```
 
 **Key differences**: In Gabagool, options are just strings. In Apostrophe, each option has a `.label` (displayed) and `.value` (returned).
+If you want Gabagool-style "A saves settings, Left/Right changes values" behavior, set `.confirm_button = AP_BTN_A` and rely on Left/Right for `AP_OPT_STANDARD` changes. For `AP_OPT_KEYBOARD` and `AP_OPT_COLOR_PICKER` items, A still opens the sub-editor first, but confirming inside the sub-editor will also confirm and exit the options list. Cancelling the sub-editor returns to the list without confirming.
 
 ## Keyboard
 

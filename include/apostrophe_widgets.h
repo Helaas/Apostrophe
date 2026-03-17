@@ -877,6 +877,13 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
 
                 case AP_BTN_A: {
                     ap_options_item *item = &opts->items[cursor];
+                    if (item->type == AP_OPT_STANDARD &&
+                        opts->confirm_button == AP_BTN_A) {
+                        result->focused_index = cursor;
+                        result->action = AP_ACTION_CONFIRMED;
+                        running = false;
+                        break;
+                    }
                     if (item->type == AP_OPT_CLICKABLE) {
                         result->focused_index = cursor;
                         result->action = AP_ACTION_SELECTED;
@@ -896,6 +903,11 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                                 item->options[sel].value = strdup(kb_result.text);
                                 item->options[sel].label = strdup(kb_result.text);
                             }
+                            if (opts->confirm_button == AP_BTN_A) {
+                                result->focused_index = cursor;
+                                result->action = AP_ACTION_CONFIRMED;
+                                running = false;
+                            }
                         }
                     } else if (item->type == AP_OPT_COLOR_PICKER) {
                         ap_color initial_color = {255, 255, 255, 255};
@@ -905,13 +917,19 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                             item->options[sel].value[0] == '#') {
                             initial_color = ap_hex_to_color(item->options[sel].value);
                         }
-                        if (ap_color_picker(initial_color, &picked) == AP_OK) {
+                        int cp_ret = ap_color_picker(initial_color, &picked);
+                        if (cp_ret == AP_OK) {
                             char hex[8];
                             snprintf(hex, sizeof(hex), "#%02X%02X%02X",
                                      picked.r, picked.g, picked.b);
                             if (sel >= 0) {
                                 item->options[sel].value = strdup(hex);
                                 item->options[sel].label = strdup(hex);
+                            }
+                            if (opts->confirm_button == AP_BTN_A) {
+                                result->focused_index = cursor;
+                                result->action = AP_ACTION_CONFIRMED;
+                                running = false;
                             }
                         }
                     } else if (item->type == AP_OPT_STANDARD) {
