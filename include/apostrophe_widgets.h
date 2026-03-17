@@ -979,16 +979,48 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
 
             int value_w = ap_measure_text(value_font, value);
 
+            /* Compute right-side reservation (value + decorations) */
+            int right_reserve;
+            if (item->type == AP_OPT_STANDARD && valid_opt >= 0 && item->option_count > 1)
+                right_reserve = value_w + arrow_w * 2 + AP_S(4);
+            else if (item->type == AP_OPT_CLICKABLE)
+                right_reserve = AP_S(16);
+            else
+                right_reserve = value_w;
+
+            /* Adaptive label width: give label as much space as the value doesn't need */
+            int inner_w = available_w - pill_pad * 2;
+            int min_gap = AP_DS(8);
+            int label_w = ap_measure_text(label_font, label);
+            int max_label_w;
+
+            if (right_reserve == 0) {
+                max_label_w = inner_w;
+            } else {
+                int budget = inner_w - min_gap;
+                if (label_w + right_reserve <= budget) {
+                    max_label_w = label_w;           /* both fit naturally */
+                } else {
+                    int half = budget / 2;
+                    if (right_reserve <= half)
+                        max_label_w = budget - right_reserve;  /* value is short */
+                    else if (label_w <= half)
+                        max_label_w = label_w;                 /* label is short */
+                    else
+                        max_label_w = half;                    /* both long — split */
+                }
+            }
+
             if (is_selected) {
                 /* Full-width pill */
                 ap_draw_pill(margin, item_y, available_w, pill_h, theme->highlight);
 
                 /* Label on left */
-                ap_draw_text_clipped(label_font, label,
+                ap_draw_text_ellipsized(label_font, label,
                     margin + pill_pad,
                     item_y + (pill_h - TTF_FontHeight(label_font)) / 2,
                     theme->highlighted_text,
-                    available_w / 2);
+                    max_label_w);
 
                 /* Value on right with arrows for standard options */
                 if (item->type == AP_OPT_STANDARD && valid_opt >= 0 && item->option_count > 1) {
@@ -1020,11 +1052,11 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                 }
             } else {
                 /* Unselected */
-                ap_draw_text_clipped(label_font, label,
+                ap_draw_text_ellipsized(label_font, label,
                     margin + pill_pad,
                     item_y + (pill_h - TTF_FontHeight(label_font)) / 2,
                     theme->text,
-                    available_w / 2);
+                    max_label_w);
 
                 int right_x = margin + available_w - pill_pad - value_w;
                 ap_draw_text(value_font, value,

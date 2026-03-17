@@ -557,6 +557,7 @@ void           ap_draw_rect(int x, int y, int w, int h, ap_color c);
 void           ap_draw_circle(int cx, int cy, int r, ap_color c);
 int            ap_draw_text(TTF_Font *font, const char *text, int x, int y, ap_color color);          /* returns rendered width in pixels */
 int            ap_draw_text_clipped(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w); /* returns rendered width */
+int            ap_draw_text_ellipsized(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w); /* truncate with "..." if too wide */
 void           ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align);
 int            ap_measure_text(TTF_Font *font, const char *text);
 void           ap_draw_image(SDL_Texture *tex, int x, int y, int w, int h);
@@ -2296,6 +2297,57 @@ int ap_draw_text_clipped(TTF_Font *font, const char *text, int x, int y, ap_colo
     SDL_DestroyTexture(tex);
     SDL_FreeSurface(surf);
     return orig_w;
+}
+
+int ap_draw_text_ellipsized(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w) {
+    if (!font || !text || !text[0]) return 0;
+    if (max_w <= 0) return ap_draw_text(font, text, x, y, color);
+
+    int full_w = 0;
+    TTF_SizeUTF8(font, text, &full_w, NULL);
+    if (full_w <= max_w) return ap_draw_text(font, text, x, y, color);
+
+    int ellipsis_w = 0;
+    TTF_SizeUTF8(font, "...", &ellipsis_w, NULL);
+    if (ellipsis_w >= max_w) return ap_draw_text_clipped(font, text, x, y, color, max_w);
+
+    int target_w = max_w - ellipsis_w;
+    int len = (int)strlen(text);
+    int lo = 0, hi = len, best = 0;
+    char buf[1024];
+
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        /* Walk back to a valid UTF-8 start byte */
+        int safe = mid;
+        while (safe > 0 && (text[safe] & 0xC0) == 0x80) safe--;
+
+        int n = safe < (int)sizeof(buf) - 1 ? safe : (int)sizeof(buf) - 1;
+        memcpy(buf, text, n);
+        buf[n] = '\0';
+
+        int tw = 0;
+        TTF_SizeUTF8(font, buf, &tw, NULL);
+
+        if (tw <= target_w) {
+            best = safe;
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+
+    /* Strip trailing spaces before ellipsis */
+    while (best > 0 && text[best - 1] == ' ') best--;
+
+    int n = best < (int)sizeof(buf) - 4 ? best : (int)sizeof(buf) - 4;
+    memcpy(buf, text, n);
+    buf[n]     = '.';
+    buf[n + 1] = '.';
+    buf[n + 2] = '.';
+    buf[n + 3] = '\0';
+
+    return ap_draw_text(font, buf, x, y, color);
 }
 
 void ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align) {

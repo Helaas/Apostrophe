@@ -321,7 +321,11 @@ Render text. Returns the rendered width in pixels.
 
 #### `int ap_draw_text_clipped(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w)`
 
-Render text clipped to a maximum width.
+Render text clipped to a maximum width. Performs a hard pixel clip with no truncation indicator.
+
+#### `int ap_draw_text_ellipsized(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w)`
+
+Render text truncated with "..." if it exceeds `max_w`. If the text fits, it is rendered normally. Uses a binary search to find the longest prefix that fits alongside the ellipsis, respecting UTF-8 character boundaries. Returns the rendered width in pixels.
 
 #### `void ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align)`
 
