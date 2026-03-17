@@ -110,7 +110,7 @@ ap_footer_item footer[] = {
 ap_options_list_opts opts = {
     .title = "Settings", .items = items, .item_count = 1,
     .footer = footer, .footer_count = 3,
-    .confirm_button = AP_BTN_START,
+    .confirm_button = AP_BTN_A,
 };
 ap_options_list_result result;
 ap_options_list(&opts, &result);
