@@ -103,6 +103,7 @@ ap_options_list(&opts, &result);
 ```
 
 **Key differences**: In Gabagool, options are just strings. In Apostrophe, each option has a `.label` (displayed) and `.value` (returned).
+If you want Gabagool-style "A saves settings, Left/Right changes values" behavior, set `.confirm_button = AP_BTN_A` and rely on Left/Right for `AP_OPT_STANDARD` changes.
 
 ## Keyboard
 

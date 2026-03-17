@@ -877,6 +877,13 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
 
                 case AP_BTN_A: {
                     ap_options_item *item = &opts->items[cursor];
+                    if (item->type == AP_OPT_STANDARD &&
+                        opts->confirm_button == AP_BTN_A) {
+                        result->focused_index = cursor;
+                        result->action = AP_ACTION_CONFIRMED;
+                        running = false;
+                        break;
+                    }
                     if (item->type == AP_OPT_CLICKABLE) {
                         result->focused_index = cursor;
                         result->action = AP_ACTION_SELECTED;

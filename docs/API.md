@@ -866,12 +866,13 @@ Settings-style list where each row has a label and a configurable value area:
 
 | Type | Behavior |
 |------|----------|
-| `AP_OPT_STANDARD` | Left/Right cycles through predefined values |
+| `AP_OPT_STANDARD` | Left/Right cycles through predefined values; if `confirm_button == AP_BTN_A`, A confirms instead of cycling |
 | `AP_OPT_KEYBOARD` | A opens keyboard for text input |
 | `AP_OPT_CLICKABLE` | A triggers a navigation/action callback |
 | `AP_OPT_COLOR_PICKER` | A opens the color picker |
 
 Action buttons are explicit in `ap_options_list_opts` (`action_button`, `secondary_action_button`, `confirm_button`), and footer hints remain visual-only.
+When `confirm_button` is set to `AP_BTN_A`, standard-option rows treat A as confirm/exit, so value changes should be driven by Left/Right.
 When option storage is malformed (`options == NULL` or out-of-range `selected_option`), Apostrophe safely clamps/ignores the invalid value instead of dereferencing invalid memory.
 
 **`ap_options_list_opts`** (action/scroll fields):
