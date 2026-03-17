@@ -596,6 +596,7 @@ void           ap_draw_footer(ap_footer_item *items, int count);
 int            ap_get_footer_height(void);
 void           ap_set_footer_overflow_opts(const ap_footer_overflow_opts *opts);
 void           ap_get_footer_overflow_opts(ap_footer_overflow_opts *out);
+void           ap_show_footer_overflow(void);
 void           ap_draw_status_bar(ap_status_bar_opts *opts);
 int            ap_get_status_bar_height(void);
 int            ap_get_status_bar_width(ap_status_bar_opts *opts);
@@ -2794,6 +2795,11 @@ void ap_set_footer_overflow_opts(const ap_footer_overflow_opts *opts) {
         ap__g.footer_overflow_active = false;
         ap__g.footer_hidden_count = 0;
     }
+}
+
+void ap_show_footer_overflow(void) {
+    if (ap__g.footer_hidden_count > 0)
+        ap__footer_overflow_show_hidden_actions();
 }
 
 void ap_get_footer_overflow_opts(ap_footer_overflow_opts *out) {

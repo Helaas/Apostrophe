@@ -1412,6 +1412,9 @@ static void demo_core_api_lab(void) {
                 case AP_BTN_DOWN:
                     if (page == 1) font_bump_scroll += AP_DS(30);
                     break;
+                case AP_BTN_MENU:
+                    ap_show_footer_overflow();
+                    break;
                 default:
                     break;
             }
@@ -2089,6 +2092,121 @@ static void demo_background_preview(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: List Navigation (page skip & letter skip)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void demo_list_navigation(void) {
+    ap_list_item items[] = {
+        AP_LIST_ITEM("Afghanistan",      NULL),
+        AP_LIST_ITEM("Albania",          NULL),
+        AP_LIST_ITEM("Algeria",          NULL),
+        AP_LIST_ITEM("Argentina",        NULL),
+        AP_LIST_ITEM("Australia",        NULL),
+        AP_LIST_ITEM("Austria",          NULL),
+        AP_LIST_ITEM("Belgium",          NULL),
+        AP_LIST_ITEM("Bolivia",          NULL),
+        AP_LIST_ITEM("Brazil",           NULL),
+        AP_LIST_ITEM("Bulgaria",         NULL),
+        AP_LIST_ITEM("Cambodia",         NULL),
+        AP_LIST_ITEM("Canada",           NULL),
+        AP_LIST_ITEM("Chile",            NULL),
+        AP_LIST_ITEM("China",            NULL),
+        AP_LIST_ITEM("Colombia",         NULL),
+        AP_LIST_ITEM("Croatia",          NULL),
+        AP_LIST_ITEM("Cuba",             NULL),
+        AP_LIST_ITEM("Denmark",          NULL),
+        AP_LIST_ITEM("Dominican Republic", NULL),
+        AP_LIST_ITEM("Ecuador",          NULL),
+        AP_LIST_ITEM("Egypt",            NULL),
+        AP_LIST_ITEM("Estonia",          NULL),
+        AP_LIST_ITEM("Ethiopia",         NULL),
+        AP_LIST_ITEM("Finland",          NULL),
+        AP_LIST_ITEM("France",           NULL),
+        AP_LIST_ITEM("Georgia",          NULL),
+        AP_LIST_ITEM("Germany",          NULL),
+        AP_LIST_ITEM("Greece",           NULL),
+        AP_LIST_ITEM("Hungary",          NULL),
+        AP_LIST_ITEM("Iceland",          NULL),
+        AP_LIST_ITEM("India",            NULL),
+        AP_LIST_ITEM("Indonesia",        NULL),
+        AP_LIST_ITEM("Iran",             NULL),
+        AP_LIST_ITEM("Iraq",             NULL),
+        AP_LIST_ITEM("Ireland",          NULL),
+        AP_LIST_ITEM("Israel",           NULL),
+        AP_LIST_ITEM("Italy",            NULL),
+        AP_LIST_ITEM("Jamaica",          NULL),
+        AP_LIST_ITEM("Japan",            NULL),
+        AP_LIST_ITEM("Jordan",           NULL),
+        AP_LIST_ITEM("Kenya",            NULL),
+        AP_LIST_ITEM("Kuwait",           NULL),
+        AP_LIST_ITEM("Latvia",           NULL),
+        AP_LIST_ITEM("Lebanon",          NULL),
+        AP_LIST_ITEM("Lithuania",        NULL),
+        AP_LIST_ITEM("Malaysia",         NULL),
+        AP_LIST_ITEM("Mexico",           NULL),
+        AP_LIST_ITEM("Morocco",          NULL),
+        AP_LIST_ITEM("Nepal",            NULL),
+        AP_LIST_ITEM("Netherlands",      NULL),
+        AP_LIST_ITEM("New Zealand",      NULL),
+        AP_LIST_ITEM("Nigeria",          NULL),
+        AP_LIST_ITEM("Norway",           NULL),
+        AP_LIST_ITEM("Oman",             NULL),
+        AP_LIST_ITEM("Pakistan",         NULL),
+        AP_LIST_ITEM("Panama",           NULL),
+        AP_LIST_ITEM("Peru",             NULL),
+        AP_LIST_ITEM("Philippines",      NULL),
+        AP_LIST_ITEM("Poland",           NULL),
+        AP_LIST_ITEM("Portugal",         NULL),
+        AP_LIST_ITEM("Qatar",            NULL),
+        AP_LIST_ITEM("Romania",          NULL),
+        AP_LIST_ITEM("Russia",           NULL),
+        AP_LIST_ITEM("Saudi Arabia",     NULL),
+        AP_LIST_ITEM("Serbia",           NULL),
+        AP_LIST_ITEM("Singapore",        NULL),
+        AP_LIST_ITEM("Slovakia",         NULL),
+        AP_LIST_ITEM("Slovenia",         NULL),
+        AP_LIST_ITEM("South Africa",     NULL),
+        AP_LIST_ITEM("South Korea",      NULL),
+        AP_LIST_ITEM("Spain",            NULL),
+        AP_LIST_ITEM("Sweden",           NULL),
+        AP_LIST_ITEM("Switzerland",      NULL),
+        AP_LIST_ITEM("Thailand",         NULL),
+        AP_LIST_ITEM("Tunisia",          NULL),
+        AP_LIST_ITEM("Turkey",           NULL),
+        AP_LIST_ITEM("Ukraine",          NULL),
+        AP_LIST_ITEM("United Kingdom",   NULL),
+        AP_LIST_ITEM("United States",    NULL),
+        AP_LIST_ITEM("Uruguay",          NULL),
+        AP_LIST_ITEM("Venezuela",        NULL),
+        AP_LIST_ITEM("Vietnam",          NULL),
+    };
+    int count = sizeof(items) / sizeof(items[0]);
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B,     .label = "BACK" },
+        { .button = AP_BTN_L1,    .label = "LETTER", .button_text = "L1/R1" },
+        { .button = AP_BTN_LEFT,  .label = "PAGE",   .button_text = "\xe2\x97\x80/\xe2\x96\xb6" },
+        { .button = AP_BTN_A,     .label = "SELECT", .is_confirm = true },
+    };
+
+    ap_list_opts opts = ap_list_default_opts("Countries", items, count);
+    opts.footer       = footer;
+    opts.footer_count = sizeof(footer) / sizeof(footer[0]);
+    opts.help_text    = "L1/R1: Jump to previous/next letter.\n"
+                        "D-Pad Left/Right: Skip one page.\n"
+                        "D-Pad Up/Down: Move one item.\n"
+                        "Menu: Show this help.";
+
+    ap_list_result result;
+    int rc = ap_list(&opts, &result);
+
+    if (rc == AP_OK && result.selected_index >= 0) {
+        char msg[256];
+        snprintf(msg, sizeof(msg), "Selected: %s", items[result.selected_index].label);
+        demo_show_message(msg);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Main menu
  * ═══════════════════════════════════════════════════════════════════════════ */
 typedef void (*demo_fn)(void);
@@ -2098,6 +2216,7 @@ static const struct {
     demo_fn     fn;
 } demos[] = {
     { "Basic List",          demo_list                },
+    { "List Navigation",     demo_list_navigation     },
     { "Image List",          demo_image_list          },
     { "Multi-Select List",   demo_multi_select        },
     { "Reorderable List",    demo_reorder             },

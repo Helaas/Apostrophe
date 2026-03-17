@@ -59,6 +59,15 @@ ap_list(&opts, &result);
 
 **Font override**: Set `item_font` in `ap_list_opts` to override the list item text font (default: `AP_FONT_LARGE`). Pass `NULL` (zero-init default) to keep the widget default.
 
+**Navigation shortcuts**:
+
+| Input | Action | Notes |
+|-------|--------|-------|
+| D-Pad Up/Down | Move one item | Wraps at boundaries (fresh press only) |
+| D-Pad Left/Right | Skip one page | Always available; disabled in reorder mode |
+| L1 / R1 | Jump to previous/next letter group | Always available; items should be pre-sorted for best results. Disabled in reorder mode |
+| Menu | Show help overlay / footer overflow | Shows help if `help_text` is set, then footer overflow if hidden items exist |
+
 ---
 
 ## Options List (`ap_options_list`)

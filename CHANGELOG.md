@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Detail screen styling options** (#11): `center_title`, `show_section_separator`, `key_color` on `ap_detail_opts`. `ap_draw_screen_title_centered()` core drawing function. Demo entry for styled detail screen.
 - **`AP_LIST_ITEM` / `AP_LIST_ITEM_BG` helper macros** (#9): convenience macros and designated-initializer guidance for `ap_list_item`.
 - **Background reload and list background previews**: `ap_reload_background()` support and background preview in list widget demo (#10).
+- **List page & letter skip navigation**: D-Pad Left/Right skip by one page in `ap_list`. L1/R1 jump between alphabetical letter groups. Help overlay moved from L1 to Menu button; when both `help_text` and hidden footer items exist, Menu shows help first then footer overflow sequentially. Demo entry for navigation features.
+- **`ap_show_footer_overflow()`**: Public API to programmatically open the hidden-actions overlay. Useful for screens with custom input loops that handle Menu independently of `ap_list`.
 
 ### Fixed
 
