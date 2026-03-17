@@ -1617,7 +1617,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
         /* Footer: always show Help hint (built-in instructions available) */
         {
             ap_footer_item kb_footer[] = {
-                {AP_BTN_MENU, "HELP", false},
+                { .button = AP_BTN_MENU, .label = "HELP", .is_confirm = false },
             };
             ap_draw_footer(kb_footer, 1);
         }
@@ -1965,7 +1965,9 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
 
         /* Footer: always show Help hint */
         {
-            ap_footer_item kb_footer[] = {{AP_BTN_MENU, "HELP", false}};
+            ap_footer_item kb_footer[] = {
+                { .button = AP_BTN_MENU, .label = "HELP", .is_confirm = false },
+            };
             ap_draw_footer(kb_footer, 1);
         }
 
@@ -2717,8 +2719,8 @@ int ap_color_picker(ap_color initial, ap_color *result) {
 
         /* Footer */
         ap_footer_item picker_footer[] = {
-            {AP_BTN_B, "BACK", false},
-            {AP_BTN_A, "SELECT", true},
+            { .button = AP_BTN_B, .label = "BACK", .is_confirm = false },
+            { .button = AP_BTN_A, .label = "SELECT", .is_confirm = true },
         };
         ap_draw_footer(picker_footer, 2);
 
@@ -3286,12 +3288,14 @@ int ap_download_manager(ap_download *downloads, int count,
 
         /* Footer */
         if (all_done || result->cancelled) {
-            ap_footer_item dm_footer[] = {{AP_BTN_A, "CLOSE", true}};
+            ap_footer_item dm_footer[] = {
+                { .button = AP_BTN_A, .label = "CLOSE", .is_confirm = true },
+            };
             ap_draw_footer(dm_footer, 1);
         } else {
             ap_footer_item dm_footer[] = {
-                {AP_BTN_Y, "CANCEL", false},
-                {AP_BTN_X, show_speed ? "HIDE SPEED" : "SHOW SPEED", false},
+                { .button = AP_BTN_Y, .label = "CANCEL", .is_confirm = false },
+                { .button = AP_BTN_X, .label = show_speed ? "HIDE SPEED" : "SHOW SPEED", .is_confirm = false },
             };
             ap_draw_footer(dm_footer, 2);
         }
