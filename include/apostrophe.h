@@ -265,6 +265,7 @@ typedef struct {
     ap_button    button;
     const char  *label;
     bool         is_confirm;  /* true = right-aligned confirm group */
+    const char  *button_text; /* Optional footer pill text override (display-only) */
 } ap_footer_item;
 
 /* Global footer overflow behaviour */
@@ -1980,6 +1981,16 @@ const char *ap_button_name(ap_button btn) {
     return ap__button_names[btn];
 }
 
+static size_t ap__utf8_codepoint_count(const char *text) {
+    size_t count = 0;
+    if (!text) return 0;
+    while (*text) {
+        if ((((unsigned char)*text) & 0xC0u) != 0x80u) count++;
+        text++;
+    }
+    return count;
+}
+
 /* ─── Combo System ───────────────────────────────────────────────────────── */
 
 static int ap__register_combo(const char *id, ap_button *buttons, int count,
@@ -2757,20 +2768,32 @@ void ap_get_footer_overflow_opts(ap_footer_overflow_opts *out) {
     *out = ap__g.footer_overflow_opts;
 }
 
+static const char *ap__footer_button_text(ap_footer_item *item) {
+    if (!item) return "";
+    if (item->button_text && item->button_text[0]) return item->button_text;
+    return ap_button_name(item->button);
+}
+
+static bool ap__footer_button_text_is_single_glyph(const char *text) {
+    return ap__utf8_codepoint_count(text) == 1;
+}
+
 static TTF_Font *ap__footer_button_font(const char *btn_name) {
     if (!btn_name || !btn_name[0]) return ap_get_font(AP_FONT_SMALL);
-    if (strlen(btn_name) == 1) return ap_get_font(AP_FONT_MEDIUM); /* NextUI: single-char button label */
-    return ap_get_font(AP_FONT_TINY); /* NextUI: multi-char button label */
+    if (ap__footer_button_text_is_single_glyph(btn_name)) {
+        return ap_get_font(AP_FONT_MEDIUM); /* NextUI: single-glyph button label */
+    }
+    return ap_get_font(AP_FONT_TINY); /* NextUI: multi-glyph button label */
 }
 
 static int ap__footer_item_width(ap_footer_item *item, TTF_Font *hint_font, int btn_margin) {
-    const char *btn_name = ap_button_name(item->button);
+    const char *btn_name = ap__footer_button_text(item);
     const char *label = item->label ? item->label : "";
     TTF_Font *btn_font = ap__footer_button_font(btn_name);
     if (!btn_font) btn_font = hint_font;
 
     int btn_tw = ap_measure_text(btn_font, btn_name);
-    int btn_w = (strlen(btn_name) == 1)
+    int btn_w = ap__footer_button_text_is_single_glyph(btn_name)
         ? AP_DS(AP__BUTTON_SIZE)
         : (AP_DS(AP__BUTTON_SIZE) / 2 + btn_tw);
     int label_w = ap_measure_text(hint_font, label);
@@ -2802,14 +2825,14 @@ static int ap__footer_group_outer_width(const int *widths, int visible_count,
 
 static void ap__footer_draw_item(int *cx, int btn_y, int inner_h, int btn_margin,
                                  int hint_font_h, TTF_Font *hint_font, ap_footer_item *item) {
-    const char *btn_name = ap_button_name(item->button);
+    const char *btn_name = ap__footer_button_text(item);
     const char *label = item->label ? item->label : "";
     TTF_Font *btn_font = ap__footer_button_font(btn_name);
     if (!btn_font) btn_font = hint_font;
 
     int btn_font_h = TTF_FontHeight(btn_font);
     int btn_tw = ap_measure_text(btn_font, btn_name);
-    int btn_pill_w = (strlen(btn_name) == 1)
+    int btn_pill_w = ap__footer_button_text_is_single_glyph(btn_name)
         ? AP_DS(AP__BUTTON_SIZE)
         : (AP_DS(AP__BUTTON_SIZE) / 2 + btn_tw);
 
@@ -2991,7 +3014,7 @@ static void ap__footer_overflow_show_hidden_actions(void) {
     char text[2048];
     int off = 0;
     for (int i = 0; i < ap__g.footer_hidden_count && off < (int)sizeof(text) - 1; i++) {
-        const char *btn_name = ap_button_name(ap__g.footer_hidden_items[i].button);
+        const char *btn_name = ap__footer_button_text(&ap__g.footer_hidden_items[i]);
         const char *label = ap__g.footer_hidden_items[i].label ? ap__g.footer_hidden_items[i].label : "";
         off += snprintf(text + off, sizeof(text) - (size_t)off,
                         "%s  %.120s\n", btn_name, label);

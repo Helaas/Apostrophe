@@ -89,6 +89,7 @@ Settings-style list with per-row option values.
 | `AP_OPT_COLOR_PICKER` | A opens color picker |
 
 Footer hints are visual-only; configure behavior with `action_button`, `secondary_action_button`, and `confirm_button`.
+Use `ap_footer_item.button_text` when you want custom footer pill text such as `←/→` for a shared "Change" hint.
 If an item has invalid option storage (`options == NULL` or an out-of-range `selected_option`), the widget clamps/ignores it safely.
 
 **Usage**:
@@ -101,8 +102,14 @@ ap_options_item items[] = {
     { .label = "Sound", .type = AP_OPT_STANDARD,
       .options = values, .option_count = 2, .selected_option = 1 },
 };
+ap_footer_item footer[] = {
+    { .button = AP_BTN_B,    .label = "Back" },
+    { .button = AP_BTN_LEFT, .label = "Change", .button_text = "←/→" },
+    { .button = AP_BTN_A,    .label = "Save", .is_confirm = true },
+};
 ap_options_list_opts opts = {
     .title = "Settings", .items = items, .item_count = 1,
+    .footer = footer, .footer_count = 3,
     .confirm_button = AP_BTN_START,
 };
 ap_options_list_result result;
