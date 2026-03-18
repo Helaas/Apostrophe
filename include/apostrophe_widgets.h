@@ -592,10 +592,12 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                     break;
 
                 case AP_BTN_MENU:
-                    if (opts->help_text)
+                    if (opts->help_text) {
                         show_help = true;
-                    else
+                        goto done_input; /* stop processing queued events */
+                    } else {
                         ap_show_footer_overflow();
+                    }
                     break;
 
                 default:
@@ -635,6 +637,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                     break;
             }
         }
+        done_input:
 
         /* Reset text scroll on cursor change; start pill animation */
         if (cursor != last_cursor) {

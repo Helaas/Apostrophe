@@ -36,7 +36,7 @@ A scrollable list of items with cursor navigation.
 - Images: Optional thumbnail column on the left
 - Background preview: Per-item fullscreen background image shown when the item is focused
 - Text scroll: Long labels auto-scroll horizontally
-- Help overlay: L1 shows scrollable help text
+- Help overlay: Menu shows scrollable help text
 - Explicit action bindings for Start/Y/Menu via `ap_list_opts` action fields
 
 **Usage**:
@@ -369,7 +369,7 @@ if (ap_color_picker(initial, &result) == AP_OK) {
 
 ## Help Overlay (`ap_show_help_overlay`)
 
-Full-screen scrollable text overlay. Triggered automatically by L1 in widgets that set `help_text`.
+Full-screen scrollable text overlay. Triggered automatically by Menu in widgets that set `help_text`.
 
 ```
 ┌─────────────────────────────┐
