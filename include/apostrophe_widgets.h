@@ -1086,7 +1086,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
             if (item->type == AP_OPT_STANDARD && valid_opt >= 0 && item->option_count > 1)
                 right_reserve = value_w + arrow_w * 2 + AP_S(4);
             else if (item->type == AP_OPT_CLICKABLE)
-                right_reserve = AP_S(16);
+                right_reserve = (value_w > 0) ? value_w + AP_S(16) + AP_S(4) : AP_S(16);
             else
                 right_reserve = value_w;
 
@@ -1141,11 +1141,15 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                         item_y + (pill_h - TTF_FontHeight(value_font)) / 2,
                         theme->highlighted_text);
                 } else if (item->type == AP_OPT_CLICKABLE) {
-                    /* Show ">" indicator */
-                    ap_draw_text(value_font, ">",
-                        margin + available_w - pill_pad - AP_S(16),
-                        item_y + (pill_h - TTF_FontHeight(value_font)) / 2,
-                        theme->highlighted_text);
+                    int arrow_x = margin + available_w - pill_pad - AP_S(16);
+                    int vy = item_y + (pill_h - TTF_FontHeight(value_font)) / 2;
+                    if (value_w > 0) {
+                        ap_draw_text_ellipsized(value_font, value,
+                            arrow_x - value_w - AP_S(4), vy,
+                            theme->highlighted_text,
+                            inner_w - max_label_w - min_gap - AP_S(16) - AP_S(4));
+                    }
+                    ap_draw_text(value_font, ">", arrow_x, vy, theme->highlighted_text);
                 } else {
                     int right_x = margin + available_w - pill_pad - value_w;
                     ap_draw_text(value_font, value,
