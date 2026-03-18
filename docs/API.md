@@ -435,6 +435,10 @@ Set the global footer overflow behaviour. Pass `NULL` to restore the default con
 
 Read the current global footer overflow configuration.
 
+#### `void ap_show_footer_overflow(void)`
+
+Programmatically open the hidden-actions overlay when hidden footer items exist. This is useful in screens with custom input loops (i.e. not using `ap_list`) that need to support the Menu button for footer overflow. The call is a no-op when there are no hidden items. Note: hidden item state is computed by `ap_draw_footer()`, so this function must be called after at least one footer draw pass in the current frame.
+
 #### `void ap_draw_status_bar(ap_status_bar_opts *opts)`
 
 Draw a status bar pill at the top-right of the screen. Shows clock, battery, and wifi status. On device, battery and wifi icons come from the NextUI asset spritesheet. Position matches NextUI's `PADDING` offset (10px unscaled).
@@ -847,6 +851,10 @@ typedef struct {
 ```
 
 `item_font` overrides the font used to render list item labels. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)`. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
+
+D-Pad Left/Right skip forward/backward by one page (`max_visible` items) in `ap_list`. L1/R1 jump between alphabetical letter groups (items should be pre-sorted for best results). Both require no configuration but are disabled while reorder mode is active.
+
+The help overlay (previously triggered by L1) is now triggered by the Menu button. When `help_text` is set, Menu shows the help overlay first; if hidden footer items also exist, the footer overflow overlay follows. When no `help_text` is set, Menu opens the footer overflow directly.
 
 **`ap_list_result`**:
 ```c

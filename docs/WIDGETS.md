@@ -36,7 +36,7 @@ A scrollable list of items with cursor navigation.
 - Images: Optional thumbnail column on the left
 - Background preview: Per-item fullscreen background image shown when the item is focused
 - Text scroll: Long labels auto-scroll horizontally
-- Help overlay: L1 shows scrollable help text
+- Help overlay: Menu shows scrollable help text
 - Explicit action bindings for Start/Y/Menu via `ap_list_opts` action fields
 
 **Usage**:
@@ -58,6 +58,15 @@ ap_list(&opts, &result);
 > (e.g. `{ "Foo", NULL, NULL, false, NULL }`) will break at compile time if that happens.
 
 **Font override**: Set `item_font` in `ap_list_opts` to override the list item text font (default: `AP_FONT_LARGE`). Pass `NULL` (zero-init default) to keep the widget default.
+
+**Navigation shortcuts**:
+
+| Input | Action | Notes |
+|-------|--------|-------|
+| D-Pad Up/Down | Move one item | Wraps at boundaries (fresh press only) |
+| D-Pad Left/Right | Skip one page | Always available; disabled in reorder mode |
+| L1 / R1 | Jump to previous/next letter group | Always available; items should be pre-sorted for best results. Disabled in reorder mode |
+| Menu | Show help overlay / footer overflow | Shows help if `help_text` is set, then footer overflow if hidden items exist |
 
 ---
 
@@ -360,7 +369,7 @@ if (ap_color_picker(initial, &result) == AP_OK) {
 
 ## Help Overlay (`ap_show_help_overlay`)
 
-Full-screen scrollable text overlay. Triggered automatically by L1 in widgets that set `help_text`.
+Full-screen scrollable text overlay. Triggered automatically by Menu in widgets that set `help_text`.
 
 ```
 ┌─────────────────────────────┐

@@ -21,6 +21,7 @@
 #endif
 
 #include <pthread.h>
+#include <ctype.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * List Widget
@@ -389,6 +390,29 @@ ap_list_opts ap_list_default_opts(const char *title, ap_list_item *items, int co
     return opts;
 }
 
+static inline void ap__build_alpha_index(const ap_list_item *items, int item_count,
+                                        int alpha_starts[27], int *alpha_count,
+                                        int *item_alpha) {
+    *alpha_count = 0;
+    int prev_group = -1;
+    for (int i = 0; i < item_count; i++) {
+        const char *lbl = items[i].label;
+        int g = 0; /* default: non-alpha */
+        if (lbl && lbl[0]) {
+            char c = (char)tolower((unsigned char)lbl[0]);
+            if (c >= 'a' && c <= 'z') g = (c - 'a') + 1;
+        }
+        if (g != prev_group) {
+            if (*alpha_count < 27) {
+                alpha_starts[*alpha_count] = i;
+                (*alpha_count)++;
+            }
+            prev_group = g;
+        }
+        item_alpha[i] = *alpha_count - 1;
+    }
+}
+
 int ap_list(ap_list_opts *opts, ap_list_result *result) {
     if (!opts || !result) return AP_ERROR;
     if (!opts->items || opts->item_count <= 0) return AP_ERROR;
@@ -442,6 +466,17 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     bool reorder_mode = false;
     bool running = true;
     bool show_help = false;
+
+    /* Alpha-skip index: maps first-letter groups so L1/R1 can jump between them.
+     * alpha_starts[i] = index of the first item in letter group i.
+     * item_alpha[j]   = which alpha group item j belongs to.               */
+    int alpha_starts[27];  /* max 27 groups: non-alpha + a..z */
+    int alpha_count = 0;
+    int *item_alpha = (int *)calloc((size_t)opts->item_count, sizeof(int));
+    if (item_alpha) {
+        ap__build_alpha_index(opts->items, opts->item_count,
+                             alpha_starts, &alpha_count, item_alpha);
+    }
 
     /* Text scroll state for selected item */
     ap_text_scroll sel_scroll;
@@ -516,20 +551,63 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                 case AP_BTN_B:
                     if (reorder_mode) {
                         reorder_mode = false;
+                        if (item_alpha)
+                            ap__build_alpha_index(opts->items, opts->item_count,
+                                                 alpha_starts, &alpha_count, item_alpha);
                     } else {
                         result->action = AP_ACTION_BACK;
                         running = false;
                     }
                     break;
 
+                case AP_BTN_LEFT:
+                    if (!reorder_mode) {
+                        cursor -= max_visible;
+                        if (cursor < 0) cursor = 0;
+                    }
+                    break;
+
+                case AP_BTN_RIGHT:
+                    if (!reorder_mode) {
+                        cursor += max_visible;
+                        if (cursor >= opts->item_count)
+                            cursor = opts->item_count - 1;
+                    }
+                    break;
+
                 case AP_BTN_L1:
-                    if (opts->help_text) show_help = true;
+                    if (item_alpha && !reorder_mode) {
+                        int gi = item_alpha[cursor] - 1;
+                        if (gi >= 0)
+                            cursor = alpha_starts[gi];
+                    }
+                    break;
+
+                case AP_BTN_R1:
+                    if (item_alpha && !reorder_mode) {
+                        int gi = item_alpha[cursor] + 1;
+                        if (gi < alpha_count)
+                            cursor = alpha_starts[gi];
+                    }
+                    break;
+
+                case AP_BTN_MENU:
+                    if (opts->help_text) {
+                        show_help = true;
+                        goto done_input; /* stop processing queued events */
+                    } else {
+                        ap_show_footer_overflow();
+                    }
                     break;
 
                 default:
                     /* Check reorder button */
                     if (opts->reorder_button != AP_BTN_NONE && ev.button == opts->reorder_button) {
+                        bool was_reorder = reorder_mode;
                         reorder_mode = !reorder_mode;
+                        if (was_reorder && !reorder_mode && item_alpha)
+                            ap__build_alpha_index(opts->items, opts->item_count,
+                                                 alpha_starts, &alpha_count, item_alpha);
                         break;
                     }
                     /* Check action button */
@@ -559,6 +637,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                     break;
             }
         }
+        done_input:
 
         /* Reset text scroll on cursor change; start pill animation */
         if (cursor != last_cursor) {
@@ -758,6 +837,9 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         /* Help overlay (on top of everything) */
         if (show_help && opts->help_text) {
             ap_show_help_overlay(opts->help_text);
+            show_help = false;
+            /* Show footer overflow after help if hidden items exist */
+            ap_show_footer_overflow();
         }
 
         ap_present();
@@ -765,6 +847,8 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
     }
 
     result->visible_start_index = scroll_top;
+
+    free(item_alpha);
 
     /* Restore input delay */
     if (saved_delay > 0) {
