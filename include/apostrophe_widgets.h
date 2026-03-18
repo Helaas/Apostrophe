@@ -1144,10 +1144,13 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                     int arrow_x = margin + available_w - pill_pad - AP_S(16);
                     int vy = item_y + (pill_h - TTF_FontHeight(value_font)) / 2;
                     if (value_w > 0) {
-                        ap_draw_text_ellipsized(value_font, value,
-                            arrow_x - value_w - AP_S(4), vy,
-                            theme->highlighted_text,
-                            inner_w - max_label_w - min_gap - AP_S(16) - AP_S(4));
+                        int max_vw = inner_w - max_label_w - min_gap - AP_S(16) - AP_S(4);
+                        if (max_vw > 0) {
+                            int draw_w = value_w < max_vw ? value_w : max_vw;
+                            ap_draw_text_ellipsized(value_font, value,
+                                arrow_x - draw_w - AP_S(4), vy,
+                                theme->highlighted_text, max_vw);
+                        }
                     }
                     ap_draw_text(value_font, ">", arrow_x, vy, theme->highlighted_text);
                 } else {
