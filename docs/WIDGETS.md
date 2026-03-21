@@ -162,6 +162,8 @@ ap_options_list(&opts, &result);
 | L1 / R1 | Move text cursor left / right |
 | Menu | Show help overlay |
 
+**Text overflow**: When input text exceeds the field width, the field scrolls horizontally to keep the cursor visible.
+
 **Usage**:
 ```c
 ap_keyboard_result result;
