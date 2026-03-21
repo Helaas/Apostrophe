@@ -24,7 +24,7 @@ This matrix maps Apostrophe's public API surface to the demos that exercise it.
 | List: multi-select | `examples/demo/main.c` → `Multi-Select List` |
 | List: reorder | `examples/demo/main.c` → `Reorderable List` |
 | Options list: standard, keyboard, clickable, color picker, action buttons | `examples/demo/main.c` → `Options List` |
-| Keyboard: general, URL, numeric, custom URL help/shortcuts | `examples/demo/main.c` → `Keyboard` |
+| Keyboard: general, URL, numeric, custom URL help/shortcuts, long text scrolling | `examples/demo/main.c` → `Keyboard` |
 | Confirmation | `examples/demo/main.c` → `Confirmation` |
 | Selection | `examples/demo/main.c` → `Selection` |
 | Process message: progress, cancel, dynamic text | `examples/demo/main.c` → `Process Message`, `Advanced Process` |

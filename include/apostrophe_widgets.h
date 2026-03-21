@@ -1281,6 +1281,52 @@ static void ap__kb_backspace(ap_keyboard_result *result, int *text_cursor) {
     }
 }
 
+/* Draw keyboard input text field content with horizontal scrolling.
+   Keeps the caret visible by adjusting *text_scroll as the cursor moves. */
+static void ap__kb_draw_input_text(TTF_Font *font, ap_keyboard_result *result,
+                                   int text_cursor, int *text_scroll,
+                                   int input_x, int input_y, int input_w, int input_h,
+                                   bool caret_visible, ap_color text_color) {
+    int ty = input_y + (input_h - TTF_FontHeight(font)) / 2;
+    int tx = input_x + AP_S(16);
+    int field_w = input_w - AP_S(32);
+    if (field_w <= 0) return;
+    int caret_w = AP_S(2);
+
+    /* Measure cursor pixel position */
+    char saved = result->text[text_cursor];
+    result->text[text_cursor] = '\0';
+    int cursor_px = ap_measure_text(font, result->text);
+    result->text[text_cursor] = saved;
+
+    /* Adjust scroll to keep caret visible, centering when it drifts */
+    if (cursor_px - *text_scroll > field_w - caret_w)
+        *text_scroll = cursor_px - field_w / 2;
+    if (*text_scroll > 0 && cursor_px - *text_scroll < field_w / 3)
+        *text_scroll = cursor_px - field_w / 2;
+    if (*text_scroll < 0)
+        *text_scroll = 0;
+    int full_w = ap_measure_text(font, result->text);
+    int max_scroll = full_w - field_w;
+    if (max_scroll < 0) max_scroll = 0;
+    if (*text_scroll > max_scroll)
+        *text_scroll = max_scroll;
+
+    /* Draw text with scroll offset, clipped to field */
+    if (result->text[0]) {
+        SDL_Rect clip = {tx, ty, field_w, TTF_FontHeight(font)};
+        SDL_RenderSetClipRect(ap_get_renderer(), &clip);
+        ap_draw_text(font, result->text, tx - *text_scroll, ty, text_color);
+        SDL_RenderSetClipRect(ap_get_renderer(), NULL);
+    }
+
+    /* Draw caret */
+    if (caret_visible) {
+        int cx = tx + cursor_px - *text_scroll;
+        ap_draw_rect(cx, ty, caret_w, TTF_FontHeight(font), text_color);
+    }
+}
+
 /* Built-in keyboard help text matching Gabagool's instructions */
 static const char *ap__kb_help_default =
     "D-Pad: Navigate between keys\n"
@@ -1345,6 +1391,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
         int input_w = screen_w - AP_S(80);
         int cursor_x = 0, cursor_y = 0;
         int text_cursor = (int)strlen(result->text);
+        int text_scroll = 0;
         bool running = true;
         uint32_t caret_blink = SDL_GetTicks();
         bool caret_visible = true;
@@ -1381,18 +1428,9 @@ int ap_keyboard(const char *initial_text, const char *help_text,
 
             ap_draw_background();
             ap_draw_pill(input_x, input_y, input_w, input_h, theme->highlight);
-            {
-                int ty = input_y + (input_h - TTF_FontHeight(text_font)) / 2;
-                int tx = input_x + AP_S(16);
-                if (result->text[0])
-                    ap_draw_text_clipped(text_font, result->text, tx, ty, theme->highlighted_text, input_w - AP_S(32));
-                if (caret_visible) {
-                    char saved = result->text[text_cursor]; result->text[text_cursor] = '\0';
-                    int cx = tx + ap_measure_text(text_font, result->text);
-                    result->text[text_cursor] = saved;
-                    ap_draw_rect(cx, ty, AP_S(2), TTF_FontHeight(text_font), theme->highlighted_text);
-                }
-            }
+            ap__kb_draw_input_text(text_font, result, text_cursor, &text_scroll,
+                                   input_x, input_y, input_w, input_h,
+                                   caret_visible, theme->highlighted_text);
             for (int row = 0; row < kb_rows; row++) {
                 for (int col = 0; col < kb_cols; col++) {
                     int ki = row * kb_cols + col;
@@ -1443,6 +1481,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
     bool shift = false;
     bool symbols = false;
     int text_cursor = (int)strlen(result->text);
+    int text_scroll = 0;
     bool running = true;
 
     uint32_t caret_blink = SDL_GetTicks();
@@ -1578,20 +1617,9 @@ int ap_keyboard(const char *initial_text, const char *help_text,
 
         /* Text input field */
         ap_draw_rounded_rect(input_x, input_y, input_w, input_h, AP_S(8), theme->highlight);
-
-        {
-            int ty = input_y + (input_h - TTF_FontHeight(text_font)) / 2;
-            int tx = input_x + AP_S(16);
-            if (result->text[0])
-                ap_draw_text_clipped(text_font, result->text, tx, ty,
-                    theme->highlighted_text, input_w - AP_S(32));
-            if (caret_visible) {
-                char saved = result->text[text_cursor]; result->text[text_cursor] = '\0';
-                int cx = tx + ap_measure_text(text_font, result->text);
-                result->text[text_cursor] = saved;
-                ap_draw_rect(cx, ty, AP_S(2), TTF_FontHeight(text_font), theme->highlighted_text);
-            }
-        }
+        ap__kb_draw_input_text(text_font, result, text_cursor, &text_scroll,
+                               input_x, input_y, input_w, input_h,
+                               caret_visible, theme->highlighted_text);
 
         /* ── Key rendering ── */
         ap_color key_bg_normal  = theme->accent;
@@ -1793,6 +1821,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
     bool shift = false;
     bool sym_alt = false; /* toggle for shortcut alternates */
     int text_cursor = (int)strlen(result->text);
+    int text_scroll = 0;
     bool running = true;
     uint32_t caret_blink = SDL_GetTicks();
     bool caret_visible = true;
@@ -1930,18 +1959,9 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
 
         /* Input field */
         ap_draw_rounded_rect(input_x, input_y, input_w, input_h, AP_S(8), theme->highlight);
-        {
-            int ty = input_y + (input_h - TTF_FontHeight(text_font)) / 2;
-            int tx = input_x + AP_S(16);
-            if (result->text[0])
-                ap_draw_text_clipped(text_font, result->text, tx, ty, theme->highlighted_text, input_w - AP_S(32));
-            if (caret_visible) {
-                char saved = result->text[text_cursor]; result->text[text_cursor] = '\0';
-                int cx = tx + ap_measure_text(text_font, result->text);
-                result->text[text_cursor] = saved;
-                ap_draw_rect(cx, ty, AP_S(2), TTF_FontHeight(text_font), theme->highlighted_text);
-            }
-        }
+        ap__kb_draw_input_text(text_font, result, text_cursor, &text_scroll,
+                               input_x, input_y, input_w, input_h,
+                               caret_visible, theme->highlighted_text);
 
         ap_color key_bg_normal = theme->accent;
         ap_color key_bg_sel    = theme->highlight;

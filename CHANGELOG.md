@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Keyboard input field scrolling** (`apostrophe_widgets.h`): Text in the keyboard input field now scrolls horizontally to keep the caret always visible when text exceeds the field width. Works for all keyboard types (general, URL, numeric). Demo entry for long text scrolling.
 - **Vsync-aware frame pacing** (`apostrophe.h`): `ap_present()` now detects whether the renderer actually has vsync and only adds a ~60 fps software delay when vsync is missing. This prevents CPU hot-spinning on software-fallback renderers and brings present-loop behavior closer to Gabagool during process-message screens.
 - **Confirmation message layout improvements** (#20): vertical centering for confirmation messages, support for long wrapped text, and clamping for narrow/overflowing dialogs.
 - **macOS resolution handling** (#19): improved resolution detection and device metrics for macOS development builds.

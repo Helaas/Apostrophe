@@ -344,11 +344,12 @@ static void demo_keyboard(void) {
         { "General",      "Enter your name:",  "Hello",              AP_KB_GENERAL },
         { "URL",          "Enter a URL:",      "https://",           AP_KB_URL     },
         { "Numeric",      "Enter a number:",   "42",                 AP_KB_NUMERIC },
+        { "Long Text",    "Enter long text:",  "The quick brown fox jumps over the lazy dog near the riverbank", AP_KB_GENERAL },
         { "URL (Custom)", "Enter a URL:",      "https://example",    AP_KB_URL     },
     };
     int mode_count = sizeof(modes) / sizeof(modes[0]);
 
-    ap_list_item items[4];
+    ap_list_item items[5];
     for (int i = 0; i < mode_count; i++)
         items[i] = (ap_list_item){ .label = modes[i].label };
 
@@ -368,7 +369,7 @@ static void demo_keyboard(void) {
         int idx = lr.selected_index;
         ap_keyboard_result result;
 
-        if (idx == 3) {
+        if (idx == 4) {
             /* Custom URL keyboard with shortcut keys */
             const char *shortcuts[] = { ".io", ".dev", ".app", "https://", "http://" };
             const char *url_help =
