@@ -1290,6 +1290,7 @@ static void ap__kb_draw_input_text(TTF_Font *font, ap_keyboard_result *result,
     int ty = input_y + (input_h - TTF_FontHeight(font)) / 2;
     int tx = input_x + AP_S(16);
     int field_w = input_w - AP_S(32);
+    if (field_w <= 0) return;
     int caret_w = AP_S(2);
 
     /* Measure cursor pixel position */
@@ -1305,6 +1306,11 @@ static void ap__kb_draw_input_text(TTF_Font *font, ap_keyboard_result *result,
         *text_scroll = cursor_px - field_w / 2;
     if (*text_scroll < 0)
         *text_scroll = 0;
+    int full_w = ap_measure_text(font, result->text);
+    int max_scroll = full_w - field_w;
+    if (max_scroll < 0) max_scroll = 0;
+    if (*text_scroll > max_scroll)
+        *text_scroll = max_scroll;
 
     /* Draw text with scroll offset, clipped to field */
     if (result->text[0]) {
