@@ -9,7 +9,7 @@
 #   make windows      — Build examples natively for Windows (MSYS2/MinGW)
 #   make tg5040       — Cross-compile for TrimUI Brick/Smart Pro
 #   make tg5050       — Cross-compile for TrimUI Smart Pro S
-#   make my355        — Cross-compile for Miyoo Mini Flip
+#   make my355        — Cross-compile for Miyoo Flip
 #   make all          — Build for all device platforms
 #   make package      — Build all + create .pakz archives
 #   make deploy       — Deploy to connected device via adb
@@ -180,7 +180,7 @@ tg5050-%:
 			BUILD_DIR=/workspace/$(BUILD_DIR)/tg5050/$*
 	@echo "→ $(BUILD_DIR)/tg5050/$*/$*"
 
-# ─── MY355 (Miyoo Mini Flip) via Docker ────────────────────────────────
+# ─── MY355 (Miyoo Flip) via Docker ─────────────────────────────────────
 
 my355: $(EXAMPLES:%=my355-%)
 
@@ -309,7 +309,7 @@ help:
 	@echo "  Device (cross-compile via Docker):"
 	@echo "  make tg5040         Cross-compile for TrimUI Brick/Smart Pro"
 	@echo "  make tg5050         Cross-compile for TrimUI Smart Pro S"
-	@echo "  make my355          Cross-compile for Miyoo Mini Flip"
+	@echo "  make my355          Cross-compile for Miyoo Flip"
 	@echo "  make all            Build for all device platforms"
 	@echo "  make package        Build all + create .pakz packages"
 	@echo "  make deploy         Deploy to connected device via adb"

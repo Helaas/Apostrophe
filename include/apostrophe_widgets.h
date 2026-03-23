@@ -75,7 +75,7 @@ typedef struct {
     ap_button        confirm_button;   /* Confirm/accept action (e.g. START) */
     ap_button        tertiary_action_button; /* Tertiary action (e.g. MENU) */
     bool             show_images;      /* Show image column */
-    const char      *help_text;        /* Help overlay text (L1 to show) */
+    const char      *help_text;        /* Help overlay text (Menu to show) */
     uint32_t         input_delay;      /* Override input debounce (0 = default) */
     int              initial_index;    /* Starting cursor position */
     int              visible_start_index; /* Initial scroll top index */

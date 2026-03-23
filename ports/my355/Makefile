@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════
-# Apostrophe — my355 (Miyoo Mini Flip) cross-compile Makefile
+# Apostrophe — my355 (Miyoo Flip) cross-compile Makefile
 # ═══════════════════════════════════════════════════════════════════════════
 # Called by root Makefile inside Docker container.
 # Based on Undertune / scrapegoat-pak conventions.

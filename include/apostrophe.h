@@ -9,7 +9,7 @@
  *
  * Dependencies: SDL2, SDL2_ttf, SDL2_image, C standard library, pthreads
  * Platforms:    tg5040 (TrimUI Brick/Smart Pro), tg5050 (TrimUI Smart Pro S),
- *               my355 (Miyoo Mini Flip), macOS, Linux, Windows (dev/testing)
+ *               my355 (Miyoo Flip), macOS, Linux, Windows (dev/testing)
  *
  * License: MIT
  * https://github.com/Helaas/apostrophe
@@ -792,7 +792,7 @@ static const char *ap__font_search_paths[] = {
 #define AP__JOY_AXIS_L2     2   /* ABS_Z   */
 #define AP__JOY_AXIS_R2     5   /* ABS_RZ  */
 
-/* my355 (Miyoo Mini Flip) keyboard scancode mapping.
+/* my355 (Miyoo Flip) keyboard scancode mapping.
  * On the Flip, ALL buttons arrive as SDL keyboard scancodes, not joystick. */
 #define AP__MY355_CODE_A       44   /* SDL_SCANCODE_SPACE */
 #define AP__MY355_CODE_B       224  /* SDL_SCANCODE_LCTRL */
@@ -975,6 +975,15 @@ static bool ap__json_copy_string(const char *json, const char *key, char *out, s
     return true;
 }
 
+static bool ap__json_copy_background_string(const char *json, char *out, size_t out_size) {
+    if (!out || out_size == 0) return false;
+    out[0] = '\0';
+
+    /* Prefer NextUI's current color7 key but accept legacy bgcolor for compatibility. */
+    if (ap__json_copy_string(json, "color7", out, out_size)) return true;
+    return ap__json_copy_string(json, "bgcolor", out, out_size);
+}
+
 int ap_theme_load_nextui(void) {
 #if AP_PLATFORM_IS_DEVICE
     /* Look for nextval.elf — prefer SYSTEM_PATH env var, fall back to hardcoded path */
@@ -1027,7 +1036,7 @@ int ap_theme_load_nextui(void) {
     ap__json_copy_string(json, "color4", c4_buf, sizeof(c4_buf));
     ap__json_copy_string(json, "color5", c5_buf, sizeof(c5_buf));
     ap__json_copy_string(json, "color6", c6_buf, sizeof(c6_buf));
-    ap__json_copy_string(json, "bgcolor", bg_buf, sizeof(bg_buf));
+    ap__json_copy_background_string(json, bg_buf, sizeof(bg_buf));
 
     if (c1_buf[0]) ap__g.theme.highlight        = ap_hex_to_color(c1_buf);
     if (c2_buf[0]) ap__g.theme.accent           = ap_hex_to_color(c2_buf);
@@ -1072,7 +1081,7 @@ int ap_theme_load_nextui(void) {
     ap__json_copy_string(json, "color4", c4_buf, sizeof(c4_buf));
     ap__json_copy_string(json, "color5", c5_buf, sizeof(c5_buf));
     ap__json_copy_string(json, "color6", c6_buf, sizeof(c6_buf));
-    ap__json_copy_string(json, "bgcolor", bg_buf, sizeof(bg_buf));
+    ap__json_copy_background_string(json, bg_buf, sizeof(bg_buf));
 
     if (c1_buf[0]) ap__g.theme.highlight        = ap_hex_to_color(c1_buf);
     if (c2_buf[0]) ap__g.theme.accent           = ap_hex_to_color(c2_buf);

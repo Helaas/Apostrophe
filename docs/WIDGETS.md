@@ -380,7 +380,7 @@ Full-screen scrollable text overlay. Triggered automatically by Menu in widgets 
 │ ║  Press A to select    ║   │
 │ ║  Press B to go back   ║   │
 │ ║  Press X to reorder   ║   │
-│ ║  L1 shows this help   ║   │
+│ ║ Menu shows this help  ║   │
 │ ╚═══════════════════════╝   │
 │                             │
 │  Press any button to close  │

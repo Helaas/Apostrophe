@@ -27,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - **Demo background preview** (#10): use selected item metadata and guard on reload return value.
+- **NextUI background color compatibility**: `ap_theme_load_nextui()` now accepts both current `color7` and legacy `bgcolor` for the fallback solid background color.
+- **Documentation terminology and controls**: standardized `my355` platform naming to `Miyoo Flip` and corrected stale help-overlay docs to use the Menu button instead of L1.
 
 ## [v0.0.1] - 2026-03-10
 
