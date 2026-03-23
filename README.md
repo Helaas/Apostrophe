@@ -56,7 +56,7 @@ Requires Docker. Each platform has its own toolchain image:
 ```bash
 make tg5040           # Cross-compile for TrimUI Brick/Smart Pro
 make tg5050           # Cross-compile for TrimUI Smart Pro S
-make my355            # Cross-compile for Miyoo Mini Flip
+make my355            # Cross-compile for Miyoo Flip
 make all              # All device platforms
 ```
 
@@ -136,7 +136,7 @@ All pixel values are specified at a **1024px reference width** and automatically
 
 ### Theming
 
-On device, colors are loaded from NextUI's theme system (`nextval.elf`). On macOS, sensible defaults are used. You can override the accent color via `ap_config.primary_color_hex`.
+On device, colors are loaded from NextUI's theme system (`nextval.elf`). Apostrophe accepts both the current `color7` background key and the legacy `bgcolor` key for backward compatibility. On macOS, sensible defaults are used. You can override the accent color via `ap_config.primary_color_hex`.
 
 ### Input
 
@@ -158,7 +158,7 @@ The **combo system** adds support for chords (simultaneous button presses like L
 | Process Message | `ap_process_message()` | Async worker with progress bar |
 | Detail Screen | `ap_detail_screen()` | Scrollable multi-section info view |
 | Color Picker | `ap_color_picker()` | 5×5 color grid selector |
-| Help Overlay | `ap_show_help_overlay()` | Scrollable text overlay (L1 trigger) |
+| Help Overlay | `ap_show_help_overlay()` | Scrollable text overlay (Menu trigger) |
 
 ## Docs
 

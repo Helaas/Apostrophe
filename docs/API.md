@@ -256,7 +256,7 @@ Get a pointer to the current theme. Modifiable.
 
 #### `int ap_theme_load_nextui(void)`
 
-Load the theme from the NextUI configuration. Sets accent color, font path, and background image from device settings. Returns `AP_OK` on success, `AP_ERROR` on failure. Called automatically during `ap_init()` when `ap_config.is_nextui` is true.
+Load theme colors from the NextUI configuration, including the fallback background color. Accepts both the current `color7` background key and the legacy `bgcolor` key for backward compatibility. Returns `AP_OK` on success, `AP_ERROR` on failure. Called automatically during `ap_init()` when `ap_config.is_nextui` is true.
 
 #### `ap_color ap_hex_to_color(const char *hex)`
 
@@ -819,7 +819,7 @@ Scrollable list with:
 - Reorder mode (toggle reorder button + D-Pad)
 - Image thumbnails
 - Text overflow scrolling
-- Help overlay (L1)
+- Help overlay (Menu)
 - Explicit action bindings (`action_button`, `secondary_action_button`, `confirm_button`, `tertiary_action_button`)
 
 Footer hints are visual only. Behavior is driven by the action button fields in `ap_list_opts`.
@@ -854,7 +854,7 @@ typedef struct {
 
 D-Pad Left/Right skip forward/backward by one page (`max_visible` items) in `ap_list`. L1/R1 jump between alphabetical letter groups (items should be pre-sorted for best results). Both require no configuration but are disabled while reorder mode is active.
 
-The help overlay (previously triggered by L1) is now triggered by the Menu button. When `help_text` is set, Menu shows the help overlay first; if hidden footer items also exist, the footer overflow overlay follows. When no `help_text` is set, Menu opens the footer overflow directly.
+The help overlay is triggered by the Menu button. When `help_text` is set, Menu shows the help overlay first; if hidden footer items also exist, the footer overflow overlay follows. When no `help_text` is set, Menu opens the footer overflow directly.
 
 **`ap_list_result`**:
 ```c
@@ -1113,4 +1113,4 @@ int ap_color_picker(ap_color initial, ap_color *result);
 void ap_show_help_overlay(const char *text);
 ```
 
-Full-screen scrollable text overlay. Typically triggered by L1 in widgets that have `help_text` configured.
+Full-screen scrollable text overlay. Typically triggered by Menu in widgets that have `help_text` configured.
