@@ -35,6 +35,7 @@ A scrollable list of items with cursor navigation.
 - Reorder: Toggle reorder mode with a button, then D-Pad to move items
 - Images: Optional thumbnail column on the left
 - Background preview: Per-item fullscreen background image shown when the item is focused
+- Trailing hint: Optional right-aligned text for item status/type
 - Text scroll: Long labels auto-scroll horizontally
 - Help overlay: Menu shows scrollable help text
 - Explicit action bindings for Start/Y/Menu via `ap_list_opts` action fields
@@ -42,9 +43,10 @@ A scrollable list of items with cursor navigation.
 **Usage**:
 ```c
 ap_list_item items[] = {
-    AP_LIST_ITEM("Alpha", "/path/alpha"),
+    { .label = "Alpha", .metadata = "/path/alpha", .trailing_text = "NEW" },
     AP_LIST_ITEM("Bravo", "/path/bravo"),
-    AP_LIST_ITEM_BG("Charlie", "/path/charlie", bg_tex), /* with background preview */
+    { .label = "Charlie", .metadata = "/path/charlie",
+      .background_image = bg_tex, .trailing_text = "PNG" },
 };
 ap_list_opts opts = ap_list_default_opts("Title", items, 3);
 opts.confirm_button = AP_BTN_START; // Footer hints are visual-only
@@ -55,7 +57,10 @@ ap_list(&opts, &result);
 > **Note:** Always use designated initializers (e.g. `{ .label = "Foo" }`) or the
 > `AP_LIST_ITEM` / `AP_LIST_ITEM_BG` convenience macros when creating `ap_list_item`
 > values. New fields may be added in future releases; positional initializers
-> (e.g. `{ "Foo", NULL, NULL, false, NULL }`) will break at compile time if that happens.
+> (e.g. `{ "Foo", NULL, NULL, false, NULL }`) are fragile across releases and may
+> need updates when fields are added.
+
+`metadata` stays hidden and is useful for paths, IDs, or other internal payloads. `trailing_text` is the visible right-aligned hint. Trailing hints use the item font and are omitted for a row if showing them would leave less than `AP_S(96)` for the label.
 
 **Font override**: Set `item_font` in `ap_list_opts` to override the list item text font (default: `AP_FONT_LARGE`). Pass `NULL` (zero-init default) to keep the widget default.
 

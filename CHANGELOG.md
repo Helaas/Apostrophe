@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **List trailing hints** (`apostrophe_widgets.h`): `ap_list_item` now supports optional right-aligned `trailing_text` without changing `metadata` semantics, keeping existing list consumers source-compatible while enabling downstream-style row hints.
 - **Keyboard input field scrolling** (`apostrophe_widgets.h`): Text in the keyboard input field now scrolls horizontally to keep the caret always visible when text exceeds the field width. Works for all keyboard types (general, URL, numeric). Demo entry for long text scrolling.
 - **Vsync-aware frame pacing** (`apostrophe.h`): `ap_present()` now detects whether the renderer actually has vsync and only adds a ~60 fps software delay when vsync is missing. This prevents CPU hot-spinning on software-fallback renderers and brings present-loop behavior closer to Gabagool during process-message screens.
 - **Confirmation message layout improvements** (#20): vertical centering for confirmation messages, support for long wrapped text, and clamping for narrow/overflowing dialogs.
@@ -27,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - **Demo background preview** (#10): use selected item metadata and guard on reload return value.
+- **Keyboard UTF-8 editing**: backspace, caret movement, and input-field measurement now operate on UTF-8 codepoint boundaries, fixing broken deletion/rendering for multibyte characters such as `€`.
+- **Bundled font glyph coverage**: added `✓` and `€` to `res/font.ttf`, fixing the multi-select checkmark glyph and adding Euro symbol support. On a device, the font that is configured in NextUI will still be used, so this only affects desktop development builds that use the bundled font.
 - **NextUI background color compatibility**: `ap_theme_load_nextui()` now accepts both current `color7` and legacy `bgcolor` for the fallback solid background color.
 - **Documentation terminology and controls**: standardized `my355` platform naming to `Miyoo Flip` and corrected stale help-overlay docs to use the Menu button instead of L1.
 

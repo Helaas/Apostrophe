@@ -828,12 +828,15 @@ Footer hints are visual only. Behavior is driven by the action button fields in 
 ```c
 typedef struct {
     const char  *label;
-    const char  *metadata;
+    const char  *metadata;         // Hidden item data (e.g. path), not rendered
     SDL_Texture *image;            // Optional thumbnail (shown when show_images = true)
     bool         selected;         // For multi-select
     SDL_Texture *background_image; // Optional fullscreen preview for the focused item
+    const char  *trailing_text;    // Optional right-aligned visible hint text
 } ap_list_item;
 ```
+
+Use `metadata` for hidden payloads such as paths or IDs. Use `trailing_text` for right-aligned UI text shown in the row. The `AP_LIST_ITEM` / `AP_LIST_ITEM_BG` helper macros still initialize only `label` and `metadata`; use designated initializers when you want a visible trailing hint.
 
 **`ap_list_opts`** (action-related fields):
 ```c
@@ -850,7 +853,9 @@ typedef struct {
 } ap_list_opts;
 ```
 
-`item_font` overrides the font used to render list item labels. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)`. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
+`item_font` overrides the font used to render list item labels and trailing hints. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)`. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
+
+When `trailing_text` is set, `ap_list()` renders it right-aligned using `theme->hint`. The hint is skipped for that row if reserving space for it would leave less than `AP_S(96)` for the main label.
 
 D-Pad Left/Right skip forward/backward by one page (`max_visible` items) in `ap_list`. L1/R1 jump between alphabetical letter groups (items should be pre-sorted for best results). Both require no configuration but are disabled while reorder mode is active.
 
