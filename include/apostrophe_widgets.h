@@ -2533,7 +2533,7 @@ int ap_process_message(ap_process_opts *opts, ap_process_fn fn, void *userdata) 
                 (screen_w - pct_w) / 2,
                 bar_y + bar_h + AP_S(8),
                 theme->hint);
-            ap_request_frame();
+            ap_request_frame_in(33); /* ~30fps is sufficient for a progress bar */
         }
 
         /* Spinner (simple dots animation when no progress bar) */
