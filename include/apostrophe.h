@@ -369,6 +369,10 @@ typedef struct {
     int                 screen_h;
     bool                renderer_has_vsync;
     uint32_t            last_present_ms;
+    bool                needs_frame;       /* true = render next frame at 60fps */
+    uint32_t            next_redraw_ms;    /* absolute time of next scheduled redraw (0 = none) */
+    bool                has_wake_event;    /* stored event from SDL_WaitEventTimeout */
+    SDL_Event           wake_event;
 
     /* Scaling */
     float         scale_factor;
@@ -1651,6 +1655,7 @@ static void ap__input_push(ap_button btn, bool pressed) {
     if (next == ap__input_tail) return; /* queue full */
     ap__input_queue[ap__input_head] = (ap_input_event){ btn, pressed, false };
     ap__input_head = next;
+    ap__g.needs_frame = true;
 }
 
 static bool ap__is_direction_button(ap_button btn) {
@@ -1698,6 +1703,7 @@ static bool ap__repeat_direction(ap_button btn, uint32_t now) {
     if (next != ap__input_tail) {
         ap__input_queue[ap__input_head] = (ap_input_event){ btn, true, true };
         ap__input_head = next;
+        ap__g.needs_frame = true;
     }
     ap__advance_direction_repeat(btn, now);
     return true;
@@ -1772,157 +1778,170 @@ static void ap__set_axis_direction_x(int dir, uint32_t now) {
     }
 }
 
-static void ap__process_sdl_events(void) {
-    SDL_Event ev;
-    uint32_t now = SDL_GetTicks();
+static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
+    switch (ev->type) {
+        case SDL_QUIT:
+            ap__input_push(AP_BTN_B, true);
+            break;
 
-    while (SDL_PollEvent(&ev)) {
-        switch (ev.type) {
-            case SDL_QUIT:
-                ap__input_push(AP_BTN_B, true);
-                break;
+        case SDL_USEREVENT:
+            break; /* wake-up only — no action needed */
 
-            case SDL_KEYDOWN:
-                if (!ev.key.repeat) {
-                    ap_button b = ap__map_key_event(&ev.key);
-                    ap__push_button_press(b, now);
-                }
-                break;
-
-            case SDL_KEYUP: {
-                ap_button b = ap__map_key_event(&ev.key);
-                ap__push_button_release(b);
-                break;
-            }
-
-            /* --- Raw Joystick button/hat events (TrimUI devices) ---
-               MY355 sends buttons and d-pad as keyboard scancodes; processing
-               joystick button/hat events too would cause double-input.
-               When a GameController is active (macOS), skip raw joystick
-               button/hat events — the GameController API already maps them
-               correctly, and the raw mappings differ, causing phantom inputs.
-               Axis events (thumbstick) are allowed through on all platforms. */
-            #if !defined(PLATFORM_MY355)
-            case SDL_JOYBUTTONDOWN: {
-                if (ap__g.controller) break; /* GameController handles this */
-                ap_button b = ap__map_joy_button(ev.jbutton.button);
+        case SDL_KEYDOWN:
+            if (!ev->key.repeat) {
+                ap_button b = ap__map_key_event(&ev->key);
                 ap__push_button_press(b, now);
-                break;
             }
+            break;
 
-            case SDL_JOYBUTTONUP: {
-                if (ap__g.controller) break; /* GameController handles this */
-                ap_button b = ap__map_joy_button(ev.jbutton.button);
-                ap__push_button_release(b);
-                break;
-            }
+        case SDL_KEYUP: {
+            ap_button b = ap__map_key_event(&ev->key);
+            ap__push_button_release(b);
+            break;
+        }
 
-            /* --- SDL GameController events (macOS / recognised controllers) --- */
-            #if !AP_PLATFORM_IS_DEVICE
-            case SDL_CONTROLLERBUTTONDOWN: {
-                ap_button b = ap__map_controller_button(ev.cbutton.button);
-                ap__push_button_press(b, now);
-                break;
-            }
+        /* --- Raw Joystick button/hat events (TrimUI devices) ---
+           MY355 sends buttons and d-pad as keyboard scancodes; processing
+           joystick button/hat events too would cause double-input.
+           When a GameController is active (macOS), skip raw joystick
+           button/hat events — the GameController API already maps them
+           correctly, and the raw mappings differ, causing phantom inputs.
+           Axis events (thumbstick) are allowed through on all platforms. */
+        #if !defined(PLATFORM_MY355)
+        case SDL_JOYBUTTONDOWN: {
+            if (ap__g.controller) break; /* GameController handles this */
+            ap_button b = ap__map_joy_button(ev->jbutton.button);
+            ap__push_button_press(b, now);
+            break;
+        }
 
-            case SDL_CONTROLLERBUTTONUP: {
-                ap_button b = ap__map_controller_button(ev.cbutton.button);
-                ap__push_button_release(b);
-                break;
-            }
+        case SDL_JOYBUTTONUP: {
+            if (ap__g.controller) break; /* GameController handles this */
+            ap_button b = ap__map_joy_button(ev->jbutton.button);
+            ap__push_button_release(b);
+            break;
+        }
 
-            case SDL_CONTROLLERAXISMOTION: {
-                /* Map left analog stick to d-pad via GameController axis */
-                if (ev.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
-                    if (ev.caxis.value < -AP_AXIS_DEADZONE) {
-                        ap__set_axis_direction_y(-1, now);
-                    } else if (ev.caxis.value > AP_AXIS_DEADZONE) {
-                        ap__set_axis_direction_y(1, now);
-                    } else {
-                        ap__set_axis_direction_y(0, now);
-                    }
-                } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
-                    if (ev.caxis.value < -AP_AXIS_DEADZONE) {
-                        ap__set_axis_direction_x(-1, now);
-                    } else if (ev.caxis.value > AP_AXIS_DEADZONE) {
-                        ap__set_axis_direction_x(1, now);
-                    } else {
-                        ap__set_axis_direction_x(0, now);
-                    }
-                } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
-                    if (ev.caxis.value > AP_AXIS_DEADZONE) {
-                        if (!ap__g.buttons_held[AP_BTN_L2]) {
-                            ap__input_push(AP_BTN_L2, true);
-                        }
-                    } else if (ap__g.buttons_held[AP_BTN_L2]) {
-                        ap__input_push(AP_BTN_L2, false);
-                    }
-                } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
-                    if (ev.caxis.value > AP_AXIS_DEADZONE) {
-                        if (!ap__g.buttons_held[AP_BTN_R2]) {
-                            ap__input_push(AP_BTN_R2, true);
-                        }
-                    } else if (ap__g.buttons_held[AP_BTN_R2]) {
-                        ap__input_push(AP_BTN_R2, false);
-                    }
+        /* --- SDL GameController events (macOS / recognised controllers) --- */
+        #if !AP_PLATFORM_IS_DEVICE
+        case SDL_CONTROLLERBUTTONDOWN: {
+            ap_button b = ap__map_controller_button(ev->cbutton.button);
+            ap__push_button_press(b, now);
+            break;
+        }
+
+        case SDL_CONTROLLERBUTTONUP: {
+            ap_button b = ap__map_controller_button(ev->cbutton.button);
+            ap__push_button_release(b);
+            break;
+        }
+
+        case SDL_CONTROLLERAXISMOTION: {
+            /* Map left analog stick to d-pad via GameController axis */
+            if (ev->caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
+                if (ev->caxis.value < -AP_AXIS_DEADZONE) {
+                    ap__set_axis_direction_y(-1, now);
+                } else if (ev->caxis.value > AP_AXIS_DEADZONE) {
+                    ap__set_axis_direction_y(1, now);
+                } else {
+                    ap__set_axis_direction_y(0, now);
                 }
-                break;
+            } else if (ev->caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
+                if (ev->caxis.value < -AP_AXIS_DEADZONE) {
+                    ap__set_axis_direction_x(-1, now);
+                } else if (ev->caxis.value > AP_AXIS_DEADZONE) {
+                    ap__set_axis_direction_x(1, now);
+                } else {
+                    ap__set_axis_direction_x(0, now);
+                }
+            } else if (ev->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
+                if (ev->caxis.value > AP_AXIS_DEADZONE) {
+                    if (!ap__g.buttons_held[AP_BTN_L2]) {
+                        ap__input_push(AP_BTN_L2, true);
+                    }
+                } else if (ap__g.buttons_held[AP_BTN_L2]) {
+                    ap__input_push(AP_BTN_L2, false);
+                }
+            } else if (ev->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+                if (ev->caxis.value > AP_AXIS_DEADZONE) {
+                    if (!ap__g.buttons_held[AP_BTN_R2]) {
+                        ap__input_push(AP_BTN_R2, true);
+                    }
+                } else if (ap__g.buttons_held[AP_BTN_R2]) {
+                    ap__input_push(AP_BTN_R2, false);
+                }
+            }
+            break;
+        }
+        #endif
+
+        case SDL_JOYHATMOTION: {
+            if (ap__g.controller) break; /* GameController handles d-pad */
+            ap__set_hat_state(ev->jhat.value, now);
+            break;
+        }
+        #endif /* !PLATFORM_MY355 */
+
+        /* --- Analog stick axis events (all device platforms) ---
+           Thumbstick generates SDL_JOYAXISMOTION on all devices including
+           MY355, so this must remain outside the MY355 exclusion guard. */
+        case SDL_JOYAXISMOTION: {
+            if (ev->jaxis.axis == 1) { /* Y axis (up/down) */
+                if (ev->jaxis.value < -AP_AXIS_DEADZONE) {
+                    ap__set_axis_direction_y(-1, now);
+                } else if (ev->jaxis.value > AP_AXIS_DEADZONE) {
+                    ap__set_axis_direction_y(1, now);
+                } else {
+                    ap__set_axis_direction_y(0, now);
+                }
+            } else if (ev->jaxis.axis == 0) { /* X axis (left/right) */
+                if (ev->jaxis.value < -AP_AXIS_DEADZONE) {
+                    ap__set_axis_direction_x(-1, now);
+                } else if (ev->jaxis.value > AP_AXIS_DEADZONE) {
+                    ap__set_axis_direction_x(1, now);
+                } else {
+                    ap__set_axis_direction_x(0, now);
+                }
+            }
+            #if AP_PLATFORM_IS_DEVICE
+            /* L2/R2 analog triggers (TrimUI TG5040/TG5050 send triggers as
+             * axes 2/5 rather than joystick buttons). Use val > 0 threshold
+             * to match NextUI's trigger handling.  The buttons_held guard in
+             * ap__input_push prevents duplicate events if the platform also
+             * sends joystick button events for these triggers. */
+            else if (ev->jaxis.axis == AP__JOY_AXIS_L2) {
+                if (ev->jaxis.value > 0) {
+                    if (!ap__g.buttons_held[AP_BTN_L2])
+                        ap__input_push(AP_BTN_L2, true);
+                } else if (ap__g.buttons_held[AP_BTN_L2]) {
+                    ap__input_push(AP_BTN_L2, false);
+                }
+            } else if (ev->jaxis.axis == AP__JOY_AXIS_R2) {
+                if (ev->jaxis.value > 0) {
+                    if (!ap__g.buttons_held[AP_BTN_R2])
+                        ap__input_push(AP_BTN_R2, true);
+                } else if (ap__g.buttons_held[AP_BTN_R2]) {
+                    ap__input_push(AP_BTN_R2, false);
+                }
             }
             #endif
-
-            case SDL_JOYHATMOTION: {
-                if (ap__g.controller) break; /* GameController handles d-pad */
-                ap__set_hat_state(ev.jhat.value, now);
-                break;
-            }
-            #endif /* !PLATFORM_MY355 */
-
-            /* --- Analog stick axis events (all device platforms) ---
-               Thumbstick generates SDL_JOYAXISMOTION on all devices including
-               MY355, so this must remain outside the MY355 exclusion guard. */
-            case SDL_JOYAXISMOTION: {
-                if (ev.jaxis.axis == 1) { /* Y axis (up/down) */
-                    if (ev.jaxis.value < -AP_AXIS_DEADZONE) {
-                        ap__set_axis_direction_y(-1, now);
-                    } else if (ev.jaxis.value > AP_AXIS_DEADZONE) {
-                        ap__set_axis_direction_y(1, now);
-                    } else {
-                        ap__set_axis_direction_y(0, now);
-                    }
-                } else if (ev.jaxis.axis == 0) { /* X axis (left/right) */
-                    if (ev.jaxis.value < -AP_AXIS_DEADZONE) {
-                        ap__set_axis_direction_x(-1, now);
-                    } else if (ev.jaxis.value > AP_AXIS_DEADZONE) {
-                        ap__set_axis_direction_x(1, now);
-                    } else {
-                        ap__set_axis_direction_x(0, now);
-                    }
-                }
-                #if AP_PLATFORM_IS_DEVICE
-                /* L2/R2 analog triggers (TrimUI TG5040/TG5050 send triggers as
-                 * axes 2/5 rather than joystick buttons). Use val > 0 threshold
-                 * to match NextUI's trigger handling.  The buttons_held guard in
-                 * ap__input_push prevents duplicate events if the platform also
-                 * sends joystick button events for these triggers. */
-                else if (ev.jaxis.axis == AP__JOY_AXIS_L2) {
-                    if (ev.jaxis.value > 0) {
-                        if (!ap__g.buttons_held[AP_BTN_L2])
-                            ap__input_push(AP_BTN_L2, true);
-                    } else if (ap__g.buttons_held[AP_BTN_L2]) {
-                        ap__input_push(AP_BTN_L2, false);
-                    }
-                } else if (ev.jaxis.axis == AP__JOY_AXIS_R2) {
-                    if (ev.jaxis.value > 0) {
-                        if (!ap__g.buttons_held[AP_BTN_R2])
-                            ap__input_push(AP_BTN_R2, true);
-                    } else if (ap__g.buttons_held[AP_BTN_R2]) {
-                        ap__input_push(AP_BTN_R2, false);
-                    }
-                }
-                #endif
-                break;
-            }
+            break;
         }
+    }
+}
+
+static void ap__process_sdl_events(void) {
+    uint32_t now = SDL_GetTicks();
+
+    /* Process stored wake event first (from idle sleep in ap_present) */
+    if (ap__g.has_wake_event) {
+        ap__g.has_wake_event = false;
+        ap__handle_sdl_event(&ap__g.wake_event, now);
+    }
+
+    SDL_Event ev;
+    while (SDL_PollEvent(&ev)) {
+        ap__handle_sdl_event(&ev, now);
     }
 
     bool repeated_up = false;
@@ -2112,16 +2131,68 @@ void ap_clear_screen(void) {
     SDL_RenderClear(ap__g.renderer);
 }
 
+void ap_request_frame(void) {
+    ap__g.needs_frame = true;
+}
+
+void ap_request_frame_in(uint32_t ms) {
+    uint32_t target = SDL_GetTicks() + ms;
+    if (ap__g.next_redraw_ms == 0 || target < ap__g.next_redraw_ms) {
+        ap__g.next_redraw_ms = target;
+    }
+}
+
+static uint32_t ap__next_wake_time(void) {
+    uint32_t now = SDL_GetTicks();
+    uint32_t wake = now + 1000; /* max 1s sleep — ensures clock updates */
+
+    if (ap__g.next_redraw_ms != 0 && ap__g.next_redraw_ms < wake)
+        wake = ap__g.next_redraw_ms;
+
+    for (int i = 0; i < AP_BTN_COUNT; i++) {
+        if (ap__g.buttons_held[i] && ap__g.button_repeat_time[i] != 0
+            && ap__g.button_repeat_time[i] < wake)
+            wake = ap__g.button_repeat_time[i];
+    }
+    if (ap__g.hat_held && ap__g.hat_repeat_time != 0
+        && ap__g.hat_repeat_time < wake)
+        wake = ap__g.hat_repeat_time;
+    if (ap__g.axis_held_dir_y && ap__g.axis_repeat_time_y != 0
+        && ap__g.axis_repeat_time_y < wake)
+        wake = ap__g.axis_repeat_time_y;
+    if (ap__g.axis_held_dir_x && ap__g.axis_repeat_time_x != 0
+        && ap__g.axis_repeat_time_x < wake)
+        wake = ap__g.axis_repeat_time_x;
+
+    return wake;
+}
+
 void ap_present(void) {
     SDL_RenderPresent(ap__g.renderer);
-    if (!ap__g.renderer_has_vsync) {
+
+    if (ap__g.needs_frame) {
+        /* Active rendering: normal 60fps pacing */
+        ap__g.needs_frame = false;
         uint32_t now = SDL_GetTicks();
         uint32_t elapsed = now - ap__g.last_present_ms;
         if (elapsed < 16) {
             SDL_Delay(16 - elapsed);
         }
-        ap__g.last_present_ms = SDL_GetTicks();
+    } else {
+        /* Idle: sleep until next wake event or scheduled redraw */
+        uint32_t wake = ap__next_wake_time();
+        uint32_t now = SDL_GetTicks();
+        int timeout = (wake > now) ? (int)(wake - now) : 0;
+        if (timeout > 0) {
+            if (SDL_WaitEventTimeout(&ap__g.wake_event, timeout) == 1) {
+                ap__g.has_wake_event = true;
+            }
+        }
+        if (ap__g.next_redraw_ms != 0 && SDL_GetTicks() >= ap__g.next_redraw_ms) {
+            ap__g.next_redraw_ms = 0;
+        }
     }
+    ap__g.last_present_ms = SDL_GetTicks();
 }
 
 void ap_draw_background(void) {
