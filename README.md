@@ -148,7 +148,7 @@ The **combo system** adds support for chords (simultaneous button presses like L
 
 | Widget | Function | Description |
 |--------|----------|-------------|
-| List | `ap_list()` | Scrollable item list with selection, multi-select, reorder |
+| List | `ap_list()` | Scrollable item list with selection, multi-select, reorder, trailing hints |
 | Options List | `ap_options_list()` | Settings-style list with cycle/keyboard/click/color options |
 | Keyboard | `ap_keyboard()` | 5-row QWERTY keyboard (numbers, qwerty, asdf+enter, shift+zxcv+symbol, space) |
 | URL Keyboard | `ap_url_keyboard()` | Keyboard with configurable URL shortcuts and symbol alternates |

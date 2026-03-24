@@ -344,12 +344,13 @@ static void demo_keyboard(void) {
         { "General",      "Enter your name:",  "Hello",              AP_KB_GENERAL },
         { "URL",          "Enter a URL:",      "https://",           AP_KB_URL     },
         { "Numeric",      "Enter a number:",   "42",                 AP_KB_NUMERIC },
+        { "UTF-8 Test",   "Edit UTF-8 text:",  "Price: 10€",         AP_KB_GENERAL },
         { "Long Text",    "Enter long text:",  "The quick brown fox jumps over the lazy dog near the riverbank", AP_KB_GENERAL },
         { "URL (Custom)", "Enter a URL:",      "https://example",    AP_KB_URL     },
     };
     int mode_count = sizeof(modes) / sizeof(modes[0]);
 
-    ap_list_item items[5];
+    ap_list_item items[sizeof(modes) / sizeof(modes[0])];
     for (int i = 0; i < mode_count; i++)
         items[i] = (ap_list_item){ .label = modes[i].label };
 
@@ -741,11 +742,11 @@ static void demo_image_list(void) {
     SDL_Texture *icon = ap_load_image("demo_icon.png");
 
     ap_list_item items[] = {
-        { .label = "Sunset",    .metadata = "photo",  .image = icon },
-        { .label = "Mountain",  .metadata = "photo",  .image = icon },
-        { .label = "Ocean",     .metadata = "photo",  .image = icon },
-        { .label = "Forest",    .metadata = "photo",  .image = icon },
-        { .label = "Desert",    .metadata = "photo",  .image = icon },
+        { .label = "Sunset",    .image = icon, .trailing_text = "JPEG" },
+        { .label = "Mountain",  .image = icon, .trailing_text = "RAW" },
+        { .label = "Ocean",     .image = icon, .trailing_text = "PNG" },
+        { .label = "Forest",    .image = icon, .trailing_text = "TIFF" },
+        { .label = "Desert",    .image = icon, .trailing_text = "GIF" },
     };
     int count = sizeof(items) / sizeof(items[0]);
 

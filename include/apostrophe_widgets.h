@@ -32,15 +32,16 @@
  * NOTE: Always use designated initializers (e.g. { .label = "Foo" }) or the
  * AP_LIST_ITEM / AP_LIST_ITEM_BG helper macros below when creating items.
  * New fields may be added in future releases; positional initializers
- * (e.g. { "Foo", NULL, NULL, false, NULL }) will break at compile time when
- * that happens.
+ * (e.g. { "Foo", NULL, NULL, false, NULL }) are fragile across releases
+ * and may need updates when fields are added.
  */
 typedef struct {
     const char  *label;
-    const char  *metadata;    /* Arbitrary string stored with item (e.g. path) */
+    const char  *metadata;    /* Arbitrary string stored with item (e.g. path), not rendered */
     SDL_Texture *image;       /* Optional preview image, NULL = none */
     bool         selected;    /* For multi-select: is this item checked? */
     SDL_Texture *background_image; /* Optional fullscreen preview for the focused item */
+    const char  *trailing_text; /* Optional right-aligned visible hint text */
 } ap_list_item;
 
 /* Convenience initializers for ap_list_item.
@@ -749,6 +750,18 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                 text_max_w -= AP_S(32);
             }
 
+            /* Reserve space for optional right-aligned visible hint text. */
+            int trailing_w = 0;
+            if (opts->items[idx].trailing_text && opts->items[idx].trailing_text[0]) {
+                int hint_w = ap_measure_text(item_font, opts->items[idx].trailing_text);
+                int reserve = hint_w + AP_S(16);
+                int min_label_w = AP_S(96);
+                if (hint_w > 0 && (text_max_w - reserve) >= min_label_w) {
+                    trailing_w = hint_w;
+                    text_max_w -= reserve;
+                }
+            }
+
             /* Image — always at fixed item_y */
             if (opts->show_images && opts->items[idx].image) {
                 int img_y = item_y + (pill_h - image_size) / 2;
@@ -820,6 +833,15 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
                                      text_x,
                                      item_y + (pill_h - text_h) / 2,
                                      text_color, text_max_w);
+            }
+
+            if (trailing_w > 0) {
+                int trailing_x = margin + available_w - pill_pad - trailing_w;
+                int trailing_y = item_y + (pill_h - text_h) / 2;
+                ap_color trailing_color = theme->hint;
+                if (idx == highlight_idx) trailing_color.a = 255;
+                ap_draw_text(item_font, opts->items[idx].trailing_text,
+                             trailing_x, trailing_y, trailing_color);
             }
         }
 
@@ -1257,28 +1279,119 @@ static int ap__kb5_count(const char **row) {
     return n;
 }
 
+static bool ap__kb_utf8_is_continuation_byte(unsigned char c) {
+    return (c & 0xC0u) == 0x80u;
+}
+
+static int ap__kb_utf8_clamp_boundary(const char *text, int idx) {
+    int len;
+
+    if (!text) return 0;
+    len = (int)strlen(text);
+    if (idx < 0) idx = 0;
+    if (idx > len) idx = len;
+
+    while (idx > 0 && idx < len &&
+           ap__kb_utf8_is_continuation_byte((unsigned char)text[idx])) {
+        idx--;
+    }
+    return idx;
+}
+
+static int ap__kb_utf8_prev_boundary(const char *text, int idx) {
+    int len;
+
+    if (!text) return 0;
+    len = (int)strlen(text);
+    if (idx < 0) idx = 0;
+    if (idx > len) idx = len;
+    if (idx > 0 &&
+        idx < len &&
+        ap__kb_utf8_is_continuation_byte((unsigned char)text[idx])) {
+        return ap__kb_utf8_clamp_boundary(text, idx);
+    }
+
+    idx = ap__kb_utf8_clamp_boundary(text, idx);
+    if (idx <= 0) return 0;
+    idx--;
+    while (idx > 0 && ap__kb_utf8_is_continuation_byte((unsigned char)text[idx])) {
+        idx--;
+    }
+    return idx;
+}
+
+static int ap__kb_utf8_next_boundary(const char *text, int idx) {
+    int len;
+
+    if (!text) return 0;
+    len = (int)strlen(text);
+    if (idx < 0) idx = 0;
+    if (idx > len) idx = len;
+    if (idx >= len) return len;
+
+    if (ap__kb_utf8_is_continuation_byte((unsigned char)text[idx])) {
+        while (idx < len &&
+               ap__kb_utf8_is_continuation_byte((unsigned char)text[idx])) {
+            idx++;
+        }
+        return idx;
+    }
+
+    idx++;
+    while (idx < len && ap__kb_utf8_is_continuation_byte((unsigned char)text[idx])) {
+        idx++;
+    }
+    return idx;
+}
+
 /* Helper: insert a string at text_cursor in result->text */
 static void ap__kb_insert(ap_keyboard_result *result, int *text_cursor, const char *str) {
-    int len = (int)strlen(result->text);
-    int slen = (int)strlen(str);
+    int cursor;
+    int len;
+    int slen;
+
+    if (!result || !text_cursor || !str) return;
+    cursor = ap__kb_utf8_clamp_boundary(result->text, *text_cursor);
+    len = (int)strlen(result->text);
+    slen = (int)strlen(str);
     if (len + slen < (int)sizeof(result->text) - 1) {
-        memmove(result->text + *text_cursor + slen,
-                result->text + *text_cursor,
-                len - *text_cursor + 1);
-        memcpy(result->text + *text_cursor, str, slen);
-        *text_cursor += slen;
+        memmove(result->text + cursor + slen,
+                result->text + cursor,
+                len - cursor + 1);
+        memcpy(result->text + cursor, str, slen);
+        *text_cursor = cursor + slen;
     }
 }
 
 /* Helper: backspace at text_cursor */
 static void ap__kb_backspace(ap_keyboard_result *result, int *text_cursor) {
-    if (*text_cursor > 0) {
-        int len = (int)strlen(result->text);
-        memmove(result->text + *text_cursor - 1,
-                result->text + *text_cursor,
-                len - *text_cursor + 1);
-        (*text_cursor)--;
+    int cursor;
+    int prev;
+    int len;
+
+    if (!result || !text_cursor) return;
+    cursor = ap__kb_utf8_clamp_boundary(result->text, *text_cursor);
+    if (cursor <= 0) {
+        *text_cursor = 0;
+        return;
     }
+
+    prev = ap__kb_utf8_prev_boundary(result->text, cursor);
+    len = (int)strlen(result->text);
+    memmove(result->text + prev,
+            result->text + cursor,
+            len - cursor + 1);
+    *text_cursor = prev;
+}
+
+static void ap__kb_move_cursor_left(const char *text, int *text_cursor) {
+    if (!text_cursor) return;
+    *text_cursor = ap__kb_utf8_prev_boundary(text, *text_cursor);
+}
+
+static void ap__kb_move_cursor_right(const char *text, int *text_cursor) {
+    if (!text_cursor) return;
+    *text_cursor = ap__kb_utf8_next_boundary(text, *text_cursor);
 }
 
 /* Draw keyboard input text field content with horizontal scrolling.
@@ -1290,14 +1403,17 @@ static void ap__kb_draw_input_text(TTF_Font *font, ap_keyboard_result *result,
     int ty = input_y + (input_h - TTF_FontHeight(font)) / 2;
     int tx = input_x + AP_S(16);
     int field_w = input_w - AP_S(32);
+    int safe_cursor;
+
     if (field_w <= 0) return;
     int caret_w = AP_S(2);
+    safe_cursor = ap__kb_utf8_clamp_boundary(result->text, text_cursor);
 
     /* Measure cursor pixel position */
-    char saved = result->text[text_cursor];
-    result->text[text_cursor] = '\0';
+    char saved = result->text[safe_cursor];
+    result->text[safe_cursor] = '\0';
     int cursor_px = ap_measure_text(font, result->text);
-    result->text[text_cursor] = saved;
+    result->text[safe_cursor] = saved;
 
     /* Adjust scroll to keep caret visible, centering when it drifts */
     if (cursor_px - *text_scroll > field_w - caret_w)
@@ -1417,8 +1533,8 @@ int ap_keyboard(const char *initial_text, const char *help_text,
                     case AP_BTN_B: ap__kb_backspace(result, &text_cursor); break;
                     case AP_BTN_Y: return AP_CANCELLED;
                     case AP_BTN_START: return AP_OK;
-                    case AP_BTN_L1: if (text_cursor > 0) text_cursor--; break;
-                    case AP_BTN_R1: if (text_cursor < (int)strlen(result->text)) text_cursor++; break;
+                    case AP_BTN_L1: ap__kb_move_cursor_left(result->text, &text_cursor); break;
+                    case AP_BTN_R1: ap__kb_move_cursor_right(result->text, &text_cursor); break;
                     case AP_BTN_MENU:
                         ap_show_help_overlay(help_text ? help_text : ap__kb_help_numeric);
                         break;
@@ -1595,12 +1711,12 @@ int ap_keyboard(const char *initial_text, const char *help_text,
 
                 case AP_BTN_L1:
                     /* Move text cursor left */
-                    if (text_cursor > 0) text_cursor--;
+                    ap__kb_move_cursor_left(result->text, &text_cursor);
                     break;
 
                 case AP_BTN_R1:
                     /* Move text cursor right */
-                    if (text_cursor < (int)strlen(result->text)) text_cursor++;
+                    ap__kb_move_cursor_right(result->text, &text_cursor);
                     break;
 
                 case AP_BTN_MENU:
@@ -1942,10 +2058,10 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
                 case AP_BTN_START:
                     return AP_OK;
                 case AP_BTN_L1:
-                    if (text_cursor > 0) text_cursor--;
+                    ap__kb_move_cursor_left(result->text, &text_cursor);
                     break;
                 case AP_BTN_R1:
-                    if (text_cursor < (int)strlen(result->text)) text_cursor++;
+                    ap__kb_move_cursor_right(result->text, &text_cursor);
                     break;
                 case AP_BTN_MENU:
                     ap_show_help_overlay(help_text ? help_text : ap__kb_help_url);
