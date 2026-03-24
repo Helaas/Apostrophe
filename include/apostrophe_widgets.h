@@ -689,6 +689,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
             float t   = ap__clampf((float)(now - pill_anim_start) / AP__PILL_ANIM_MS, 0.0f, 1.0f);
             pill_anim_y = ap__lerpf(pill_from_y, (float)pill_target_y, t);
             pill_anim_w = ap__lerpf(pill_from_w, (float)pill_target_w, t);
+            if (t < 1.0f) ap_request_frame();
             /* Clamp to content area */
             if (pill_anim_y < (float)content_y)
                 pill_anim_y = (float)content_y;
@@ -806,6 +807,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
             if (is_selected) {
                 int draw_label_w = ap_measure_text(item_font, label);
                 ap_text_scroll_update(&sel_scroll, draw_label_w, text_max_w, dt);
+                if (sel_scroll.active) ap_request_frame();
 
                 if (draw_label_w > text_max_w) {
                     SDL_Rect clip = {text_x, item_y, text_max_w, pill_h};
@@ -1515,6 +1517,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
         while (running) {
             uint32_t now = SDL_GetTicks();
             if (now - caret_blink > 500) { caret_visible = !caret_visible; caret_blink = now; }
+            ap_request_frame_in(500);
 
             ap_input_event ev;
             while (ap_poll_input(&ev)) {
@@ -1609,6 +1612,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
     while (running) {
         uint32_t now = SDL_GetTicks();
         if (now - caret_blink > 500) { caret_visible = !caret_visible; caret_blink = now; }
+        ap_request_frame_in(500);
 
         /* Build current row info from mode */
         const char **r0 = symbols ? ap__kb5_row0_sym : (shift ? ap__kb5_row0_upper : ap__kb5_row0_lower);
@@ -1950,6 +1954,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
     while (running) {
         uint32_t now = SDL_GetTicks();
         if (now - caret_blink > 500) { caret_visible = !caret_visible; caret_blink = now; }
+        ap_request_frame_in(500);
 
         /* Current active shortcuts */
         const char **active_shortcuts = (sym_alt && shortcuts_alt) ? shortcuts_alt : shortcuts;
@@ -2528,6 +2533,7 @@ int ap_process_message(ap_process_opts *opts, ap_process_fn fn, void *userdata) 
                 (screen_w - pct_w) / 2,
                 bar_y + bar_h + AP_S(8),
                 theme->hint);
+            ap_request_frame_in(33); /* ~30fps is sufficient for a progress bar */
         }
 
         /* Spinner (simple dots animation when no progress bar) */
@@ -2541,6 +2547,7 @@ int ap_process_message(ap_process_opts *opts, ap_process_fn fn, void *userdata) 
                 (screen_w - sw) / 2,
                 center_y + AP_S(20),
                 theme->hint);
+            ap_request_frame_in(300);
         }
 
         ap_present();
@@ -3384,6 +3391,7 @@ int ap_download_manager(ap_download *downloads, int count,
 
         if (done_count >= count) all_done = true;
         if (cancelled && active_count <= 0) { all_done = true; result->cancelled = true; }
+        if (!all_done) ap_request_frame();
 
         /* Input */
         ap_input_event ev;
