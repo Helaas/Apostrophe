@@ -19,12 +19,13 @@ This matrix maps Apostrophe's public API surface to the demos that exercise it.
 | Widget / Feature | Demo Coverage |
 |------------------|---------------|
 | List: basic select, help overlay | `examples/demo/main.c` → `Basic List` |
+| List: hidden scrollbar | `examples/demo/main.c` → `List (No Scrollbar)` |
 | List: images, primary/secondary/tertiary actions, footer overflow | `examples/demo/main.c` → `Image List` |
 | List: background preview, `ap_reload_background()` | `examples/demo/main.c` → `Background Preview` |
 | List: multi-select | `examples/demo/main.c` → `Multi-Select List` |
 | List: reorder | `examples/demo/main.c` → `Reorderable List` |
 | Options list: standard, keyboard, clickable, color picker, action buttons | `examples/demo/main.c` → `Options List` |
-| Keyboard: general, URL, numeric, custom URL help/shortcuts, long text scrolling | `examples/demo/main.c` → `Keyboard` |
+| Keyboard: general, URL, numeric, UTF-8 / long text editing, custom URL help/shortcuts, URL number-symbol toggle, return-to-mode flow | `examples/demo/main.c` → `Keyboard` |
 | Confirmation | `examples/demo/main.c` → `Confirmation` |
 | Selection | `examples/demo/main.c` → `Selection` |
 | Process message: progress, cancel, dynamic text | `examples/demo/main.c` → `Process Message`, `Advanced Process` |

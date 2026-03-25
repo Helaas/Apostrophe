@@ -76,6 +76,7 @@ typedef struct {
     ap_button        confirm_button;   /* Confirm/accept action (e.g. START) */
     ap_button        tertiary_action_button; /* Tertiary action (e.g. MENU) */
     bool             show_images;      /* Show image column */
+    bool             hide_scrollbar;   /* Hide scrollbar (scrolling still works) */
     const char      *help_text;        /* Help overlay text (Menu to show) */
     uint32_t         input_delay;      /* Override input debounce (0 = default) */
     int              initial_index;    /* Starting cursor position */
@@ -384,6 +385,7 @@ ap_list_opts ap_list_default_opts(const char *title, ap_list_item *items, int co
     opts.confirm_button = AP_BTN_NONE;
     opts.tertiary_action_button = AP_BTN_NONE;
     opts.show_images = false;
+    opts.hide_scrollbar = false;
     opts.help_text = NULL;
     opts.input_delay = 0;
     opts.initial_index = 0;
@@ -667,7 +669,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
             if (opts->multi_select) pill_target_w += AP_S(32);
             if (opts->show_images)  pill_target_w += image_size + image_pad;
             int avail = screen_w - margin * 2;
-            if (opts->item_count > max_visible) avail -= AP_S(12);
+            if (!opts->hide_scrollbar && opts->item_count > max_visible) avail -= AP_S(12);
             if (pill_target_w > avail) pill_target_w = avail;
         }
         /* Save for the next frame's cursor-change snap */
@@ -713,7 +715,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
 
         /* List items */
         int available_w = screen_w - margin * 2;
-        if (opts->item_count > max_visible) {
+        if (!opts->hide_scrollbar && opts->item_count > max_visible) {
             available_w -= AP_S(12); /* Space for scrollbar */
         }
 
@@ -848,7 +850,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         }
 
         /* Scrollbar */
-        if (opts->item_count > max_visible) {
+        if (!opts->hide_scrollbar && opts->item_count > max_visible) {
             int sb_x = screen_w - margin - AP_S(6);
             ap_draw_scrollbar(sb_x, content_y, content_h, max_visible, opts->item_count, scroll_top);
         }
@@ -1468,11 +1470,12 @@ static const char *ap__kb_help_url =
     "D-Pad: Navigate between keys\n"
     "A: Type the selected key\n"
     "B: Backspace\n"
-    "X: Toggle symbols (0-9)\n"
+    "X: Toggle shortcut alternates\n"
     "L1 / R1: Move cursor within text\n"
     "Select: Toggle Shift (uppercase)\n"
     "Y: Exit keyboard without saving\n"
-    "Start: Enter (confirm input)";
+    "Start: Enter (confirm input)\n"
+    "123/abc: Toggle number/symbol grid";
 
 int ap_keyboard(const char *initial_text, const char *help_text,
                 ap_keyboard_layout layout, ap_keyboard_result *result) {
@@ -1724,8 +1727,16 @@ int ap_keyboard(const char *initial_text, const char *help_text,
                     break;
 
                 case AP_BTN_MENU:
-                    /* Help overlay — use built-in instructions */
-                    ap_show_help_overlay(ap__kb_help_default);
+                    /* Show keyboard help overlay.
+                     *
+                     * NOTE: Unlike earlier releases, this uses the caller-provided
+                     * `help_text` (when non-NULL) as the Menu help overlay content,
+                     * falling back to `ap__kb_help_default` only when `help_text`
+                     * is NULL. Callers should therefore pass concise help/usage
+                     * strings here, not prompt-like text, since it will be shown
+                     * verbatim in the overlay.
+                     */
+                    ap_show_help_overlay(help_text ? help_text : ap__kb_help_default);
                     break;
 
                 default: break;
@@ -1940,6 +1951,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
     int cursor_col = 0;
     bool shift = false;
     bool sym_alt = false; /* toggle for shortcut alternates */
+    bool numbers = false; /* toggle number/symbol grid */
     int text_cursor = (int)strlen(result->text);
     int text_scroll = 0;
     bool running = true;
@@ -2015,34 +2027,54 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
                     }
                     /* URL chars row */
                     else if (cursor_row == url_chars_row) {
-                        if (cursor_col < ap__kb5_count((const char **)ap__url_chars))
-                            ap__kb_insert(result, &text_cursor, ap__url_chars[cursor_col]);
+                        if (numbers) {
+                            if (cursor_col < ap__kb5_count(ap__kb5_row0_lower))
+                                ap__kb_insert(result, &text_cursor, ap__kb5_row0_lower[cursor_col]);
+                        } else {
+                            if (cursor_col < ap__kb5_count((const char **)ap__url_chars))
+                                ap__kb_insert(result, &text_cursor, ap__url_chars[cursor_col]);
+                        }
                     }
                     /* QWERTY row */
                     else if (cursor_row == qwerty_row) {
-                        const char **r = shift ? ap__kb5_row1_upper : ap__kb5_row1_lower;
-                        if (cursor_col < ap__kb5_count(r))
-                            ap__kb_insert(result, &text_cursor, r[cursor_col]);
+                        if (numbers) {
+                            if (cursor_col < ap__kb5_count(ap__kb5_row0_sym))
+                                ap__kb_insert(result, &text_cursor, ap__kb5_row0_sym[cursor_col]);
+                        } else {
+                            const char **r = shift ? ap__kb5_row1_upper : ap__kb5_row1_lower;
+                            if (cursor_col < ap__kb5_count(r))
+                                ap__kb_insert(result, &text_cursor, r[cursor_col]);
+                        }
                     }
                     /* ASDF row */
                     else if (cursor_row == asdf_row) {
-                        const char **r = shift ? ap__kb5_row2_upper : ap__kb5_row2_lower;
-                        int rn = ap__kb5_count(r);
-                        if (cursor_col < rn)
-                            ap__kb_insert(result, &text_cursor, r[cursor_col]);
-                        else /* enter */
-                            return AP_OK;
+                        if (numbers) {
+                            int rn = ap__kb5_count(ap__kb5_row2_sym);
+                            if (cursor_col < rn)
+                                ap__kb_insert(result, &text_cursor, ap__kb5_row2_sym[cursor_col]);
+                            else /* enter */
+                                return AP_OK;
+                        } else {
+                            const char **r = shift ? ap__kb5_row2_upper : ap__kb5_row2_lower;
+                            int rn = ap__kb5_count(r);
+                            if (cursor_col < rn)
+                                ap__kb_insert(result, &text_cursor, r[cursor_col]);
+                            else /* enter */
+                                return AP_OK;
+                        }
                     }
                     /* ZXCV row */
                     else if (cursor_row == zxcv_row) {
                         if (cursor_col == 0) {
                             shift = !shift;
+                        } else if (cursor_col == row_max[zxcv_row]) {
+                            numbers = !numbers;
                         } else {
-                            const char **r = shift ? ap__kb5_row3_upper : ap__kb5_row3_lower;
+                            const char **r = numbers ? ap__kb5_row3_sym
+                                           : (shift ? ap__kb5_row3_upper : ap__kb5_row3_lower);
                             int rn = ap__kb5_count(r);
                             if (cursor_col - 1 < rn)
                                 ap__kb_insert(result, &text_cursor, r[cursor_col - 1]);
-                            /* else: symbol area — no-op in URL mode */
                         }
                     }
                     break;
@@ -2128,22 +2160,24 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
             ry += key_h + key_spacing;
         }
 
-        /* URL chars row */
+        /* URL chars / numbers row */
         {
-            int ucn = ap__kb5_count((const char **)ap__url_chars);
+            const char **row_keys = numbers ? ap__kb5_row0_lower : (const char **)ap__url_chars;
+            int ucn = ap__kb5_count(row_keys);
             int row_w = ucn * (key_w + key_spacing) - key_spacing;
             int cx = (screen_w - row_w) / 2;
             for (int i = 0; i < ucn; i++) {
                 bool sel = (cursor_row == url_chars_row && cursor_col == i);
-                AP__KB_DRAW_KEY2(cx, ry, key_w, key_h, ap__url_chars[i], sel, key_font);
+                AP__KB_DRAW_KEY2(cx, ry, key_w, key_h, row_keys[i], sel, key_font);
                 cx += key_w + key_spacing;
             }
             ry += key_h + key_spacing;
         }
 
-        /* QWERTY row */
+        /* QWERTY / symbols row */
         {
-            const char **r = shift ? ap__kb5_row1_upper : ap__kb5_row1_lower;
+            const char **r = numbers ? ap__kb5_row0_sym
+                           : (shift ? ap__kb5_row1_upper : ap__kb5_row1_lower);
             int rn = ap__kb5_count(r);
             int row_w = rn * (key_w + key_spacing) - key_spacing;
             int cx = (screen_w - row_w) / 2;
@@ -2155,9 +2189,10 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
             ry += key_h + key_spacing;
         }
 
-        /* ASDF + enter row */
+        /* ASDF / symbols + enter row */
         {
-            const char **r = shift ? ap__kb5_row2_upper : ap__kb5_row2_lower;
+            const char **r = numbers ? ap__kb5_row2_sym
+                           : (shift ? ap__kb5_row2_upper : ap__kb5_row2_lower);
             int rn = ap__kb5_count(r);
             int enter_w = key_w * 3 / 2;
             int row_w = rn * (key_w + key_spacing) + enter_w;
@@ -2174,12 +2209,14 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
             ry += key_h + key_spacing;
         }
 
-        /* ZXCV row: shift + chars + (no symbol toggle in URL mode — use the space) */
+        /* ZXCV / symbols row: shift + chars + 123/abc toggle */
         {
-            const char **r = shift ? ap__kb5_row3_upper : ap__kb5_row3_lower;
+            const char **r = numbers ? ap__kb5_row3_sym
+                           : (shift ? ap__kb5_row3_upper : ap__kb5_row3_lower);
             int rn = ap__kb5_count(r);
             int shift_w = key_w * 2 + key_spacing;
-            int row_w = shift_w + key_spacing + rn * (key_w + key_spacing) - key_spacing;
+            int toggle_w = key_w * 2 + key_spacing;
+            int row_w = shift_w + key_spacing + rn * (key_w + key_spacing) + toggle_w;
             int cx = (screen_w - row_w) / 2;
             {
                 bool sel = (cursor_row == zxcv_row && cursor_col == 0);
@@ -2190,6 +2227,10 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
                 bool sel = (cursor_row == zxcv_row && cursor_col == i + 1);
                 AP__KB_DRAW_KEY2(cx, ry, key_w, key_h, r[i], sel, key_font);
                 cx += key_w + key_spacing;
+            }
+            {
+                bool sel = (cursor_row == zxcv_row && cursor_col == row_max[zxcv_row]);
+                AP__KB_DRAW_KEY2(cx, ry, toggle_w, key_h, numbers ? "abc" : "123", sel, key_font);
             }
         }
 

@@ -126,7 +126,11 @@
 #define AP_INPUT_REPEAT_DELAY  300
 #define AP_INPUT_REPEAT_RATE   100
 #define AP_INPUT_DEBOUNCE       20
+#ifdef PLATFORM_MY355
+#define AP_AXIS_DEADZONE     20000  /* MY355 joystick needs higher deadzone to avoid crosstalk */
+#else
 #define AP_AXIS_DEADZONE     16000
+#endif
 
 /* Text scroll timing */
 #define AP_TEXT_SCROLL_SPEED     1
