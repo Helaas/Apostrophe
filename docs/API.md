@@ -941,6 +941,10 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
 - **Row 3**: Shift (⇧, 2× width) + ZXCV row (7 keys) + symbol toggle (#+=, 2× width)
 - **Row 4**: Space bar (8× width, centered)
 
+**Parameters**:
+- `initial_text`: Pre-filled text shown in the input field on open (may be `NULL` for empty).
+- `help_text`: Text shown verbatim in the **Menu help overlay**. Pass `NULL` to use the built-in keyboard instructions. Do not pass a prompt string here — it is not displayed as an on-screen label.
+
 **Button mapping** (Gabagool-compatible):
 - **B**: Backspace
 - **X**: Space (general) / Toggle symbol alternates (URL)
@@ -948,7 +952,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
 - **Select**: Toggle shift
 - **Start**: Confirm
 - **L1/R1**: Move text cursor left/right
-- **Menu**: Help overlay
+- **Menu**: Help overlay (shows `help_text` or built-in instructions when `help_text` is `NULL`)
 
 **URL Keyboard** adds configurable shortcut rows above the QWERTY keys:
 - Default shortcuts: `https://`, `www.`, `.com`, `.org`, `.net`, `.io`, `.dev`, `.app`, `.edu`, `.gov`
