@@ -2762,10 +2762,14 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
         }
 
         /* Animate scroll */
-        {
+        if (scroll_target != (int)scroll_current || scroll_anim_start != 0) {
             float t = ap__clampf((float)(now - scroll_anim_start) / AP__SCROLL_ANIM_MS, 0.0f, 1.0f);
             scroll_current = ap__lerpf(scroll_from, (float)scroll_target, t);
-            if (t < 1.0f) ap_request_frame();
+            if (t < 1.0f) {
+                ap_request_frame();
+            } else {
+                scroll_anim_start = 0;
+            }
         }
 
         /* Render */
