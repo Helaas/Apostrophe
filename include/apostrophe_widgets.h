@@ -1470,11 +1470,12 @@ static const char *ap__kb_help_url =
     "D-Pad: Navigate between keys\n"
     "A: Type the selected key\n"
     "B: Backspace\n"
-    "X: Toggle symbols (0-9)\n"
+    "X: Toggle shortcut alternates\n"
     "L1 / R1: Move cursor within text\n"
     "Select: Toggle Shift (uppercase)\n"
     "Y: Exit keyboard without saving\n"
-    "Start: Enter (confirm input)";
+    "Start: Enter (confirm input)\n"
+    "123/abc: Toggle number/symbol grid";
 
 int ap_keyboard(const char *initial_text, const char *help_text,
                 ap_keyboard_layout layout, ap_keyboard_result *result) {
@@ -1726,8 +1727,7 @@ int ap_keyboard(const char *initial_text, const char *help_text,
                     break;
 
                 case AP_BTN_MENU:
-                    /* Help overlay — use built-in instructions */
-                    ap_show_help_overlay(ap__kb_help_default);
+                    ap_show_help_overlay(help_text ? help_text : ap__kb_help_default);
                     break;
 
                 default: break;

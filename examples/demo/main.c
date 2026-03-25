@@ -421,7 +421,7 @@ static void demo_keyboard(void) {
 
         if (idx == 1) {
             /* URL keyboard with default shortcuts */
-            rc = ap_url_keyboard(modes[idx].initial, modes[idx].prompt, NULL, &result);
+            rc = ap_url_keyboard(modes[idx].initial, NULL, NULL, &result);
         } else if (idx == 4) {
             /* Custom URL keyboard with shortcut keys */
             const char *shortcuts[] = { ".io", ".dev", ".app", "https://", "http://" };
@@ -435,7 +435,7 @@ static void demo_keyboard(void) {
             };
             rc = ap_url_keyboard(modes[idx].initial, url_help, &url_cfg, &result);
         } else {
-            rc = ap_keyboard(modes[idx].initial, modes[idx].prompt, modes[idx].layout, &result);
+            rc = ap_keyboard(modes[idx].initial, NULL, modes[idx].layout, &result);
         }
 
         if (rc == AP_OK) {
