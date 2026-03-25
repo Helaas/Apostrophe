@@ -89,6 +89,46 @@ static void demo_list(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: List (hidden scrollbar)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void demo_list_no_scrollbar(void) {
+    ap_list_item items[] = {
+        { .label = "Mercury"  },
+        { .label = "Venus"    },
+        { .label = "Earth"    },
+        { .label = "Mars"     },
+        { .label = "Jupiter"  },
+        { .label = "Saturn"   },
+        { .label = "Uranus"   },
+        { .label = "Neptune"  },
+        { .label = "Pluto"    },
+        { .label = "Ceres"    },
+        { .label = "Eris"     },
+        { .label = "Haumea"   },
+    };
+    int count = sizeof(items) / sizeof(items[0]);
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "SELECT", .is_confirm = true },
+    };
+
+    ap_list_opts opts = ap_list_default_opts("Planets (No Scrollbar)", items, count);
+    opts.footer         = footer;
+    opts.footer_count   = 2;
+    opts.hide_scrollbar = true;
+
+    ap_list_result result;
+    int rc = ap_list(&opts, &result);
+
+    if (rc == AP_OK && result.selected_index >= 0) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Selected: %s", items[result.selected_index].label);
+        demo_show_message(msg);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Demo: Multi-select list
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void demo_multi_select(void) {
@@ -341,36 +381,48 @@ static void demo_keyboard(void) {
         const char         *initial;
         ap_keyboard_layout  layout;
     } modes[] = {
-        { "General",      "Enter your name:",  "Hello",              AP_KB_GENERAL },
-        { "URL",          "Enter a URL:",      "https://",           AP_KB_URL     },
-        { "Numeric",      "Enter a number:",   "42",                 AP_KB_NUMERIC },
-        { "UTF-8 Test",   "Edit UTF-8 text:",  "Price: 10€",         AP_KB_GENERAL },
-        { "Long Text",    "Enter long text:",  "The quick brown fox jumps over the lazy dog near the riverbank", AP_KB_GENERAL },
-        { "URL (Custom)", "Enter a URL:",      "https://example",    AP_KB_URL     },
+        { "General",          "Enter your name:",  "Hello",              AP_KB_GENERAL },
+        { "URL",              "Enter a URL:",      "https://",           AP_KB_URL     },
+        { "Numeric",          "Enter a number:",   "42",                 AP_KB_NUMERIC },
+        { "UTF-8 / Long",    "Edit text:",         "The quick brown fox jumps over the lazy dog — Price: 10€ résumé café", AP_KB_GENERAL },
+        { "URL (Custom)",     "Enter a URL:",      "https://example",    AP_KB_URL     },
     };
     int mode_count = sizeof(modes) / sizeof(modes[0]);
 
-    ap_list_item items[sizeof(modes) / sizeof(modes[0])];
-    for (int i = 0; i < mode_count; i++)
-        items[i] = (ap_list_item){ .label = modes[i].label };
+    int last_index = 0;
+    int last_visible = 0;
 
-    ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "BACK" },
-        { .button = AP_BTN_A, .label = "OPEN", .is_confirm = true },
-    };
+    while (1) {
+        ap_list_item items[sizeof(modes) / sizeof(modes[0])];
+        for (int i = 0; i < mode_count; i++)
+            items[i] = (ap_list_item){ .label = modes[i].label };
 
-    ap_list_opts opts = ap_list_default_opts("Keyboard Mode", items, mode_count);
-    opts.footer       = footer;
-    opts.footer_count = 2;
+        ap_footer_item footer[] = {
+            { .button = AP_BTN_B, .label = "BACK" },
+            { .button = AP_BTN_A, .label = "OPEN", .is_confirm = true },
+        };
 
-    ap_list_result lr;
-    int rc = ap_list(&opts, &lr);
+        ap_list_opts opts = ap_list_default_opts("Keyboard Mode", items, mode_count);
+        opts.footer              = footer;
+        opts.footer_count        = 2;
+        opts.initial_index       = last_index;
+        opts.visible_start_index = last_visible;
 
-    if (rc == AP_OK && lr.selected_index >= 0 && lr.selected_index < mode_count) {
+        ap_list_result lr;
+        int rc = ap_list(&opts, &lr);
+        last_index   = lr.selected_index >= 0 ? lr.selected_index : last_index;
+        last_visible = lr.visible_start_index;
+
+        if (rc != AP_OK || lr.selected_index < 0 || lr.selected_index >= mode_count)
+            break;
+
         int idx = lr.selected_index;
         ap_keyboard_result result;
 
-        if (idx == 4) {
+        if (idx == 1) {
+            /* URL keyboard with default shortcuts */
+            rc = ap_url_keyboard(modes[idx].initial, modes[idx].prompt, NULL, &result);
+        } else if (idx == 4) {
             /* Custom URL keyboard with shortcut keys */
             const char *shortcuts[] = { ".io", ".dev", ".app", "https://", "http://" };
             const char *url_help =
@@ -2218,6 +2270,7 @@ static const struct {
     demo_fn     fn;
 } demos[] = {
     { "Basic List",          demo_list                },
+    { "List (No Scrollbar)", demo_list_no_scrollbar   },
     { "List Navigation",     demo_list_navigation     },
     { "Image List",          demo_image_list          },
     { "Multi-Select List",   demo_multi_select        },

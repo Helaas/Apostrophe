@@ -76,6 +76,7 @@ typedef struct {
     ap_button        confirm_button;   /* Confirm/accept action (e.g. START) */
     ap_button        tertiary_action_button; /* Tertiary action (e.g. MENU) */
     bool             show_images;      /* Show image column */
+    bool             hide_scrollbar;   /* Hide scrollbar (scrolling still works) */
     const char      *help_text;        /* Help overlay text (Menu to show) */
     uint32_t         input_delay;      /* Override input debounce (0 = default) */
     int              initial_index;    /* Starting cursor position */
@@ -384,6 +385,7 @@ ap_list_opts ap_list_default_opts(const char *title, ap_list_item *items, int co
     opts.confirm_button = AP_BTN_NONE;
     opts.tertiary_action_button = AP_BTN_NONE;
     opts.show_images = false;
+    opts.hide_scrollbar = false;
     opts.help_text = NULL;
     opts.input_delay = 0;
     opts.initial_index = 0;
@@ -667,7 +669,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
             if (opts->multi_select) pill_target_w += AP_S(32);
             if (opts->show_images)  pill_target_w += image_size + image_pad;
             int avail = screen_w - margin * 2;
-            if (opts->item_count > max_visible) avail -= AP_S(12);
+            if (!opts->hide_scrollbar && opts->item_count > max_visible) avail -= AP_S(12);
             if (pill_target_w > avail) pill_target_w = avail;
         }
         /* Save for the next frame's cursor-change snap */
@@ -713,7 +715,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
 
         /* List items */
         int available_w = screen_w - margin * 2;
-        if (opts->item_count > max_visible) {
+        if (!opts->hide_scrollbar && opts->item_count > max_visible) {
             available_w -= AP_S(12); /* Space for scrollbar */
         }
 
@@ -848,7 +850,7 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         }
 
         /* Scrollbar */
-        if (opts->item_count > max_visible) {
+        if (!opts->hide_scrollbar && opts->item_count > max_visible) {
             int sb_x = screen_w - margin - AP_S(6);
             ap_draw_scrollbar(sb_x, content_y, content_h, max_visible, opts->item_count, scroll_top);
         }
