@@ -1727,6 +1727,15 @@ int ap_keyboard(const char *initial_text, const char *help_text,
                     break;
 
                 case AP_BTN_MENU:
+                    /* Show keyboard help overlay.
+                     *
+                     * NOTE: Unlike earlier releases, this uses the caller-provided
+                     * `help_text` (when non-NULL) as the Menu help overlay content,
+                     * falling back to `ap__kb_help_default` only when `help_text`
+                     * is NULL. Callers should therefore pass concise help/usage
+                     * strings here, not prompt-like text, since it will be shown
+                     * verbatim in the overlay.
+                     */
                     ap_show_help_overlay(help_text ? help_text : ap__kb_help_default);
                     break;
 
