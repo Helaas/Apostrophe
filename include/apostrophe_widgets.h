@@ -1021,6 +1021,8 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                         if (kb_ret == AP_OK) {
                             /* Update the option value — caller must manage memory */
                             if (sel >= 0) {
+                                free((void *)item->options[sel].value);
+                                free((void *)item->options[sel].label);
                                 item->options[sel].value = strdup(kb_result.text);
                                 item->options[sel].label = strdup(kb_result.text);
                             }
@@ -1044,6 +1046,8 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                             snprintf(hex, sizeof(hex), "#%02X%02X%02X",
                                      picked.r, picked.g, picked.b);
                             if (sel >= 0) {
+                                free((void *)item->options[sel].value);
+                                free((void *)item->options[sel].label);
                                 item->options[sel].value = strdup(hex);
                                 item->options[sel].label = strdup(hex);
                             }
@@ -2787,19 +2791,21 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
 
             switch (ev.button) {
                 case AP_BTN_UP: {
+                    int old_target = scroll_target;
                     float t_now = ap__clampf((float)(now - scroll_anim_start) / AP__SCROLL_ANIM_MS, 0.0f, 1.0f);
                     scroll_from = ap__lerpf(scroll_from, (float)scroll_target, t_now);
                     scroll_target -= AP_S(40);
                     if (scroll_target < 0) scroll_target = 0;
-                    scroll_anim_start = now;
+                    if (scroll_target != old_target) scroll_anim_start = now;
                     break;
                 }
                 case AP_BTN_DOWN: {
+                    int old_target = scroll_target;
                     float t_now = ap__clampf((float)(now - scroll_anim_start) / AP__SCROLL_ANIM_MS, 0.0f, 1.0f);
                     scroll_from = ap__lerpf(scroll_from, (float)scroll_target, t_now);
                     scroll_target += AP_S(40);
                     if (scroll_target > max_scroll) scroll_target = max_scroll;
-                    scroll_anim_start = now;
+                    if (scroll_target != old_target) scroll_anim_start = now;
                     break;
                 }
                 case AP_BTN_B:
