@@ -2782,18 +2782,22 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
             if (!ev.pressed) continue;
 
             switch (ev.button) {
-                case AP_BTN_UP:
+                case AP_BTN_UP: {
+                    float t_now = ap__clampf((float)(now - scroll_anim_start) / AP__SCROLL_ANIM_MS, 0.0f, 1.0f);
+                    scroll_from = ap__lerpf(scroll_from, (float)scroll_target, t_now);
                     scroll_target -= AP_S(40);
                     if (scroll_target < 0) scroll_target = 0;
-                    scroll_from = scroll_current;
                     scroll_anim_start = now;
                     break;
-                case AP_BTN_DOWN:
+                }
+                case AP_BTN_DOWN: {
+                    float t_now = ap__clampf((float)(now - scroll_anim_start) / AP__SCROLL_ANIM_MS, 0.0f, 1.0f);
+                    scroll_from = ap__lerpf(scroll_from, (float)scroll_target, t_now);
                     scroll_target += AP_S(40);
                     if (scroll_target > max_scroll) scroll_target = max_scroll;
-                    scroll_from = scroll_current;
                     scroll_anim_start = now;
                     break;
+                }
                 case AP_BTN_B:
                     result->action = AP_DETAIL_BACK;
                     running = false;

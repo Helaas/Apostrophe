@@ -401,11 +401,13 @@ static void demo_options_list(void) {
     int count = sizeof(settings) / sizeof(settings[0]);
 
     /* Named indices for clickable items — avoids fragile hard-coded numbers */
-    #define IDX_NAME      10
-    #define IDX_ACCENT    11
-    #define IDX_STORAGE   12
-    #define IDX_ABOUT     13
-    #define IDX_RESET_ALL 14
+    enum {
+        IDX_NAME      = 10,
+        IDX_ACCENT    = 11,
+        IDX_STORAGE   = 12,
+        IDX_ABOUT     = 13,
+        IDX_RESET_ALL = 14,
+    };
 
     /* Snapshot default selected_option values for Reset All */
     int defaults[sizeof(settings) / sizeof(settings[0])];
@@ -472,8 +474,8 @@ static void demo_options_list(void) {
                      "Volume: %s\nTheme: %s\nName: %s\nAccent: %s",
                      demo_option_display(&settings[0], "Mid"),
                      demo_option_display(&settings[1], "Dark"),
-                     demo_option_display(&settings[10], "Player 1"),
-                     demo_option_display(&settings[11], orig_hex));
+                     demo_option_display(&settings[IDX_NAME], "Player 1"),
+                     demo_option_display(&settings[IDX_ACCENT], orig_hex));
             demo_show_message(msg);
             continue;
         }
