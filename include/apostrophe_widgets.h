@@ -1089,6 +1089,9 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
         if (opts->status_bar) ap_draw_status_bar(opts->status_bar);
 
         int available_w = screen_w - margin * 2;
+        if (opts->item_count > max_visible) {
+            available_w -= AP_S(12); /* Space for scrollbar */
+        }
 
         for (int i = 0; i < max_visible && (scroll_top + i) < opts->item_count; i++) {
             int idx = scroll_top + i;
