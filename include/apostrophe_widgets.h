@@ -936,9 +936,20 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
     if (scroll_top < 0) scroll_top = 0;
     if (scroll_top > opts->item_count - max_visible) scroll_top = opts->item_count - max_visible;
     if (scroll_top < 0) scroll_top = 0;
+
+    /* Pill animation state */
+    float    pill_anim_y           = 0.0f;
+    float    pill_from_y           = 0.0f;
+    uint32_t pill_anim_start       = 0;
+    bool     pill_anim_initialized = false;
+    int      pill_prev_target_y    = 0;
+    int      last_cursor           = cursor;
+
     bool running = true;
 
     while (running) {
+        uint32_t now = SDL_GetTicks();
+
         /* Input */
         ap_input_event ev;
         while (ap_poll_input(&ev)) {
@@ -1083,6 +1094,34 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
         if (cursor >= scroll_top + max_visible)
             scroll_top = cursor - max_visible + 1;
 
+        /* Pill animation */
+        int pill_target_y = content_y + (cursor - scroll_top) * (pill_h + item_gap);
+
+        if (cursor != last_cursor) {
+            pill_from_y     = (float)pill_prev_target_y;
+            pill_anim_start = now;
+            last_cursor     = cursor;
+        }
+
+        pill_prev_target_y = pill_target_y;
+
+        if (!pill_anim_initialized) {
+            pill_anim_y           = (float)pill_target_y;
+            pill_from_y           = (float)pill_target_y;
+            pill_anim_start       = now;
+            pill_anim_initialized = true;
+        }
+
+        {
+            float t = ap__clampf((float)(now - pill_anim_start) / AP__PILL_ANIM_MS, 0.0f, 1.0f);
+            pill_anim_y = ap__lerpf(pill_from_y, (float)pill_target_y, t);
+            if (t < 1.0f) ap_request_frame();
+            if (pill_anim_y < (float)content_y)
+                pill_anim_y = (float)content_y;
+            if (pill_anim_y > (float)(content_y + content_h - pill_h))
+                pill_anim_y = (float)(content_y + content_h - pill_h);
+        }
+
         /* Render */
         ap_draw_background();
         if (opts->title) ap_draw_screen_title(opts->title, opts->status_bar);
@@ -1093,10 +1132,20 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
             available_w -= AP_S(12); /* Space for scrollbar */
         }
 
+        /* Draw animated pill background */
+        ap_draw_pill(margin, (int)pill_anim_y, available_w, pill_h, theme->highlight);
+
+        /* Determine which grid row the pill visually covers (for text color) */
+        int pill_center_y = (int)pill_anim_y + pill_h / 2;
+        int pill_row_idx  = (pill_center_y - content_y) / (pill_h + item_gap);
+        if (pill_row_idx < 0) pill_row_idx = 0;
+        if (pill_row_idx >= max_visible) pill_row_idx = max_visible - 1;
+        int highlight_idx = scroll_top + pill_row_idx;
+
         for (int i = 0; i < max_visible && (scroll_top + i) < opts->item_count; i++) {
             int idx = scroll_top + i;
             int item_y = content_y + i * (pill_h + item_gap);
-            bool is_selected = (idx == cursor);
+            bool is_selected = (idx == highlight_idx);
             ap_options_item *item = &opts->items[idx];
 
             const char *label = item->label ? item->label : "";
@@ -1144,9 +1193,6 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
             if (max_label_w < 0) max_label_w = 0;
 
             if (is_selected) {
-                /* Full-width pill */
-                ap_draw_pill(margin, item_y, available_w, pill_h, theme->highlight);
-
                 /* Label on left */
                 ap_draw_text_ellipsized(label_font, label,
                     margin + pill_pad,
