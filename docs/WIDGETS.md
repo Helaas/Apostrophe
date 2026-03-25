@@ -177,17 +177,19 @@ ap_options_list(&opts, &result);
 
 **Text overflow**: When input text exceeds the field width, the field scrolls horizontally to keep the cursor visible.
 
+**`help_text`**: Content shown in the **Menu help overlay**. Pass `NULL` to use the built-in keyboard instructions. This is not an on-screen prompt — the string is shown verbatim in the overlay when the user presses Menu.
+
 **Usage**:
 ```c
 ap_keyboard_result result;
-int rc = ap_keyboard("initial", "Enter text:", AP_KB_GENERAL, &result);
+int rc = ap_keyboard("initial", NULL, AP_KB_GENERAL, &result);
 if (rc == AP_OK) printf("Got: %s\n", result.text);
 ```
 
 **URL Keyboard** adds shortcut rows (e.g. `https://`, `.com`) above the QWERTY keys and a bottom-row `123` / `abc` toggle for switching between URL-friendly input and a number/symbol grid:
 ```c
 ap_keyboard_result result;
-int rc = ap_url_keyboard("https://", "Enter URL:", NULL, &result);
+int rc = ap_url_keyboard("https://", NULL, NULL, &result);
 ```
 
 In URL mode:
