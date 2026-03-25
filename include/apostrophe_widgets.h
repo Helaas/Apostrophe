@@ -2723,11 +2723,24 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
         }
     }
 
-    /* Calculate total content height for scrolling */
+    /* Pre-compute per-section layout: heights, key widths, value widths.
+       Used for total_content_h, offscreen culling, and cached render layout. */
+    int n_sections = opts->section_count;
+    int *section_total_h  = (int *)calloc((size_t)n_sections, sizeof(int));  /* total height incl. gap */
+    int *section_kw_max   = (int *)calloc((size_t)n_sections, sizeof(int));  /* INFO: max key width */
+    int *section_val_w    = (int *)calloc((size_t)n_sections, sizeof(int));  /* INFO: value column width */
+    int *section_val_x    = (int *)calloc((size_t)n_sections, sizeof(int));  /* INFO: value x position */
+    if (!section_total_h || !section_kw_max || !section_val_w || !section_val_x) {
+        free(section_total_h); free(section_kw_max); free(section_val_w); free(section_val_x);
+        free(section_images); free(section_image_w); free(section_image_h);
+        return AP_ERROR;
+    }
+
     int total_content_h = 0;
-    for (int s = 0; s < opts->section_count; s++) {
+    for (int s = 0; s < n_sections; s++) {
         ap_detail_section *sec = &opts->sections[s];
-        if (sec->title) total_content_h += section_title_h;
+        int h = 0;
+        if (sec->title) h += section_title_h;
 
         switch (sec->type) {
             case AP_SECTION_INFO: {
@@ -2738,35 +2751,40 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                         if (kw > kw_max) kw_max = kw;
                     }
                 }
+                section_kw_max[s] = kw_max;
                 int vx = margin + kw_max + AP_S(16);
                 int max_vx = content_right - AP_S(120);
                 if (vx > max_vx) vx = max_vx;
                 if (vx < margin + AP_S(16)) vx = margin + AP_S(16);
                 int vw = content_right - vx;
                 if (vw < 1) vw = 1;
+                section_val_x[s] = vx;
+                section_val_w[s] = vw;
                 for (int p = 0; p < sec->info_count; p++) {
                     int vh = sec->info_pairs[p].value
                         ? ap_measure_wrapped_text_height(body_font, sec->info_pairs[p].value, vw)
                         : 0;
-                    total_content_h += ap__max(key_line_h, vh) + AP_S(4);
+                    h += ap__max(key_line_h, vh) + AP_S(4);
                 }
                 break;
             }
             case AP_SECTION_DESCRIPTION:
                 if (sec->description) {
-                    total_content_h += ap_measure_wrapped_text_height(body_font, sec->description, content_w);
+                    h += ap_measure_wrapped_text_height(body_font, sec->description, content_w);
                 }
                 break;
             case AP_SECTION_IMAGE:
                 if (section_images && section_images[s]) {
-                    total_content_h += section_image_h[s];
+                    h += section_image_h[s];
                 }
                 break;
             case AP_SECTION_TABLE:
-                total_content_h += (sec->table_rows_count + 1) * table_row_h;
+                h += (sec->table_rows_count + 1) * table_row_h;
                 break;
         }
-        total_content_h += section_gap;
+        h += section_gap;
+        section_total_h[s] = h;
+        total_content_h += h;
     }
 
     SDL_Rect content_rect = ap_get_content_rect(opts->title != NULL, opts->footer_count > 0,
@@ -2785,29 +2803,21 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
     while (running) {
         uint32_t now = SDL_GetTicks();
 
+        int prev_scroll_target = scroll_target;
+
         ap_input_event ev;
         while (ap_poll_input(&ev)) {
             if (!ev.pressed) continue;
 
             switch (ev.button) {
-                case AP_BTN_UP: {
-                    int old_target = scroll_target;
-                    float t_now = ap__clampf((float)(now - scroll_anim_start) / AP__SCROLL_ANIM_MS, 0.0f, 1.0f);
-                    scroll_from = ap__lerpf(scroll_from, (float)scroll_target, t_now);
+                case AP_BTN_UP:
                     scroll_target -= AP_S(40);
                     if (scroll_target < 0) scroll_target = 0;
-                    if (scroll_target != old_target) scroll_anim_start = now;
                     break;
-                }
-                case AP_BTN_DOWN: {
-                    int old_target = scroll_target;
-                    float t_now = ap__clampf((float)(now - scroll_anim_start) / AP__SCROLL_ANIM_MS, 0.0f, 1.0f);
-                    scroll_from = ap__lerpf(scroll_from, (float)scroll_target, t_now);
+                case AP_BTN_DOWN:
                     scroll_target += AP_S(40);
                     if (scroll_target > max_scroll) scroll_target = max_scroll;
-                    if (scroll_target != old_target) scroll_anim_start = now;
                     break;
-                }
                 case AP_BTN_B:
                     result->action = AP_DETAIL_BACK;
                     running = false;
@@ -2819,6 +2829,12 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                 default:
                     break;
             }
+        }
+
+        if (scroll_target != prev_scroll_target) {
+            now = SDL_GetTicks();
+            scroll_from = scroll_current;
+            scroll_anim_start = now;
         }
 
         /* Animate scroll */
@@ -2850,9 +2866,18 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
         SDL_RenderSetClipRect(ap_get_renderer(), &clip);
 
         int draw_y = content_y - (int)scroll_current;
+        int view_top = content_y;
+        int view_bottom = content_y + content_h;
 
-        for (int s = 0; s < opts->section_count; s++) {
+        for (int s = 0; s < n_sections; s++) {
             ap_detail_section *sec = &opts->sections[s];
+            int sec_h = section_total_h[s];
+
+            /* Offscreen culling: skip sections entirely above or below viewport */
+            if (draw_y + sec_h <= view_top || draw_y >= view_bottom) {
+                draw_y += sec_h;
+                continue;
+            }
 
             /* Section title */
             if (sec->title) {
@@ -2869,19 +2894,8 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
             switch (sec->type) {
                 case AP_SECTION_INFO:
                     {
-                        int key_w_max = 0;
-                        for (int p = 0; p < sec->info_count; p++) {
-                            if (sec->info_pairs[p].key) {
-                                int kw = ap_measure_text(key_font, sec->info_pairs[p].key);
-                                if (kw > key_w_max) key_w_max = kw;
-                            }
-                        }
-                        int val_x = margin + key_w_max + AP_S(16);
-                        int max_val_x = content_right - AP_S(120);
-                        if (val_x > max_val_x) val_x = max_val_x;
-                        if (val_x < margin + AP_S(16)) val_x = margin + AP_S(16);
-                        int val_w = content_right - val_x;
-                        if (val_w < 1) val_w = 1;
+                        int val_x = section_val_x[s];
+                        int val_w = section_val_w[s];
 
                         for (int p = 0; p < sec->info_count; p++) {
                             if (sec->info_pairs[p].key) {
@@ -2890,9 +2904,8 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                             }
                             int vh = 0;
                             if (sec->info_pairs[p].value) {
-                                ap_draw_text_wrapped(body_font, sec->info_pairs[p].value,
+                                vh = ap_draw_text_wrapped(body_font, sec->info_pairs[p].value,
                                     val_x, draw_y, val_w, theme->text, AP_ALIGN_LEFT);
-                                vh = ap_measure_wrapped_text_height(body_font, sec->info_pairs[p].value, val_w);
                             }
                             draw_y += ap__max(key_line_h, vh) + AP_S(4);
                         }
@@ -2901,11 +2914,10 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
 
                 case AP_SECTION_DESCRIPTION:
                     if (sec->description) {
-                        ap_draw_text_wrapped(body_font, sec->description,
+                        draw_y += ap_draw_text_wrapped(body_font, sec->description,
                             margin, draw_y,
                             content_w,
                             theme->text, AP_ALIGN_LEFT);
-                        draw_y += ap_measure_wrapped_text_height(body_font, sec->description, content_w);
                     }
                     break;
 
@@ -2978,6 +2990,10 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
     free(section_images);
     free(section_image_w);
     free(section_image_h);
+    free(section_total_h);
+    free(section_kw_max);
+    free(section_val_w);
+    free(section_val_x);
 
     return rc;
 }
