@@ -1071,6 +1071,10 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                     running = false;
                     break;
 
+                case AP_BTN_MENU:
+                    ap_show_footer_overflow();
+                    break;
+
                 default:
                     if (opts->confirm_button != AP_BTN_NONE && ev.button == opts->confirm_button) {
                         result->focused_index = cursor;
