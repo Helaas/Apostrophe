@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Optional list scrollbar hiding** (`apostrophe_widgets.h`, `examples/demo/main.c`): `ap_list_opts` now includes `hide_scrollbar` so lists can keep the same scrolling behavior while omitting the scrollbar gutter and thumb. The demo app includes a dedicated `List (No Scrollbar)` example.
+- **URL keyboard number/symbol toggle** (`apostrophe_widgets.h`): `ap_url_keyboard()` now exposes a bottom-row `123` / `abc` toggle that swaps the URL key rows between URL-friendly characters/QWERTY input and a number/symbol grid, making it possible to enter digits and additional punctuation without leaving URL mode.
 - **List trailing hints** (`apostrophe_widgets.h`): `ap_list_item` now supports optional right-aligned `trailing_text` without changing `metadata` semantics, keeping existing list consumers source-compatible while enabling downstream-style row hints.
 - **Keyboard input field scrolling** (`apostrophe_widgets.h`): Text in the keyboard input field now scrolls horizontally to keep the caret always visible when text exceeds the field width. Works for all keyboard types (general, URL, numeric). Demo entry for long text scrolling.
 - **Idle rendering** (`apostrophe.h`, `apostrophe_widgets.h`): `ap_present()` now sleeps the thread via `SDL_WaitEventTimeout` when no frame is requested, dropping idle CPU usage to near zero. New public API: `ap_request_frame()` for continuous 60fps rendering (animations), `ap_request_frame_in(ms)` for scheduling future redraws (caret blink, spinners). All widget loops instrumented: `ap_list` (pill animation, text scroll), keyboards (caret blink every 500ms), `ap_process_message` (spinner/progress), `ap_download_manager` (active downloads). Static widgets (options, confirmation, detail, etc.) idle automatically.
@@ -27,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Keyboard demo flow and coverage** (`examples/demo/main.c`): exiting the on-screen keyboard now returns to the `Keyboard Mode` picker instead of the top-level demo menu, the built-in URL demo now uses `ap_url_keyboard()` rather than the generic keyboard, the custom URL demo is wired to the correct menu entry, and the UTF-8 / long-text cases were merged into a single demo entry.
+- **MY355 analog stick sensitivity** (`apostrophe.h`): `AP_AXIS_DEADZONE` is now platform-specific, using `20000` on Miyoo Flip (`my355`) builds to reduce accidental left/right activation when moving vertically while keeping the previous deadzone on other targets.
 - **Demo background preview** (#10): use selected item metadata and guard on reload return value.
 - **Keyboard UTF-8 editing**: backspace, caret movement, and input-field measurement now operate on UTF-8 codepoint boundaries, fixing broken deletion/rendering for multibyte characters such as `€`.
 - **Bundled font glyph coverage**: added `✓` and `€` to `res/font.ttf`, fixing the multi-select checkmark glyph and adding Euro symbol support. On a device, the font that is configured in NextUI will still be used, so this only affects desktop development builds that use the bundled font.

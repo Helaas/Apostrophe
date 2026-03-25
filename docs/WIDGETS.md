@@ -34,6 +34,7 @@ A scrollable list of items with cursor navigation.
 - Multi-select: Toggle with A, show checkboxes
 - Reorder: Toggle reorder mode with a button, then D-Pad to move items
 - Images: Optional thumbnail column on the left
+- Optional hidden scrollbar: keep scrolling behavior without drawing the scrollbar
 - Background preview: Per-item fullscreen background image shown when the item is focused
 - Trailing hint: Optional right-aligned text for item status/type
 - Text scroll: Long labels auto-scroll horizontally
@@ -52,6 +53,13 @@ ap_list_opts opts = ap_list_default_opts("Title", items, 3);
 opts.confirm_button = AP_BTN_START; // Footer hints are visual-only
 ap_list_result result;
 ap_list(&opts, &result);
+```
+
+To hide the scrollbar while preserving normal list scrolling:
+
+```c
+ap_list_opts opts = ap_list_default_opts("Title", items, count);
+opts.hide_scrollbar = true;
 ```
 
 > **Note:** Always use designated initializers (e.g. `{ .label = "Foo" }`) or the
@@ -176,11 +184,16 @@ int rc = ap_keyboard("initial", "Enter text:", AP_KB_GENERAL, &result);
 if (rc == AP_OK) printf("Got: %s\n", result.text);
 ```
 
-**URL Keyboard** adds shortcut rows (e.g. `https://`, `.com`) above the QWERTY keys:
+**URL Keyboard** adds shortcut rows (e.g. `https://`, `.com`) above the QWERTY keys and a bottom-row `123` / `abc` toggle for switching between URL-friendly input and a number/symbol grid:
 ```c
 ap_keyboard_result result;
 int rc = ap_url_keyboard("https://", "Enter URL:", NULL, &result);
 ```
+
+In URL mode:
+- `X` swaps the shortcut rows between the default URL presets and alternate presets
+- The `123` key switches the URL rows to digits and symbols
+- The `abc` key restores the URL character rows and QWERTY letters
 
 ---
 

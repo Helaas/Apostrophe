@@ -57,7 +57,7 @@ Complete reference for all public functions, types, and macros in `apostrophe.h`
 | `AP_INPUT_DEBOUNCE` | `20` | Input debounce delay (ms) |
 | `AP_INPUT_REPEAT_DELAY` | `300` | Initial hold delay (ms) |
 | `AP_INPUT_REPEAT_RATE` | `100` | Repeat rate (ms) |
-| `AP_AXIS_DEADZONE` | `16000` | Joystick axis dead zone |
+| `AP_AXIS_DEADZONE` | `16000` / `20000` on `my355` | Joystick axis dead zone |
 | `AP_TEXT_SCROLL_SPEED` | `1` | Text scroll speed (pixels per tick) |
 | `AP_TEXT_SCROLL_PAUSE_MS` | `1000` | Pause at scroll endpoints (ms) |
 | `AP_TEXTURE_CACHE_SIZE` | `8` | LRU texture cache capacity |
@@ -818,6 +818,7 @@ Scrollable list with:
 - Multi-select mode (checkboxes)
 - Reorder mode (toggle reorder button + D-Pad)
 - Image thumbnails
+- Optional hidden scrollbar (`hide_scrollbar`)
 - Text overflow scrolling
 - Help overlay (Menu)
 - Explicit action bindings (`action_button`, `secondary_action_button`, `confirm_button`, `tertiary_action_button`)
@@ -847,6 +848,7 @@ typedef struct {
     ap_button secondary_action_button;
     ap_button confirm_button;
     ap_button tertiary_action_button;
+    bool      hide_scrollbar;      // Hide scrollbar while keeping scrolling behavior unchanged
     int       initial_index;
     int       visible_start_index;
     TTF_Font *item_font;           // Override list item text (default: AP_FONT_LARGE)
@@ -854,6 +856,8 @@ typedef struct {
 ```
 
 `item_font` overrides the font used to render list item labels and trailing hints. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)`. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
+
+`hide_scrollbar` suppresses the scrollbar gutter and thumb without changing list navigation, cursor behavior, or visible-item paging.
 
 When `trailing_text` is set, `ap_list()` renders it right-aligned using `theme->hint`. The hint is skipped for that row if reserving space for it would leave less than `AP_S(96)` for the main label.
 
@@ -950,6 +954,7 @@ int ap_url_keyboard(const char *initial_text, const char *help_text,
 - Default shortcuts: `https://`, `www.`, `.com`, `.org`, `.net`, `.io`, `.dev`, `.app`, `.edu`, `.gov`
 - X toggles to symbol alternates: `http://`, `ftp://`, `.co`, `.tv`, `.me`, `.gg`, `.uk`, `.de`, `.ca`, `.au`
 - URL special chars row: `/ : @ - _ . ~ ? # &`
+- Bottom-row toggle switches between `123` and `abc`, replacing the URL rows with digits and symbol sets when enabled
 - No space bar in URL mode
 
 **Layouts**: `AP_KB_GENERAL`, `AP_KB_URL`, `AP_KB_NUMERIC`
