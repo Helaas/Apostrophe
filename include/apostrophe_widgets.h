@@ -368,7 +368,8 @@ int ap_download_manager(ap_download *downloads, int count,
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Duration of the selection pill slide animation in ms (~3 frames at 60fps) */
-#define AP__PILL_ANIM_MS 50.0f   /* ~3 frames at 60fps, matching NextUI */
+#define AP__PILL_ANIM_MS 50.0f     /* ~3 frames at 60fps, matching NextUI */
+#define AP__SCROLL_ANIM_MS 80.0f  /* ~5 frames at 60fps — content scroll */
 
 ap_list_opts ap_list_default_opts(const char *title, ap_list_item *items, int count) {
     ap_list_opts opts = {0};
@@ -936,7 +937,6 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
     if (scroll_top > opts->item_count - max_visible) scroll_top = opts->item_count - max_visible;
     if (scroll_top < 0) scroll_top = 0;
     bool running = true;
-
 
     while (running) {
         /* Input */
@@ -2717,24 +2717,33 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
     int content_y = content_rect.y;
     int content_h = content_rect.h;
 
-    int scroll_offset = 0;
+    int scroll_target = 0;
+    float scroll_current = 0.0f;
+    float scroll_from = 0.0f;
+    uint32_t scroll_anim_start = 0;
     int max_scroll = total_content_h - content_h;
     if (max_scroll < 0) max_scroll = 0;
 
     bool running = true;
     while (running) {
+        uint32_t now = SDL_GetTicks();
+
         ap_input_event ev;
         while (ap_poll_input(&ev)) {
             if (!ev.pressed) continue;
 
             switch (ev.button) {
                 case AP_BTN_UP:
-                    scroll_offset -= AP_S(40);
-                    if (scroll_offset < 0) scroll_offset = 0;
+                    scroll_target -= AP_S(40);
+                    if (scroll_target < 0) scroll_target = 0;
+                    scroll_from = scroll_current;
+                    scroll_anim_start = now;
                     break;
                 case AP_BTN_DOWN:
-                    scroll_offset += AP_S(40);
-                    if (scroll_offset > max_scroll) scroll_offset = max_scroll;
+                    scroll_target += AP_S(40);
+                    if (scroll_target > max_scroll) scroll_target = max_scroll;
+                    scroll_from = scroll_current;
+                    scroll_anim_start = now;
                     break;
                 case AP_BTN_B:
                     result->action = AP_DETAIL_BACK;
@@ -2747,6 +2756,13 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
                 default:
                     break;
             }
+        }
+
+        /* Animate scroll */
+        {
+            float t = ap__clampf((float)(now - scroll_anim_start) / AP__SCROLL_ANIM_MS, 0.0f, 1.0f);
+            scroll_current = ap__lerpf(scroll_from, (float)scroll_target, t);
+            if (t < 1.0f) ap_request_frame();
         }
 
         /* Render */
@@ -2766,7 +2782,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
         SDL_Rect clip = {content_x, content_y, content_w, content_h};
         SDL_RenderSetClipRect(ap_get_renderer(), &clip);
 
-        int draw_y = content_y - scroll_offset;
+        int draw_y = content_y - (int)scroll_current;
 
         for (int s = 0; s < opts->section_count; s++) {
             ap_detail_section *sec = &opts->sections[s];
@@ -2875,7 +2891,7 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
         if (max_scroll > 0) {
             int sb_x = content_right + AP_S(6);
             ap_draw_scrollbar(sb_x, content_y, content_h,
-                content_h, total_content_h, scroll_offset);
+                content_h, total_content_h, (int)scroll_current);
         }
 
         if (opts->footer && opts->footer_count > 0) {

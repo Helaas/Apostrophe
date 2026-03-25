@@ -331,6 +331,8 @@ Scrollable multi-section information view.
 
 **Section types**: Info (key-value), Description (text), Image, Table
 
+Scrolling is animated over 80ms using linear interpolation for smooth visual feedback.
+
 Image sections are loaded once per detail-screen session and reused every frame for better performance.
 
 **Optional styling** (all opt-in, zero-initialize safe):
