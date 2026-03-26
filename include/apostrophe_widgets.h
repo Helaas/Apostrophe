@@ -1022,7 +1022,9 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                         if (kb_ret == AP_OK) {
                             /* Update the option value — caller must manage memory */
                             if (sel >= 0) {
+                                free((void *)item->options[sel].value);
                                 item->options[sel].value = strdup(kb_result.text);
+                                free((void *)item->options[sel].label);
                                 item->options[sel].label = strdup(kb_result.text);
                             }
                             if (opts->confirm_button == AP_BTN_A) {
@@ -1045,7 +1047,9 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                             snprintf(hex, sizeof(hex), "#%02X%02X%02X",
                                      picked.r, picked.g, picked.b);
                             if (sel >= 0) {
+                                free((void *)item->options[sel].value);
                                 item->options[sel].value = strdup(hex);
+                                free((void *)item->options[sel].label);
                                 item->options[sel].label = strdup(hex);
                             }
                             if (opts->confirm_button == AP_BTN_A) {
