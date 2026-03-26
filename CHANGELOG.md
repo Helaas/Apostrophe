@@ -30,6 +30,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **List page & letter skip navigation**: D-Pad Left/Right skip by one page in `ap_list`. L1/R1 jump between alphabetical letter groups. Help overlay moved from L1 to Menu button; when both `help_text` and hidden footer items exist, Menu shows help first then footer overflow sequentially. Demo entry for navigation features.
 - **`ap_show_footer_overflow()`**: Public API to programmatically open the hidden-actions overlay. Useful for screens with custom input loops that handle Menu independently of `ap_list`.
 
+### Changed
+
+- **`ap_draw_text_wrapped` return type** (`apostrophe.h`): now returns `int` (rendered height in pixels) instead of `void`, enabling callers to measure wrapped text layout.
+
 ### Fixed
 
 - **Keyboard demo flow and coverage** (`examples/demo/main.c`): exiting the on-screen keyboard now returns to the `Keyboard Mode` picker instead of the top-level demo menu, the built-in URL demo now uses `ap_url_keyboard()` rather than the generic keyboard, the custom URL demo is wired to the correct menu entry, and the UTF-8 / long-text cases were merged into a single demo entry.

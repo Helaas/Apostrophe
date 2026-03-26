@@ -646,10 +646,11 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         /* Reset text scroll on cursor change; start pill animation */
         if (cursor != last_cursor) {
             ap_text_scroll_reset(&sel_scroll);
-            /* Snap from the previous clean grid row (not intermediate animated position)
-             * so rapid input never causes the pill to fall behind. */
-            pill_from_y     = (float)pill_prev_target_y;
-            pill_from_w     = (float)pill_prev_target_w;
+            /* Start from the pill's current on-screen position so rapid input
+             * doesn't cause a visual jump to the previous target. */
+            float prev_t = ap__clampf((float)(now - pill_anim_start) / AP__PILL_ANIM_MS, 0.0f, 1.0f);
+            pill_from_y     = ap__lerpf(pill_from_y, (float)pill_prev_target_y, prev_t);
+            pill_from_w     = ap__lerpf(pill_from_w, (float)pill_prev_target_w, prev_t);
             pill_anim_start = now;
             last_cursor     = cursor;
         }
@@ -1021,8 +1022,6 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                         if (kb_ret == AP_OK) {
                             /* Update the option value — caller must manage memory */
                             if (sel >= 0) {
-                                free((void *)item->options[sel].value);
-                                free((void *)item->options[sel].label);
                                 item->options[sel].value = strdup(kb_result.text);
                                 item->options[sel].label = strdup(kb_result.text);
                             }
@@ -1046,8 +1045,6 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                             snprintf(hex, sizeof(hex), "#%02X%02X%02X",
                                      picked.r, picked.g, picked.b);
                             if (sel >= 0) {
-                                free((void *)item->options[sel].value);
-                                free((void *)item->options[sel].label);
                                 item->options[sel].value = strdup(hex);
                                 item->options[sel].label = strdup(hex);
                             }
@@ -2726,11 +2723,15 @@ int ap_detail_screen(ap_detail_opts *opts, ap_detail_result *result) {
     /* Pre-compute per-section layout: heights, key widths, value widths.
        Used for total_content_h, offscreen culling, and cached render layout. */
     int n_sections = opts->section_count;
-    int *section_total_h  = (int *)calloc((size_t)n_sections, sizeof(int));  /* total height incl. gap */
-    int *section_kw_max   = (int *)calloc((size_t)n_sections, sizeof(int));  /* INFO: max key width */
-    int *section_val_w    = (int *)calloc((size_t)n_sections, sizeof(int));  /* INFO: value column width */
-    int *section_val_x    = (int *)calloc((size_t)n_sections, sizeof(int));  /* INFO: value x position */
-    if (!section_total_h || !section_kw_max || !section_val_w || !section_val_x) {
+    if (n_sections < 0) {
+        free(section_images); free(section_image_w); free(section_image_h);
+        return AP_ERROR;
+    }
+    int *section_total_h  = n_sections ? (int *)calloc((size_t)n_sections, sizeof(int)) : NULL;
+    int *section_kw_max   = n_sections ? (int *)calloc((size_t)n_sections, sizeof(int)) : NULL;
+    int *section_val_w    = n_sections ? (int *)calloc((size_t)n_sections, sizeof(int)) : NULL;
+    int *section_val_x    = n_sections ? (int *)calloc((size_t)n_sections, sizeof(int)) : NULL;
+    if (n_sections > 0 && (!section_total_h || !section_kw_max || !section_val_w || !section_val_x)) {
         free(section_total_h); free(section_kw_max); free(section_val_w); free(section_val_x);
         free(section_images); free(section_image_w); free(section_image_h);
         return AP_ERROR;
