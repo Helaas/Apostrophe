@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Smooth detail screen scrolling** (`apostrophe_widgets.h`): `ap_detail_screen` now animates scroll position changes using linear interpolation over 80ms (`AP__SCROLL_ANIM_MS`), replacing the previous instant-jump behavior. Scroll target and display position are tracked separately, with each input press starting a new animation from the current position.
+- **Expanded options demo** (`examples/demo/main.c`): Options List demo now has 15 items (was 5) including Brightness, Language, Screen Timeout, WiFi, Bluetooth, Notifications, Font Size, Auto-Save, Storage, and Reset All — enough to exercise scrolling on any screen size.
+
 - **Optional list scrollbar hiding** (`apostrophe_widgets.h`, `examples/demo/main.c`): `ap_list_opts` now includes `hide_scrollbar` so lists can keep the same scrolling behavior while omitting the scrollbar gutter and thumb. The demo app includes a dedicated `List (No Scrollbar)` example.
 - **URL keyboard number/symbol toggle** (`apostrophe_widgets.h`): `ap_url_keyboard()` now exposes a bottom-row `123` / `abc` toggle that swaps the URL key rows between URL-friendly characters/QWERTY input and a number/symbol grid, making it possible to enter digits and additional punctuation without leaving URL mode.
 - **List trailing hints** (`apostrophe_widgets.h`): `ap_list_item` now supports optional right-aligned `trailing_text` without changing `metadata` semantics, keeping existing list consumers source-compatible while enabling downstream-style row hints.
@@ -26,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Background reload and list background previews**: `ap_reload_background()` support and background preview in list widget demo (#10).
 - **List page & letter skip navigation**: D-Pad Left/Right skip by one page in `ap_list`. L1/R1 jump between alphabetical letter groups. Help overlay moved from L1 to Menu button; when both `help_text` and hidden footer items exist, Menu shows help first then footer overflow sequentially. Demo entry for navigation features.
 - **`ap_show_footer_overflow()`**: Public API to programmatically open the hidden-actions overlay. Useful for screens with custom input loops that handle Menu independently of `ap_list`.
+
+### Changed
+
+- **`ap_draw_text_wrapped` return type** (`apostrophe.h`): now returns `int` (rendered height in pixels) instead of `void`, enabling callers to measure wrapped text layout.
 
 ### Fixed
 

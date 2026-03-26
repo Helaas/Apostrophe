@@ -245,11 +245,50 @@ static void demo_options_list(void) {
     };
 
     ap_option name_opt[] = {
-        { .label = "Player 1", .value = "Player 1" },
+        { .label = strdup("Player 1"), .value = strdup("Player 1") },
     };
 
     ap_option accent_opt[] = {
-        { .label = accent_hex, .value = accent_hex },
+        { .label = strdup(accent_hex), .value = strdup(accent_hex) },
+    };
+
+    ap_option brightness_opts[] = {
+        { .label = "Low",    .value = "25"  },
+        { .label = "Medium", .value = "50"  },
+        { .label = "High",   .value = "75"  },
+        { .label = "Max",    .value = "100" },
+    };
+
+    ap_option language_opts[] = {
+        { .label = "English",  .value = "en" },
+        { .label = "Spanish",  .value = "es" },
+        { .label = "French",   .value = "fr" },
+        { .label = "German",   .value = "de" },
+        { .label = "Japanese", .value = "ja" },
+    };
+
+    ap_option timeout_opts[] = {
+        { .label = "30s",   .value = "30"    },
+        { .label = "1m",    .value = "60"    },
+        { .label = "5m",    .value = "300"   },
+        { .label = "Never", .value = "0"     },
+    };
+
+    ap_option toggle_on_off[] = {
+        { .label = "On",  .value = "1" },
+        { .label = "Off", .value = "0" },
+    };
+
+    ap_option notif_opts[] = {
+        { .label = "All",       .value = "all"       },
+        { .label = "Important", .value = "important"  },
+        { .label = "None",      .value = "none"       },
+    };
+
+    ap_option font_size_opts[] = {
+        { .label = "Small",  .value = "small"  },
+        { .label = "Medium", .value = "medium" },
+        { .label = "Large",  .value = "large"  },
     };
 
     ap_options_item settings[] = {
@@ -268,10 +307,80 @@ static void demo_options_list(void) {
             .selected_option = 0,
         },
         {
+            .label           = "Brightness",
+            .type            = AP_OPT_STANDARD,
+            .options         = brightness_opts,
+            .option_count    = 4,
+            .selected_option = 1,
+        },
+        {
+            .label           = "Language",
+            .type            = AP_OPT_STANDARD,
+            .options         = language_opts,
+            .option_count    = 5,
+            .selected_option = 0,
+        },
+        {
+            .label           = "Screen Timeout",
+            .type            = AP_OPT_STANDARD,
+            .options         = timeout_opts,
+            .option_count    = 4,
+            .selected_option = 1,
+        },
+        {
+            .label           = "WiFi",
+            .type            = AP_OPT_STANDARD,
+            .options         = toggle_on_off,
+            .option_count    = 2,
+            .selected_option = 0,
+        },
+        {
+            .label           = "Bluetooth",
+            .type            = AP_OPT_STANDARD,
+            .options         = toggle_on_off,
+            .option_count    = 2,
+            .selected_option = 1,
+        },
+        {
+            .label           = "Notifications",
+            .type            = AP_OPT_STANDARD,
+            .options         = notif_opts,
+            .option_count    = 3,
+            .selected_option = 0,
+        },
+        {
+            .label           = "Font Size",
+            .type            = AP_OPT_STANDARD,
+            .options         = font_size_opts,
+            .option_count    = 3,
+            .selected_option = 1,
+        },
+        {
+            .label           = "Auto-Save",
+            .type            = AP_OPT_STANDARD,
+            .options         = toggle_on_off,
+            .option_count    = 2,
+            .selected_option = 0,
+        },
+        {
             .label           = "Name",
             .type            = AP_OPT_KEYBOARD,
             .options         = name_opt,
             .option_count    = 1,
+            .selected_option = 0,
+        },
+        {
+            .label           = "Accent Color",
+            .type            = AP_OPT_COLOR_PICKER,
+            .options         = accent_opt,
+            .option_count    = 1,
+            .selected_option = 0,
+        },
+        {
+            .label           = "Storage",
+            .type            = AP_OPT_CLICKABLE,
+            .options         = NULL,
+            .option_count    = 0,
             .selected_option = 0,
         },
         {
@@ -282,14 +391,28 @@ static void demo_options_list(void) {
             .selected_option = 0,
         },
         {
-            .label           = "Accent Color",
-            .type            = AP_OPT_COLOR_PICKER,
-            .options         = accent_opt,
-            .option_count    = 1,
+            .label           = "Reset All",
+            .type            = AP_OPT_CLICKABLE,
+            .options         = NULL,
+            .option_count    = 0,
             .selected_option = 0,
         },
     };
     int count = sizeof(settings) / sizeof(settings[0]);
+
+    /* Named indices for clickable items — avoids fragile hard-coded numbers */
+    enum {
+        IDX_NAME      = 10,
+        IDX_ACCENT    = 11,
+        IDX_STORAGE   = 12,
+        IDX_ABOUT     = 13,
+        IDX_RESET_ALL = 14,
+    };
+
+    /* Snapshot default selected_option values for Reset All */
+    int defaults[sizeof(settings) / sizeof(settings[0])];
+    for (int i = 0; i < count; i++)
+        defaults[i] = settings[i].selected_option;
 
     ap_footer_item footer[] = {
         { .button = AP_BTN_B,     .label = "BACK" },
@@ -321,10 +444,28 @@ static void demo_options_list(void) {
         last_cursor = result.focused_index;
         last_visible = result.visible_start_index;
 
-        if (rc == AP_OK && result.action == AP_ACTION_SELECTED && result.focused_index == 3) {
-            /* "About" was clicked — show detail screen */
-            demo_detail();
-            continue;
+        if (rc == AP_OK && result.action == AP_ACTION_SELECTED) {
+            if (result.focused_index == IDX_STORAGE) {
+                /* "Storage" clicked */
+                demo_show_message("Storage: 2.4 GB used of 32 GB");
+                continue;
+            } else if (result.focused_index == IDX_ABOUT) {
+                /* "About" clicked — show detail screen */
+                demo_detail();
+                continue;
+            } else if (result.focused_index == IDX_RESET_ALL) {
+                /* "Reset All" clicked — restore all settings to defaults */
+                for (int i = 0; i < count; i++)
+                    settings[i].selected_option = defaults[i];
+                free((void *)name_opt[0].label); free((void *)name_opt[0].value);
+                name_opt[0].label = strdup("Player 1");
+                name_opt[0].value = strdup("Player 1");
+                free((void *)accent_opt[0].label); free((void *)accent_opt[0].value);
+                accent_opt[0].label = strdup(accent_hex);
+                accent_opt[0].value = strdup(accent_hex);
+                demo_show_message("All settings reset to defaults.");
+                continue;
+            }
         }
 
         if (rc == AP_OK && result.action == AP_ACTION_TRIGGERED) {
@@ -333,8 +474,8 @@ static void demo_options_list(void) {
                      "Volume: %s\nTheme: %s\nName: %s\nAccent: %s",
                      demo_option_display(&settings[0], "Mid"),
                      demo_option_display(&settings[1], "Dark"),
-                     demo_option_display(&settings[2], "Player 1"),
-                     demo_option_display(&settings[4], orig_hex));
+                     demo_option_display(&settings[IDX_NAME], "Player 1"),
+                     demo_option_display(&settings[IDX_ACCENT], orig_hex));
             demo_show_message(msg);
             continue;
         }
@@ -349,14 +490,16 @@ static void demo_options_list(void) {
                     settings[1].selected_option = 0;
                     demo_show_message("Reset Theme to Dark.");
                     break;
-                case 2:
-                    name_opt[0].label = "Player 1";
-                    name_opt[0].value = "Player 1";
+                case IDX_NAME:
+                    free((void *)name_opt[0].label); free((void *)name_opt[0].value);
+                    name_opt[0].label = strdup("Player 1");
+                    name_opt[0].value = strdup("Player 1");
                     demo_show_message("Reset Name to Player 1.");
                     break;
-                case 4:
-                    accent_opt[0].label = orig_hex;
-                    accent_opt[0].value = orig_hex;
+                case IDX_ACCENT:
+                    free((void *)accent_opt[0].label); free((void *)accent_opt[0].value);
+                    accent_opt[0].label = strdup(orig_hex);
+                    accent_opt[0].value = strdup(orig_hex);
                     demo_show_message("Reset Accent Color to the current theme color.");
                     break;
                 default:
@@ -368,6 +511,8 @@ static void demo_options_list(void) {
         break;
     }
 
+    free((void *)name_opt[0].label); free((void *)name_opt[0].value);
+    free((void *)accent_opt[0].label); free((void *)accent_opt[0].value);
     ap_set_theme_color(orig_hex);
 }
 

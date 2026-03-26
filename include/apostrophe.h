@@ -569,7 +569,7 @@ void           ap_draw_circle(int cx, int cy, int r, ap_color c);
 int            ap_draw_text(TTF_Font *font, const char *text, int x, int y, ap_color color);          /* returns rendered width in pixels */
 int            ap_draw_text_clipped(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w); /* returns rendered width */
 int            ap_draw_text_ellipsized(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w); /* truncate with "..." if too wide */
-void           ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align);
+int            ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align); /* returns rendered height */
 int            ap_measure_text(TTF_Font *font, const char *text);
 void           ap_draw_image(SDL_Texture *tex, int x, int y, int w, int h);
 SDL_Texture   *ap_load_image(const char *path);
@@ -2491,8 +2491,8 @@ int ap_draw_text_ellipsized(TTF_Font *font, const char *text, int x, int y, ap_c
     return result;
 }
 
-void ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align) {
-    if (!font || !text || !text[0] || max_w <= 0) return;
+int ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align) {
+    if (!font || !text || !text[0] || max_w <= 0) return 0;
 
     /* Word wrap: break text into lines that fit within max_w */
     char buf[4096];
@@ -2574,6 +2574,7 @@ void ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int ma
         else
             line_start = best_break;
     }
+    return cur_y - y;
 }
 
 static int ap__wrapped_line_count(TTF_Font *font, const char *text, int max_w) {
