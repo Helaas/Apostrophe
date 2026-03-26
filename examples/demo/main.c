@@ -1440,8 +1440,6 @@ static void demo_screen_fade(void) {
         if (fading_out && !still_active) {
             running = false;
         }
-
-        SDL_Delay(16);
     }
 }
 
