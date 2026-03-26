@@ -60,6 +60,7 @@ static void demo_list(void) {
         { .label = "Juliet",    .metadata = "/path/juliet" },
         { .label = "Kilo",      .metadata = "/path/kilo" },
         { .label = "Lima",      .metadata = "/path/lima" },
+        { .label = "This entry has a very long label that should trigger horizontal text scrolling when selected" },
     };
     int count = sizeof(items) / sizeof(items[0]);
 
@@ -1271,6 +1272,7 @@ static void demo_drawing_primitives(void) {
             if (scroll_w > content_w) scroll_w = content_w;
             int text_w = ap_measure_text(body_font, scroll_text);
             ap_text_scroll_update(&scroll, text_w, scroll_w, dt);
+            if (scroll.active) ap_request_frame();
 
             /* Clip the marquee row to both its own box and the page viewport. */
             SDL_Rect scroll_clip = { content_x, y, scroll_w, AP_DS(22) };
@@ -1667,6 +1669,7 @@ static void demo_core_api_lab(void) {
             if (scroll_w < AP_DS(80)) scroll_w = AP_DS(80);
             int text_w = ap_measure_text(body_font, scroll_text);
             ap_text_scroll_update(&scroll, text_w, scroll_w, dt);
+            if (scroll.active) ap_request_frame();
 
             SDL_Rect scroll_clip = { x, y, scroll_w, AP_DS(20) };
             SDL_RenderSetClipRect(ap_get_renderer(), &scroll_clip);
