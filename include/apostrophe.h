@@ -679,6 +679,8 @@ static inline void ap_fade_begin_out(ap_fade *f, int duration_ms) {
     f->active      = true;
 }
 
+void ap_request_frame(void);  /* forward declaration for ap_fade_draw */
+
 /* Draw the fade overlay. Call AFTER drawing your scene, BEFORE ap_present().
  * Returns true while the fade is still active, false when complete. */
 static inline bool ap_fade_draw(ap_fade *f) {
@@ -693,6 +695,7 @@ static inline bool ap_fade_draw(ap_fade *f) {
     SDL_Rect full = { 0, 0, ap_get_screen_width(), ap_get_screen_height() };
     SDL_RenderFillRect(rend, &full);
     if (t >= 1.0f) { f->active = false; return false; }
+    ap_request_frame();  /* keep rendering at 60fps while fade is active */
     return true;
 }
 
