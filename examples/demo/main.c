@@ -60,7 +60,7 @@ static void demo_list(void) {
         { .label = "Juliet",    .metadata = "/path/juliet" },
         { .label = "Kilo",      .metadata = "/path/kilo" },
         { .label = "Lima",      .metadata = "/path/lima" },
-        { .label = "This entry has a very long label that should trigger horizontal text scrolling when selected" },
+        { .label = "This entry has a very long label that should trigger horizontal text scrolling when selected", .metadata = "/path/long-label" },
     };
     int count = sizeof(items) / sizeof(items[0]);
 
