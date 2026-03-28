@@ -2431,6 +2431,7 @@ static const struct {
 
 typedef struct {
     uint32_t start_ms;
+    bool     cleared;
     bool     cancelled;
     uint32_t cancel_elapsed_ms;
 } QVDemoCtx;
@@ -2440,6 +2441,8 @@ typedef struct {
 
 static int qv_snapshot(ap_queue_item *buf, int max, void *ud) {
     QVDemoCtx *ctx = (QVDemoCtx *)ud;
+    if (ctx->cleared) return 0;
+
     int n = (QV_ITEM_COUNT < max) ? QV_ITEM_COUNT : max;
     uint32_t elapsed = SDL_GetTicks() - ctx->start_ms;
     uint32_t effective_elapsed = ctx->cancelled ? ctx->cancel_elapsed_ms : elapsed;
@@ -2483,7 +2486,7 @@ static int qv_snapshot(ap_queue_item *buf, int max, void *ud) {
 
 static void qv_clear(void *ud) {
     QVDemoCtx *ctx = (QVDemoCtx *)ud;
-    ctx->start_ms = SDL_GetTicks();  /* restart simulation */
+    ctx->cleared = true;
     ctx->cancelled = false;
     ctx->cancel_elapsed_ms = 0;
 }
