@@ -1074,7 +1074,7 @@ Live-updating, filterable display for background job queues. The widget polls a 
 - Filter cycling: All / In Progress / Done / Failed (Y button)
 - Summary bar: `"X/Y complete, Z failed"` above footer
 - A: Detail callback for terminal items (DONE/FAILED/SKIPPED)
-- X: Clear-done callback when no active items remain
+- X: Cancel callback while active, clear-done callback when idle
 - Menu / desktop `H`: open hidden footer actions when the footer shows `+N`
 - Idle-aware: calls `ap_request_frame()` only while jobs are active
 
@@ -1085,7 +1085,7 @@ typedef enum {
     AP_QUEUE_RUNNING = 1,   // Actively being processed  (accent color)
     AP_QUEUE_DONE    = 2,   // Completed successfully     (green)
     AP_QUEUE_FAILED  = 3,   // Ended in error             (red)
-    AP_QUEUE_SKIPPED = 4,   // Intentionally skipped     (hint color)
+    AP_QUEUE_SKIPPED = 4,   // Intentionally skipped or cancelled (hint color)
 } ap_queue_status;
 ```
 
@@ -1109,6 +1109,7 @@ typedef struct {
     int                   max_items;   // Buffer capacity; 0 → 256
     void                 *userdata;    // Passed to all callbacks
     ap_queue_detail_fn    on_detail;   // Optional: A button on terminal items
+    ap_queue_cancel_fn    on_cancel;   // Optional: X button while queue active
     ap_queue_clear_fn     on_clear;    // Optional: X button when queue idle
     ap_status_bar_opts   *status_bar;  // Optional: top-right status pill
     bool                  hide_filter; // Set true to hide Y=FILTER cycling
@@ -1123,6 +1124,10 @@ typedef int  (*ap_queue_snapshot_fn)(ap_queue_item *buf, int max, void *userdata
 // Called when A is pressed on a terminal item. May push another widget.
 typedef void (*ap_queue_detail_fn)(const ap_queue_item *item, void *userdata);
 
+// Called when X is pressed while active items remain.
+// Update your queue state so subsequent snapshots reflect cancellation.
+typedef void (*ap_queue_cancel_fn)(void *userdata);
+
 // Called when X is pressed to clear completed items.
 typedef void (*ap_queue_clear_fn)(void *userdata);
 ```
@@ -1136,12 +1141,19 @@ static int my_snapshot(ap_queue_item *buf, int max, void *ud) {
     return n;
 }
 
+static void my_cancel(void *ud) {
+    /* confirm cancellation, then mark unfinished items as cancelled */
+}
+
 ap_queue_opts opts = {
-    .title    = "Downloads",
-    .snapshot = my_snapshot,
+    .title     = "Downloads",
+    .snapshot  = my_snapshot,
+    .on_cancel = my_cancel,
 };
 ap_queue_viewer(&opts);
 ```
+
+To represent cancelled downloads, keep queue state in your own data model and have future snapshots return `AP_QUEUE_SKIPPED` with `status_text = "Cancelled"` for unfinished items after `on_cancel` runs.
 
 ### Download Manager
 

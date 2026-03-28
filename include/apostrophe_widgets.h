@@ -322,7 +322,7 @@ typedef enum {
     AP_QUEUE_RUNNING = 1,   /* Actively being processed        (accent color) */
     AP_QUEUE_DONE    = 2,   /* Successfully completed               (green) */
     AP_QUEUE_FAILED  = 3,   /* Ended in error                         (red) */
-    AP_QUEUE_SKIPPED = 4,   /* Intentionally skipped            (hint color) */
+    AP_QUEUE_SKIPPED = 4,   /* Intentionally skipped / cancelled (hint color) */
 } ap_queue_status;
 
 /* A single job entry displayed in the queue viewer */
@@ -331,7 +331,7 @@ typedef struct {
     char            subtitle[128];   /* Small secondary label below title */
     char            status_text[64]; /* Right-aligned status string */
     ap_queue_status status;          /* Drives color-coding and filter */
-    float           progress;        /* 0.0–1.0 = draw progress bar; < 0 = no bar */
+    float           progress;        /* 0.0–1.0 = draw inline progress bar; < 0 = no bar */
     void           *userdata;        /* Caller-defined opaque context */
 } ap_queue_item;
 
@@ -344,6 +344,11 @@ typedef int (*ap_queue_snapshot_fn)(ap_queue_item *buf, int max, void *userdata)
  * Widget pauses its own loop; callback may push another widget. */
 typedef void (*ap_queue_detail_fn)(const ap_queue_item *item, void *userdata);
 
+/* Called when user presses X while any items are still active.
+ * Caller owns cancellation semantics; update future snapshots to show
+ * cancelled/skipped state after this returns. */
+typedef void (*ap_queue_cancel_fn)(void *userdata);
+
 /* Called when user presses X to clear completed items.
  * Widget re-snapshots on the next frame after this returns.
  * Only shown when no PENDING or RUNNING items exist. */
@@ -355,6 +360,7 @@ typedef struct {
     int                   max_items;   /* Snapshot buffer capacity; 0 → 256 */
     void                 *userdata;    /* Passed to all callbacks */
     ap_queue_detail_fn    on_detail;   /* Optional: A button on terminal items */
+    ap_queue_cancel_fn    on_cancel;   /* Optional: X button while queue active */
     ap_queue_clear_fn     on_clear;    /* Optional: X button when queue idle */
     ap_status_bar_opts   *status_bar;  /* Optional: top-right status pill */
     bool                  hide_filter; /* Set true to suppress Y=FILTER button */
@@ -3666,8 +3672,12 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                     }
                     break;
                 case AP_BTN_X:
-                    if (opts->on_clear && !has_active)
+                    if (has_active) {
+                        if (opts->on_cancel)
+                            opts->on_cancel(opts->userdata);
+                    } else if (opts->on_clear && stat_done > 0) {
                         opts->on_clear(opts->userdata);
+                    }
                     break;
                 case AP_BTN_B:
                     running = false;
@@ -3776,8 +3786,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
             ap_color status_color;
             switch (s) {
-                case AP_QUEUE_DONE:
-                case AP_QUEUE_SKIPPED: status_color = col_done;      break;
+                case AP_QUEUE_DONE:    status_color = col_done;      break;
                 case AP_QUEUE_FAILED:  status_color = col_failed;    break;
                 case AP_QUEUE_RUNNING: status_color = theme->accent; break;
                 default:               status_color = theme->hint;   break;
@@ -3859,6 +3868,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                     ap_color fill;
                     if      (s == AP_QUEUE_DONE)    fill = col_bar_done;
                     else if (s == AP_QUEUE_FAILED)  fill = col_bar_fail;
+                    else if (s == AP_QUEUE_SKIPPED) fill = theme->hint;
                     else                            fill = theme->accent;
 
                     float p = item->progress > 1.0f ? 1.0f : item->progress;
@@ -3929,9 +3939,14 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                 fi[nf++] = (ap_footer_item){ .button = AP_BTN_Y, .label = "Filter" };
             if (!wide_footer)
                 fi[nf++] = (ap_footer_item){ .button = AP_BTN_B, .label = "Back" };
-            if (opts->on_clear && !has_active && stat_done > 0)
+            if (has_active) {
+                if (opts->on_cancel)
+                    fi[nf++] = (ap_footer_item){
+                        .button = AP_BTN_X, .label = "Cancel All", .is_confirm = true };
+            } else if (opts->on_clear && stat_done > 0) {
                 fi[nf++] = (ap_footer_item){
                     .button = AP_BTN_X, .label = "Clear Done", .is_confirm = true };
+            }
             ap_draw_footer(fi, nf);
         }
 

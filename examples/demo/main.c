@@ -2429,7 +2429,11 @@ static const struct {
 };
 #define QV_ITEM_COUNT ((int)(sizeof(qv_items) / sizeof(qv_items[0])))
 
-typedef struct { uint32_t start_ms; } QVDemoCtx;
+typedef struct {
+    uint32_t start_ms;
+    bool     cancelled;
+    uint32_t cancel_elapsed_ms;
+} QVDemoCtx;
 
 #define QV_ITEM_DURATION_MS 1500
 #define QV_ITEM_STAGGER_MS  700
@@ -2438,18 +2442,19 @@ static int qv_snapshot(ap_queue_item *buf, int max, void *ud) {
     QVDemoCtx *ctx = (QVDemoCtx *)ud;
     int n = (QV_ITEM_COUNT < max) ? QV_ITEM_COUNT : max;
     uint32_t elapsed = SDL_GetTicks() - ctx->start_ms;
+    uint32_t effective_elapsed = ctx->cancelled ? ctx->cancel_elapsed_ms : elapsed;
     for (int i = 0; i < n; i++) {
         uint32_t offset = (uint32_t)(i * QV_ITEM_STAGGER_MS);
         strncpy(buf[i].title,    qv_items[i].title,    sizeof(buf[i].title)    - 1);
         strncpy(buf[i].subtitle, qv_items[i].subtitle, sizeof(buf[i].subtitle) - 1);
-        if (elapsed < offset) {
+        if (effective_elapsed < offset) {
             buf[i].status = AP_QUEUE_PENDING;
             strncpy(buf[i].status_text, "Queued", sizeof(buf[i].status_text) - 1);
             buf[i].progress = -1.0f;
-        } else if (elapsed < offset + QV_ITEM_DURATION_MS) {
+        } else if (effective_elapsed < offset + QV_ITEM_DURATION_MS) {
             buf[i].status = AP_QUEUE_RUNNING;
             strncpy(buf[i].status_text, "Downloading...", sizeof(buf[i].status_text) - 1);
-            buf[i].progress = (float)(elapsed - offset) / (float)QV_ITEM_DURATION_MS;
+            buf[i].progress = (float)(effective_elapsed - offset) / (float)QV_ITEM_DURATION_MS;
         } else {
             if (qv_items[i].fails) {
                 buf[i].status = AP_QUEUE_FAILED;
@@ -2461,6 +2466,16 @@ static int qv_snapshot(ap_queue_item *buf, int max, void *ud) {
                 buf[i].progress = 1.0f;
             }
         }
+
+        /* Example app-side cancellation handling: freeze the queue at the
+         * cancel time and convert any unfinished work to "Cancelled". */
+        if (ctx->cancelled &&
+            (buf[i].status == AP_QUEUE_PENDING || buf[i].status == AP_QUEUE_RUNNING)) {
+            buf[i].status = AP_QUEUE_SKIPPED;
+            strncpy(buf[i].status_text, "Cancelled", sizeof(buf[i].status_text) - 1);
+            buf[i].progress = -1.0f;
+        }
+
         buf[i].userdata = NULL;
     }
     return n;
@@ -2469,18 +2484,36 @@ static int qv_snapshot(ap_queue_item *buf, int max, void *ud) {
 static void qv_clear(void *ud) {
     QVDemoCtx *ctx = (QVDemoCtx *)ud;
     ctx->start_ms = SDL_GetTicks();  /* restart simulation */
+    ctx->cancelled = false;
+    ctx->cancel_elapsed_ms = 0;
+}
+
+static void qv_cancel(void *ud) {
+    QVDemoCtx *ctx = (QVDemoCtx *)ud;
+    if (ctx->cancelled) return;
+
+    ap_footer_item footer[] = {
+        { AP_BTN_B, "No",  false },
+        { AP_BTN_A, "Yes", true  },
+    };
+    ap_message_opts opts = {
+        .message = "Cancel all downloads?\n\nRunning items will be marked Cancelled\nand queued items will be skipped.",
+        .footer = footer,
+        .footer_count = 2,
+    };
+    ap_confirm_result result;
+    ap_confirmation(&opts, &result);
+
+    if (result.confirmed) {
+        ctx->cancelled = true;
+        ctx->cancel_elapsed_ms = SDL_GetTicks() - ctx->start_ms;
+    }
 }
 
 static void qv_detail(const ap_queue_item *item, void *ud) {
     (void)ud;
     char msg[512];
-    const char *sname;
-    switch (item->status) {
-        case AP_QUEUE_DONE:    sname = "Done";    break;
-        case AP_QUEUE_FAILED:  sname = "Failed";  break;
-        case AP_QUEUE_SKIPPED: sname = "Skipped"; break;
-        default:               sname = "Unknown"; break;
-    }
+    const char *sname = item->status_text[0] ? item->status_text : "Unknown";
     snprintf(msg, sizeof(msg), "%s\n%s\n\nStatus: %s",
              item->title, item->subtitle, sname);
     demo_show_message(msg);
@@ -2493,6 +2526,7 @@ static void demo_queue_viewer(void) {
         .snapshot = qv_snapshot,
         .userdata = &ctx,
         .on_detail = qv_detail,
+        .on_cancel = qv_cancel,
         .on_clear  = qv_clear,
     };
     ap_queue_viewer(&opts);
