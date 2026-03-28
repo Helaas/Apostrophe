@@ -2,6 +2,8 @@
 
 This matrix maps Apostrophe's public API surface to the demos that exercise it.
 
+This matrix reflects Apostrophe **v1.0.0** (2026-03-28).
+
 ## Core API Coverage
 
 | API Group | Demo Coverage |

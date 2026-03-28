@@ -1,6 +1,6 @@
 # Gabagool Parity Matrix (`v2.9.6`)
 
-This document tracks Apostrophe parity against Gabagool `v2.9.6`.
+This document tracks Apostrophe **v1.0.0** parity against Gabagool `v2.9.6`.
 
 ## Sources
 
@@ -69,4 +69,3 @@ This document tracks Apostrophe parity against Gabagool `v2.9.6`.
 
 1. Add user-configurable input mapping loader equivalent to `SetInputMappingBytes`.
 2. Add optional infrastructure-error style wrappers around current integer return model for migration ergonomics.
-

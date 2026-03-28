@@ -3649,7 +3649,6 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
             filtered_count > 3 &&
             max_visible == 3 &&
             default_leftover_h >= AP_DS(18)) {
-            balance_rows = true;
             int compact_title_gap  = AP_DS(1);
             int compact_bottom_pad = AP_DS(2);
             int compact_bar_h      = AP_DS(3);
@@ -3664,6 +3663,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
             if (compact_max_visible < 1) compact_max_visible = 1;
 
             if (compact_max_visible >= 4) {
+                balance_rows = true;
                 layout_title_font  = compact_title_font;
                 layout_sub_font    = compact_sub_font;
                 layout_title_fh    = compact_title_fh;
@@ -4011,12 +4011,11 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                          theme->hint);
         }
 
-        /* Scrollbar — inset to subtitle zone, outside pill area */
+        /* Scrollbar — align with the visible pill stack, outside pill area */
         if (needs_scrollbar) {
             int sb_x          = screen_w - margin - AP_S(6);
-            int sb_y          = first_row_y + layout_title_fh + layout_title_gap;
-            int sb_bottom_gap = layout_bottom_pad;
-            int sb_h          = used_h_with_gaps - (layout_title_fh + layout_title_gap) - sb_bottom_gap;
+            int sb_y          = first_row_y;
+            int sb_h          = used_h_with_gaps;
             if (sb_h > 0) {
                 ap_draw_scrollbar(sb_x, sb_y, sb_h,
                                   max_visible, filtered_count, scroll_top);
