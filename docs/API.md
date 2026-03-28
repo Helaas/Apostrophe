@@ -1059,6 +1059,89 @@ typedef struct {
 } ap_detail_result;
 ```
 
+### Queue Viewer
+
+```c
+int ap_queue_viewer(const ap_queue_opts *opts);
+```
+
+Live-updating, filterable display for background job queues. The widget polls a caller-supplied snapshot callback each frame — all threading stays in the caller.
+
+**Features**:
+- Animated pill selection (same as list widget)
+- Horizontal text scroll on long titles when selected
+- Per-item progress bars (shown when any item's `progress ≥ 0`)
+- Filter cycling: All / In Progress / Done / Failed (Y button)
+- Summary bar: `"X/Y complete, Z failed"` above footer
+- A: Detail callback for terminal items (DONE/FAILED/SKIPPED)
+- X: Clear-done callback when no active items remain
+- Idle-aware: calls `ap_request_frame()` only while jobs are active
+
+**`ap_queue_status`**:
+```c
+typedef enum {
+    AP_QUEUE_PENDING = 0,   // Waiting to start          (hint color)
+    AP_QUEUE_RUNNING = 1,   // Actively being processed  (accent color)
+    AP_QUEUE_DONE    = 2,   // Completed successfully     (green)
+    AP_QUEUE_FAILED  = 3,   // Ended in error             (red)
+    AP_QUEUE_SKIPPED = 4,   // Intentionally skipped     (hint color)
+} ap_queue_status;
+```
+
+**`ap_queue_item`** (filled by snapshot callback each frame):
+```c
+typedef struct {
+    char            title[256];      // Large primary label
+    char            subtitle[128];   // Small secondary label
+    char            status_text[64]; // Right-aligned status string
+    ap_queue_status status;          // Color-coding and filter
+    float           progress;        // 0.0–1.0 = progress bar; < 0 = no bar
+    void           *userdata;        // Caller-defined context
+} ap_queue_item;
+```
+
+**`ap_queue_opts`**:
+```c
+typedef struct {
+    const char           *title;       // Screen title, e.g. "Downloads"
+    ap_queue_snapshot_fn  snapshot;    // Required: fills items each frame
+    int                   max_items;   // Buffer capacity; 0 → 256
+    void                 *userdata;    // Passed to all callbacks
+    ap_queue_detail_fn    on_detail;   // Optional: A button on terminal items
+    ap_queue_clear_fn     on_clear;    // Optional: X button when queue idle
+    ap_status_bar_opts   *status_bar;  // Optional: top-right status pill
+    bool                  hide_filter; // Set true to hide Y=FILTER cycling
+} ap_queue_opts;
+```
+
+**Callbacks**:
+```c
+// Fill buf[0..max] with current state. Must be thread-safe. Return count.
+typedef int  (*ap_queue_snapshot_fn)(ap_queue_item *buf, int max, void *userdata);
+
+// Called when A is pressed on a terminal item. May push another widget.
+typedef void (*ap_queue_detail_fn)(const ap_queue_item *item, void *userdata);
+
+// Called when X is pressed to clear completed items.
+typedef void (*ap_queue_clear_fn)(void *userdata);
+```
+
+**Example** (minimal):
+```c
+static int my_snapshot(ap_queue_item *buf, int max, void *ud) {
+    pthread_mutex_lock(&queue_mutex);
+    int n = copy_queue_to_buf(buf, max);  // your thread-safe copy
+    pthread_mutex_unlock(&queue_mutex);
+    return n;
+}
+
+ap_queue_opts opts = {
+    .title    = "Downloads",
+    .snapshot = my_snapshot,
+};
+ap_queue_viewer(&opts);
+```
+
 ### Download Manager
 
 ```c

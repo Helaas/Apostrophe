@@ -2407,6 +2407,98 @@ static void demo_list_navigation(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: Queue Viewer
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Simulated queue items for the demo */
+static const struct {
+    const char *title;
+    const char *subtitle;
+    bool        fails;
+} qv_items[] = {
+    { "Looney Tunes",                                                     "Game Boy  [cht]",       false },
+    { "Maru's Mission",                                                   "Game Boy  [cht]",       false },
+    { "Mega Man - Dr. Wily's Revenge",                                    "Game Boy  [cht]",       false },
+    { "Mega Man II",                                                      "Game Boy  [cht]",       true  },
+    { "Metroid II - Return of Samus",                                     "Game Boy  [cht]",       false },
+    { "Final Fantasy Adventure",                                          "Game Boy  [cht]",       false },
+    { "Tetris",                                                           "Game Boy  [cht]",       true  },
+    { "Super Mario Land",                                                 "Game Boy  [cht]",       false },
+    { "Kirby's Dream Land",                                               "Game Boy  [cht]",       false },
+    { "Donkey Kong Land - This entry has a very long title to demonstrate horizontal text scrolling when selected", "Game Boy Color  [art]", false },
+};
+#define QV_ITEM_COUNT ((int)(sizeof(qv_items) / sizeof(qv_items[0])))
+
+typedef struct { uint32_t start_ms; } QVDemoCtx;
+
+#define QV_ITEM_DURATION_MS 1500
+#define QV_ITEM_STAGGER_MS  700
+
+static int qv_snapshot(ap_queue_item *buf, int max, void *ud) {
+    QVDemoCtx *ctx = (QVDemoCtx *)ud;
+    int n = (QV_ITEM_COUNT < max) ? QV_ITEM_COUNT : max;
+    uint32_t elapsed = SDL_GetTicks() - ctx->start_ms;
+    for (int i = 0; i < n; i++) {
+        uint32_t offset = (uint32_t)(i * QV_ITEM_STAGGER_MS);
+        strncpy(buf[i].title,    qv_items[i].title,    sizeof(buf[i].title)    - 1);
+        strncpy(buf[i].subtitle, qv_items[i].subtitle, sizeof(buf[i].subtitle) - 1);
+        if (elapsed < offset) {
+            buf[i].status = AP_QUEUE_PENDING;
+            strncpy(buf[i].status_text, "Queued", sizeof(buf[i].status_text) - 1);
+            buf[i].progress = -1.0f;
+        } else if (elapsed < offset + QV_ITEM_DURATION_MS) {
+            buf[i].status = AP_QUEUE_RUNNING;
+            strncpy(buf[i].status_text, "Downloading...", sizeof(buf[i].status_text) - 1);
+            buf[i].progress = (float)(elapsed - offset) / (float)QV_ITEM_DURATION_MS;
+        } else {
+            if (qv_items[i].fails) {
+                buf[i].status = AP_QUEUE_FAILED;
+                strncpy(buf[i].status_text, "Error", sizeof(buf[i].status_text) - 1);
+                buf[i].progress = 0.4f;
+            } else {
+                buf[i].status = AP_QUEUE_DONE;
+                strncpy(buf[i].status_text, "Done", sizeof(buf[i].status_text) - 1);
+                buf[i].progress = 1.0f;
+            }
+        }
+        buf[i].userdata = NULL;
+    }
+    return n;
+}
+
+static void qv_clear(void *ud) {
+    QVDemoCtx *ctx = (QVDemoCtx *)ud;
+    ctx->start_ms = SDL_GetTicks();  /* restart simulation */
+}
+
+static void qv_detail(const ap_queue_item *item, void *ud) {
+    (void)ud;
+    char msg[512];
+    const char *sname;
+    switch (item->status) {
+        case AP_QUEUE_DONE:    sname = "Done";    break;
+        case AP_QUEUE_FAILED:  sname = "Failed";  break;
+        case AP_QUEUE_SKIPPED: sname = "Skipped"; break;
+        default:               sname = "Unknown"; break;
+    }
+    snprintf(msg, sizeof(msg), "%s\n%s\n\nStatus: %s",
+             item->title, item->subtitle, sname);
+    demo_show_message(msg);
+}
+
+static void demo_queue_viewer(void) {
+    QVDemoCtx ctx = { SDL_GetTicks() };
+    ap_queue_opts opts = {
+        .title    = "Downloads",
+        .snapshot = qv_snapshot,
+        .userdata = &ctx,
+        .on_detail = qv_detail,
+        .on_clear  = qv_clear,
+    };
+    ap_queue_viewer(&opts);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Main menu
  * ═══════════════════════════════════════════════════════════════════════════ */
 typedef void (*demo_fn)(void);
@@ -2438,6 +2530,7 @@ static const struct {
     { "Input & Theme",       demo_input_theme         },
     { "CPU & Fan",           demo_cpu_fan             },
     { "Background Preview",  demo_background_preview  },
+    { "Queue Viewer",        demo_queue_viewer        },
 };
 
 #define DEMO_COUNT (int)(sizeof(demos) / sizeof(demos[0]))
