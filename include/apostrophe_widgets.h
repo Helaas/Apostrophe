@@ -3528,6 +3528,12 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
     int scroll_top = 0;
     int last_cursor = -1;
 
+    /* Enable footer overflow so H/MENU can show hidden items */
+    ap_footer_overflow_opts ap__qv_saved_overflow;
+    ap_get_footer_overflow_opts(&ap__qv_saved_overflow);
+    if (!ap__qv_saved_overflow.enabled)
+        ap_set_footer_overflow_opts(NULL);
+
     ap_text_scroll sel_scroll;
     ap_text_scroll_init(&sel_scroll);
 
@@ -3550,14 +3556,16 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
     int       bar_r    = AP_DS(2);
     int       summary_h = AP_DS(14);
 
-    TTF_Font *title_font = ap_get_font(AP_FONT_LARGE);
-    TTF_Font *sub_font   = ap_get_font(AP_FONT_SMALL);
-    if (!title_font || !sub_font) { free(items); free(filter_map); return AP_ERROR; }
+    TTF_Font *title_font  = ap_get_font(AP_FONT_LARGE);
+    TTF_Font *status_font = ap_get_font(AP_FONT_SMALL);  /* right-aligned status text */
+    TTF_Font *sub_font    = ap_get_font(AP_FONT_TINY);   /* subtitle row + summary */
+    if (!title_font || !status_font || !sub_font) { free(items); free(filter_map); return AP_ERROR; }
 
-    int title_fh = TTF_FontHeight(title_font);
-    int sub_fh   = TTF_FontHeight(sub_font);
+    int title_fh  = TTF_FontHeight(title_font);
+    int status_fh = TTF_FontHeight(status_font);
+    int sub_fh    = TTF_FontHeight(sub_font);
 
-    ap_color col_done     = {100, 255, 100, 255};
+    ap_color col_done     = {100, 200, 100, 255};
     ap_color col_failed   = {255, 100, 100, 255};
     ap_color col_bar_bg   = { 40,  40,  50, 255};
     ap_color col_bar_done = { 80, 200,  80, 255};
@@ -3809,12 +3817,12 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
             ap_color text_color = is_highlight ? theme->highlighted_text : theme->text;
             ap_color sub_color  = is_highlight ? theme->highlighted_text : theme->hint;
-            if (is_highlight) status_color = theme->highlighted_text;
+            if (is_highlight || is_selected) status_color = theme->highlighted_text;
 
             /* Per-item layout: reserve space for status text if present */
             int content_w  = pill_w - pill_pad * 2;
             int status_w   = item->status_text[0]
-                ? ap_measure_text(sub_font, item->status_text) : 0;
+                ? ap_measure_text(status_font, item->status_text) : 0;
             int text_max_w = content_w
                 - (status_w > 0 ? status_w + AP_DS(4) : 0);
             if (text_max_w < AP_S(40)) text_max_w = AP_S(40);
@@ -3825,8 +3833,8 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
             /* Status text — right-aligned, vertically centered on title row */
             if (item->status_text[0]) {
                 int sx = margin + pill_w - pill_pad - status_w;
-                int sy = title_y + (title_fh - sub_fh) / 2;
-                ap_draw_text(sub_font, item->status_text, sx, sy, status_color);
+                int sy = title_y + (title_fh - status_fh) / 2;
+                ap_draw_text(status_font, item->status_text, sx, sy, status_color);
             }
 
             /* Title — scroll horizontally when selected and overflowing */
@@ -3977,6 +3985,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
         ap_present();
     }
 
+    ap_set_footer_overflow_opts(&ap__qv_saved_overflow);
     free(items);
     free(filter_map);
     return AP_OK;
