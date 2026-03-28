@@ -2448,24 +2448,24 @@ static int qv_snapshot(ap_queue_item *buf, int max, void *ud) {
     uint32_t effective_elapsed = ctx->cancelled ? ctx->cancel_elapsed_ms : elapsed;
     for (int i = 0; i < n; i++) {
         uint32_t offset = (uint32_t)(i * QV_ITEM_STAGGER_MS);
-        strncpy(buf[i].title,    qv_items[i].title,    sizeof(buf[i].title)    - 1);
-        strncpy(buf[i].subtitle, qv_items[i].subtitle, sizeof(buf[i].subtitle) - 1);
+        snprintf(buf[i].title, sizeof(buf[i].title), "%s", qv_items[i].title);
+        snprintf(buf[i].subtitle, sizeof(buf[i].subtitle), "%s", qv_items[i].subtitle);
         if (effective_elapsed < offset) {
             buf[i].status = AP_QUEUE_PENDING;
-            strncpy(buf[i].status_text, "Queued", sizeof(buf[i].status_text) - 1);
+            snprintf(buf[i].status_text, sizeof(buf[i].status_text), "%s", "QUEUED");
             buf[i].progress = -1.0f;
         } else if (effective_elapsed < offset + QV_ITEM_DURATION_MS) {
             buf[i].status = AP_QUEUE_RUNNING;
-            strncpy(buf[i].status_text, "Downloading...", sizeof(buf[i].status_text) - 1);
+            snprintf(buf[i].status_text, sizeof(buf[i].status_text), "%s", "DOWNLOADING...");
             buf[i].progress = (float)(effective_elapsed - offset) / (float)QV_ITEM_DURATION_MS;
         } else {
             if (qv_items[i].fails) {
                 buf[i].status = AP_QUEUE_FAILED;
-                strncpy(buf[i].status_text, "Error", sizeof(buf[i].status_text) - 1);
+                snprintf(buf[i].status_text, sizeof(buf[i].status_text), "%s", "ERROR");
                 buf[i].progress = 0.4f;
             } else {
                 buf[i].status = AP_QUEUE_DONE;
-                strncpy(buf[i].status_text, "Done", sizeof(buf[i].status_text) - 1);
+                snprintf(buf[i].status_text, sizeof(buf[i].status_text), "%s", "DONE");
                 buf[i].progress = 1.0f;
             }
         }
@@ -2475,7 +2475,7 @@ static int qv_snapshot(ap_queue_item *buf, int max, void *ud) {
         if (ctx->cancelled &&
             (buf[i].status == AP_QUEUE_PENDING || buf[i].status == AP_QUEUE_RUNNING)) {
             buf[i].status = AP_QUEUE_SKIPPED;
-            strncpy(buf[i].status_text, "Cancelled", sizeof(buf[i].status_text) - 1);
+            snprintf(buf[i].status_text, sizeof(buf[i].status_text), "%s", "CANCELLED");
             buf[i].progress = -1.0f;
         }
 
@@ -2496,11 +2496,11 @@ static void qv_cancel(void *ud) {
     if (ctx->cancelled) return;
 
     ap_footer_item footer[] = {
-        { .button = AP_BTN_B, .label = "No",  .is_confirm = false },
-        { .button = AP_BTN_A, .label = "Yes", .is_confirm = true  },
+        { .button = AP_BTN_B, .label = "NO",  .is_confirm = false },
+        { .button = AP_BTN_A, .label = "YES", .is_confirm = true  },
     };
     ap_message_opts opts = {
-        .message = "Cancel all downloads?\n\nRunning items will be marked Cancelled\nand queued items will be skipped.",
+        .message = "CANCEL ALL DOWNLOADS?\n\nRUNNING ITEMS WILL BE MARKED CANCELLED\nAND QUEUED ITEMS WILL BE SKIPPED.",
         .footer = footer,
         .footer_count = 2,
     };
@@ -2516,8 +2516,8 @@ static void qv_cancel(void *ud) {
 static void qv_detail(const ap_queue_item *item, void *ud) {
     (void)ud;
     char msg[512];
-    const char *sname = item->status_text[0] ? item->status_text : "Unknown";
-    snprintf(msg, sizeof(msg), "%s\n%s\n\nStatus: %s",
+    const char *sname = item->status_text[0] ? item->status_text : "UNKNOWN";
+    snprintf(msg, sizeof(msg), "%s\n%s\n\nSTATUS: %s",
              item->title, item->subtitle, sname);
     demo_show_message(msg);
 }
@@ -2525,7 +2525,7 @@ static void qv_detail(const ap_queue_item *item, void *ud) {
 static void demo_queue_viewer(void) {
     QVDemoCtx ctx = { .start_ms = SDL_GetTicks() };
     ap_queue_opts opts = {
-        .title    = "Downloads",
+        .title    = "DOWNLOADS",
         .snapshot = qv_snapshot,
         .userdata = &ctx,
         .on_detail = qv_detail,

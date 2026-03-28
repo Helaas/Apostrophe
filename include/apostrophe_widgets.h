@@ -320,7 +320,7 @@ void ap_show_help_overlay(const char *text);
 typedef enum {
     AP_QUEUE_PENDING = 0,   /* Waiting to start                 (hint color) */
     AP_QUEUE_RUNNING = 1,   /* Actively being processed        (accent color) */
-    AP_QUEUE_DONE    = 2,   /* Successfully completed               (green) */
+    AP_QUEUE_DONE    = 2,   /* Successfully completed               (soft green) */
     AP_QUEUE_FAILED  = 3,   /* Ended in error                         (red) */
     AP_QUEUE_SKIPPED = 4,   /* Intentionally skipped / cancelled (hint color) */
 } ap_queue_status;
@@ -355,7 +355,7 @@ typedef void (*ap_queue_cancel_fn)(void *userdata);
 typedef void (*ap_queue_clear_fn)(void *userdata);
 
 typedef struct {
-    const char           *title;       /* Screen title, e.g. "Downloads" */
+    const char           *title;       /* Screen title, e.g. "DOWNLOADS" */
     ap_queue_snapshot_fn  snapshot;    /* Required: fills items each frame */
     int                   max_items;   /* Snapshot buffer capacity; 0 → 256 */
     void                 *userdata;    /* Passed to all callbacks */
@@ -3522,17 +3522,11 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
     /* Filter: 0=All, 1=In Progress, 2=Done, 3=Failed */
     int filter = 0;
-    static const char *ap__qv_filters[] = { "All", "In Progress", "Done", "Failed" };
+    static const char *ap__qv_filters[] = { "ALL", "IN PROGRESS", "DONE", "FAILED" };
 
     int cursor     = 0;
     int scroll_top = 0;
     int last_cursor = -1;
-
-    /* Enable footer overflow so H/MENU can show hidden items */
-    ap_footer_overflow_opts ap__qv_saved_overflow;
-    ap_get_footer_overflow_opts(&ap__qv_saved_overflow);
-    if (!ap__qv_saved_overflow.enabled)
-        ap_set_footer_overflow_opts(NULL);
 
     ap_text_scroll sel_scroll;
     ap_text_scroll_init(&sel_scroll);
@@ -3560,6 +3554,14 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
     TTF_Font *status_font = ap_get_font(AP_FONT_SMALL);  /* right-aligned status text */
     TTF_Font *sub_font    = ap_get_font(AP_FONT_TINY);   /* subtitle row + summary */
     if (!title_font || !status_font || !sub_font) { free(items); free(filter_map); return AP_ERROR; }
+
+    /* Enable footer overflow so H/MENU can show hidden items. Font lookup is
+     * the only fallible step after allocation, so do it before mutating the
+     * global overflow state. */
+    ap_footer_overflow_opts ap__qv_saved_overflow;
+    ap_get_footer_overflow_opts(&ap__qv_saved_overflow);
+    if (!ap__qv_saved_overflow.enabled)
+        ap_set_footer_overflow_opts(NULL);
 
     int title_fh  = TTF_FontHeight(title_font);
     int status_fh = TTF_FontHeight(status_font);
@@ -3613,8 +3615,9 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
         /* ── Layout ───────────────────────────────────────────────────────── */
         int item_h = title_fh + sub_fh + AP_DS(4);
 
-        /* Content rect covers title→footer; reserve summary_h at the bottom */
-        SDL_Rect crect = ap_get_content_rect(opts->title != NULL, true,
+        /* Content rect covers title→footer; reserve summary_h at the bottom.
+         * This widget always draws a title (custom or default "QUEUE"). */
+        SDL_Rect crect = ap_get_content_rect(true, true,
                                               opts->status_bar != NULL);
         int list_y = crect.y;
         int list_h = crect.h - summary_h;
@@ -3772,7 +3775,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
         /* Title with filter suffix */
         {
             char tbuf[320];
-            const char *base = opts->title ? opts->title : "Queue";
+            const char *base = opts->title ? opts->title : "QUEUE";
             if (!opts->hide_filter)
                 snprintf(tbuf, sizeof(tbuf), "%s [%s]", base, ap__qv_filters[filter]);
             else
@@ -3817,7 +3820,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
             ap_color text_color = is_highlight ? theme->highlighted_text : theme->text;
             ap_color sub_color  = is_highlight ? theme->highlighted_text : theme->hint;
-            if (is_highlight || is_selected) status_color = theme->highlighted_text;
+            if (is_highlight) status_color = theme->highlighted_text;
 
             /* Per-item layout: reserve space for status text if present */
             int content_w  = pill_w - pill_pad * 2;
@@ -3916,8 +3919,8 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
         /* Empty state */
         if (filtered_count == 0) {
-            const char *msg = (stat_total == 0) ? "No items in queue."
-                                                : "No items match this filter.";
+            const char *msg = (stat_total == 0) ? "NO ITEMS IN QUEUE."
+                                                : "NO ITEMS MATCH THIS FILTER.";
             int mw = ap_measure_text(sub_font, msg);
             ap_draw_text(sub_font, msg,
                          (screen_w - mw) / 2,
@@ -3951,7 +3954,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
             SDL_SetRenderDrawBlendMode(rend, prev_blend);
 
             char summary[128];
-            snprintf(summary, sizeof(summary), "%d/%d complete, %d failed",
+            snprintf(summary, sizeof(summary), "%d/%d COMPLETE, %d FAILED",
                      stat_done, stat_total, stat_failed);
             int sw = ap_measure_text(sub_font, summary);
             ap_draw_text(sub_font, summary,
@@ -3966,20 +3969,20 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
             int nf = 0;
 
             if (!opts->hide_filter)
-                fi[nf++] = (ap_footer_item){ .button = AP_BTN_Y, .label = "Filter" };
+                fi[nf++] = (ap_footer_item){ .button = AP_BTN_Y, .label = "FILTER" };
             if (opts->on_detail && filtered_count > 0) {
                 ap_queue_status s = items[filter_map[cursor]].status;
                 if (s == AP_QUEUE_DONE || s == AP_QUEUE_FAILED || s == AP_QUEUE_SKIPPED)
-                    fi[nf++] = (ap_footer_item){ .button = AP_BTN_A, .label = "Details" };
+                    fi[nf++] = (ap_footer_item){ .button = AP_BTN_A, .label = "DETAILS" };
             }
-            fi[nf++] = (ap_footer_item){ .button = AP_BTN_B, .label = "Back" };
+            fi[nf++] = (ap_footer_item){ .button = AP_BTN_B, .label = "BACK" };
             if (has_active) {
                 if (opts->on_cancel)
                     fi[nf++] = (ap_footer_item){
-                        .button = AP_BTN_X, .label = "Cancel All", .is_confirm = true };
+                        .button = AP_BTN_X, .label = "STOP ALL", .is_confirm = true };
             } else if (opts->on_clear && stat_done > 0) {
                 fi[nf++] = (ap_footer_item){
-                    .button = AP_BTN_X, .label = "Clear Done", .is_confirm = true };
+                    .button = AP_BTN_X, .label = "CLEAR DONE", .is_confirm = true };
             }
             ap_draw_footer(fi, nf);
         }
