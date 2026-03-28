@@ -416,6 +416,110 @@ ap_show_help_overlay("Navigate with D-Pad.\nPress A to select.\nPress B to go ba
 
 ---
 
+## Queue Viewer (`ap_queue_viewer`)
+
+Live-updating queue of background jobs with animated pill selection, filter cycling, and optional progress bars. The widget is a pure display layer — the caller supplies a thread-safe snapshot callback; all threading and job logic remain in the caller.
+
+```
+┌───────────────────────────────────────┐
+│  DOWNLOADS [ALL]                      │ ← Title with active filter
+│───────────────────────────────────────│
+│  ┌──────────────────────────────────┐ │
+│  │ Mega Man - Dr. Wily's Revenge    │ │ ← Pill on selected row
+│  │ Game Boy  [cht]  ████████░░░░░░  │ │ ← Subtitle + inline progress bar
+│  └──────────────────────────────────┘ │
+│    Maru's Mission       DOWNLOADING...│
+│    Game Boy  [cht]  ████████████████  │
+│    Looney Tunes                  DONE │
+│    Game Boy  [cht]  ████████████████  │
+│───────────────────────────────────────│
+│    3/10 COMPLETE, 1 FAILED            │ ← Summary bar
+│───────────────────────────────────────│
+│  [Y] FILTER  [A] DETAILS  [B] BACK    │
+└───────────────────────────────────────┘
+```
+
+**Status colors**:
+
+| Status | Color |
+|--------|-------|
+| `AP_QUEUE_PENDING` / `AP_QUEUE_SKIPPED` | Hint (muted) |
+| `AP_QUEUE_RUNNING` | Accent |
+| `AP_QUEUE_DONE` | Green `(100,200,100)` |
+| `AP_QUEUE_FAILED` | Red `(255,100,100)` |
+
+When the highlight pill is on a row, all row text including `status_text` switches to the highlighted text color, matching Scrapegoat's selected-state behavior.
+
+**Footer visibility**:
+
+| Button | Shown when |
+|--------|-----------|
+| Y FILTER | `hide_filter` is false (default) |
+| A DETAILS | `on_detail` set and selected item is terminal |
+| X STOP ALL | `on_cancel` set and any PENDING/RUNNING items remain |
+| X CLEAR DONE | `on_clear` set and no PENDING/RUNNING items remain |
+| B BACK | Always; emitted last on narrow screens so it overflows first |
+
+Footer order is `Y FILTER`, then `A DETAILS` when available, with `B BACK` emitted last so it is the first left-side action to collapse behind `+N` on narrow screens.
+
+**Features**:
+- Animated pill selection (same lerp as `ap_list`)
+- Horizontal text scroll on long titles when selected
+- Per-item inline progress bars on the subtitle row (omit bar entirely when `progress < 0`)
+- Filter cycling: ALL / IN PROGRESS / DONE / FAILED (Y button)
+- Summary bar showing `X/Y COMPLETE, Z FAILED`
+- Detail callback for terminal items (A button)
+- Cancel callback while jobs are active, then clear-done when idle (X button)
+- CPU-idle aware: calls `ap_request_frame()` only while jobs are active; goes idle automatically when all items reach a terminal state
+- Scrollbar aligned with the subtitle zone, outside the pill area
+- Menu / desktop `H`: opens hidden footer actions when the footer shows `+N`
+
+**Usage**:
+```c
+/* Thread-safe snapshot: copy your job state into buf each frame */
+static int my_snapshot(ap_queue_item *buf, int max, void *ud) {
+    int n = 0;
+    /* acquire lock, copy items, release lock */
+    buf[n].status   = AP_QUEUE_RUNNING;
+    buf[n].progress = 0.45f;
+    snprintf(buf[n].title,       sizeof(buf[n].title),    "Mega Man");
+    snprintf(buf[n].subtitle,    sizeof(buf[n].subtitle),  "Game Boy  [cht]");
+    snprintf(buf[n].status_text, sizeof(buf[n].status_text), "DOWNLOADING");
+    n++;
+    return n;
+}
+
+static void my_detail(const ap_queue_item *item, void *ud) {
+    /* push another widget to show item details */
+}
+
+static void my_cancel(void *ud) {
+    /* confirm cancellation, then mark unfinished items as CANCELLED */
+}
+
+static void my_clear(void *ud) {
+    /* remove completed items from your job list */
+}
+
+ap_queue_opts opts = {
+    .title      = "DOWNLOADS",
+    .snapshot   = my_snapshot,
+    .userdata   = &my_ctx,
+    .on_detail  = my_detail,
+    .on_cancel  = my_cancel,
+    .on_clear   = my_clear,
+};
+ap_queue_viewer(&opts);
+```
+
+**Snapshot contract**: `snapshot` is called every frame on the render thread. The callback must be safe to call concurrently with your worker threads — protect shared state with a mutex and copy into the caller-supplied `buf`.
+
+**Cancelled downloads**: the widget is display-only. If your app supports cancellation, handle it in `on_cancel`, then update future snapshots to return `AP_QUEUE_SKIPPED` with a status label such as `"CANCELLED"` for any unfinished items. The demo queue viewer shows this pattern.
+
+**Progress bar**: set `progress` to a value in `[0.0, 1.0]` to draw an inline bar on the subtitle row, or to any negative value to omit the bar for that item.
+
+---
+
 ## Download Manager (`ap_download_manager`)
 
 Multi-threaded file downloader with per-file progress bars. Requires libcurl.

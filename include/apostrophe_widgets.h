@@ -309,6 +309,67 @@ int ap_color_picker(ap_color initial, ap_color *result);
 void ap_show_help_overlay(const char *text);
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Queue Viewer — live-updating job queue display
+ *
+ * Presents a scrollable, filterable list of background jobs with per-item
+ * status, optional progress bars, and a live summary bar. The caller
+ * supplies a snapshot callback that copies the current queue state each
+ * frame; all threading remains in the caller.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef enum {
+    AP_QUEUE_PENDING = 0,   /* Waiting to start                 (hint color) */
+    AP_QUEUE_RUNNING = 1,   /* Actively being processed        (accent color) */
+    AP_QUEUE_DONE    = 2,   /* Successfully completed               (soft green) */
+    AP_QUEUE_FAILED  = 3,   /* Ended in error                         (red) */
+    AP_QUEUE_SKIPPED = 4,   /* Intentionally skipped / cancelled (hint color) */
+} ap_queue_status;
+
+/* A single job entry displayed in the queue viewer */
+typedef struct {
+    char            title[256];      /* Large primary label (left-aligned) */
+    char            subtitle[128];   /* Small secondary label below title */
+    char            status_text[64]; /* Right-aligned status string */
+    ap_queue_status status;          /* Drives color-coding and filter */
+    float           progress;        /* 0.0–1.0 = draw inline progress bar; < 0 = no bar */
+    void           *userdata;        /* Caller-defined opaque context */
+} ap_queue_item;
+
+/* Called every frame to fill buf[0..max] with current item state.
+ * Must be thread-safe (copy from mutex-protected state).
+ * Returns actual count written (≤ max). */
+typedef int (*ap_queue_snapshot_fn)(ap_queue_item *buf, int max, void *userdata);
+
+/* Called when user presses A on a terminal (DONE/FAILED/SKIPPED) item.
+ * Widget pauses its own loop; callback may push another widget. */
+typedef void (*ap_queue_detail_fn)(const ap_queue_item *item, void *userdata);
+
+/* Called when user presses X while any items are still active.
+ * Caller owns cancellation semantics; update future snapshots to show
+ * cancelled/skipped state after this returns. */
+typedef void (*ap_queue_cancel_fn)(void *userdata);
+
+/* Called when user presses X to clear completed items.
+ * Widget re-snapshots on the next frame after this returns.
+ * Only shown when no PENDING or RUNNING items exist. */
+typedef void (*ap_queue_clear_fn)(void *userdata);
+
+typedef struct {
+    const char           *title;       /* Screen title, e.g. "DOWNLOADS" */
+    ap_queue_snapshot_fn  snapshot;    /* Required: fills items each frame */
+    int                   max_items;   /* Snapshot buffer capacity; 0 → 256 */
+    void                 *userdata;    /* Passed to all callbacks */
+    ap_queue_detail_fn    on_detail;   /* Optional: A button on terminal items */
+    ap_queue_cancel_fn    on_cancel;   /* Optional: X button while queue active */
+    ap_queue_clear_fn     on_clear;    /* Optional: X button when queue idle */
+    ap_status_bar_opts   *status_bar;  /* Optional: top-right status pill */
+    bool                  hide_filter; /* Set true to suppress Y=FILTER button */
+} ap_queue_opts;
+
+/* Runs the queue viewer event loop. Returns AP_OK when user exits (B). */
+int ap_queue_viewer(const ap_queue_opts *opts);
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Download Manager — multi-threaded file downloader with progress UI
  *
  * Requires libcurl. Link with -lcurl. The widget spawns a thread pool
@@ -3444,6 +3505,498 @@ static void ap__dl_format_speed(double bps, char *buf, int bufsize) {
     else
         snprintf(buf, bufsize, "%.0f B/s", bps);
 }
+
+#endif /* AP_ENABLE_CURL */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Queue Viewer Implementation
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+int ap_queue_viewer(const ap_queue_opts *opts) {
+    if (!opts || !opts->snapshot) return AP_ERROR;
+
+    int max_items  = (opts->max_items > 0) ? opts->max_items : 256;
+    ap_queue_item *items      = (ap_queue_item *)calloc((size_t)max_items, sizeof(ap_queue_item));
+    int           *filter_map = (int *)calloc((size_t)max_items, sizeof(int));
+    if (!items || !filter_map) { free(items); free(filter_map); return AP_ERROR; }
+
+    /* Filter: 0=All, 1=In Progress, 2=Done, 3=Failed */
+    int filter = 0;
+    static const char *ap__qv_filters[] = { "ALL", "IN PROGRESS", "DONE", "FAILED" };
+
+    int cursor     = 0;
+    int scroll_top = 0;
+    int last_cursor = -1;
+
+    ap_text_scroll sel_scroll;
+    ap_text_scroll_init(&sel_scroll);
+
+    /* Pill animation state — same pattern as ap_list */
+    float    pill_anim_y           = 0.0f;
+    float    pill_anim_w           = 0.0f;
+    float    pill_from_y           = 0.0f;
+    float    pill_from_w           = 0.0f;
+    uint32_t pill_anim_start       = 0;
+    bool     pill_anim_initialized = false;
+    int      pill_prev_target_y    = 0;
+    int      pill_prev_target_w    = 0;
+
+    ap_theme *theme    = ap_get_theme();
+    int       screen_w = ap_get_screen_width();
+    int       margin   = AP_DS(ap__g.device_padding);
+    int       pill_pad = AP_DS(AP__BUTTON_PADDING);
+    int       item_gap = 0;
+    int       bar_h    = AP_DS(4);
+    int       bar_r    = AP_DS(2);
+    int       summary_h = AP_DS(14);
+
+    TTF_Font *title_font  = ap_get_font(AP_FONT_LARGE);
+    TTF_Font *status_font = ap_get_font(AP_FONT_SMALL);  /* right-aligned status text */
+    TTF_Font *sub_font    = ap_get_font(AP_FONT_TINY);   /* subtitle row + summary */
+    if (!title_font || !status_font || !sub_font) { free(items); free(filter_map); return AP_ERROR; }
+
+    /* Enable footer overflow so H/MENU can show hidden items. Font lookup is
+     * the only fallible step after allocation, so do it before mutating the
+     * global overflow state. */
+    ap_footer_overflow_opts ap__qv_saved_overflow;
+    ap_get_footer_overflow_opts(&ap__qv_saved_overflow);
+    if (!ap__qv_saved_overflow.enabled)
+        ap_set_footer_overflow_opts(NULL);
+
+    int title_fh  = TTF_FontHeight(title_font);
+    int status_fh = TTF_FontHeight(status_font);
+    int sub_fh    = TTF_FontHeight(sub_font);
+
+    ap_color col_done     = {100, 200, 100, 255};
+    ap_color col_failed   = {255, 100, 100, 255};
+    ap_color col_bar_bg   = { 40,  40,  50, 255};
+    ap_color col_bar_done = { 80, 200,  80, 255};
+    ap_color col_bar_fail = {200,  80,  80, 255};
+
+    bool     running    = true;
+    uint32_t last_frame = SDL_GetTicks();
+
+    while (running) {
+        uint32_t now = SDL_GetTicks();
+        uint32_t dt  = now - last_frame;
+        last_frame   = now;
+
+        /* ── Snapshot ─────────────────────────────────────────────────────── */
+        int count = opts->snapshot(items, max_items, opts->userdata);
+        if (count < 0) count = 0;
+        if (count > max_items) count = max_items;
+
+        /* ── Summary stats (full unfiltered list) ─────────────────────────── */
+        int  stat_total   = count;
+        int  stat_done    = 0;
+        int  stat_failed  = 0;
+        bool has_active   = false;
+        for (int i = 0; i < count; i++) {
+            ap_queue_status s = items[i].status;
+            if      (s == AP_QUEUE_DONE || s == AP_QUEUE_SKIPPED)  stat_done++;
+            else if (s == AP_QUEUE_FAILED)                          stat_failed++;
+            if      (s == AP_QUEUE_PENDING || s == AP_QUEUE_RUNNING) has_active = true;
+        }
+
+        /* ── Filter map ───────────────────────────────────────────────────── */
+        int filtered_count = 0;
+        for (int i = 0; i < count; i++) {
+            ap_queue_status s = items[i].status;
+            bool match = false;
+            switch (filter) {
+                case 0: match = true; break;
+                case 1: match = (s == AP_QUEUE_PENDING || s == AP_QUEUE_RUNNING); break;
+                case 2: match = (s == AP_QUEUE_DONE    || s == AP_QUEUE_SKIPPED); break;
+                case 3: match = (s == AP_QUEUE_FAILED);  break;
+            }
+            if (match) filter_map[filtered_count++] = i;
+        }
+
+        /* ── Layout ───────────────────────────────────────────────────────── */
+        int item_h = title_fh + sub_fh + AP_DS(4);
+
+        /* Content rect covers title→footer; reserve summary_h at the bottom.
+         * This widget always draws a title (custom or default "QUEUE"). */
+        SDL_Rect crect = ap_get_content_rect(true, true,
+                                              opts->status_bar != NULL);
+        int list_y = crect.y;
+        int list_h = crect.h - summary_h;
+        if (list_h < 0) list_h = 0;
+
+        int max_visible = (item_h + item_gap > 0)
+            ? (list_h + item_gap) / (item_h + item_gap) : 1;
+        if (max_visible < 1) max_visible = 1;
+
+        bool needs_scrollbar = (filtered_count > max_visible);
+        int  pill_w          = screen_w - margin * 2;
+
+        /* ── Clamp cursor ─────────────────────────────────────────────────── */
+        if (filtered_count == 0) {
+            cursor = 0;
+        } else {
+            if (cursor < 0) cursor = 0;
+            if (cursor >= filtered_count) cursor = filtered_count - 1;
+        }
+
+        /* ── Input ────────────────────────────────────────────────────────── */
+        ap_input_event ev;
+        bool callback_refresh = false;
+        while (ap_poll_input(&ev)) {
+            if (!ev.pressed) continue;
+            switch (ev.button) {
+                case AP_BTN_UP:
+                    if (filtered_count > 0)
+                        cursor = (cursor > 0) ? cursor - 1 : filtered_count - 1;
+                    break;
+                case AP_BTN_DOWN:
+                    if (filtered_count > 0)
+                        cursor = (cursor < filtered_count - 1) ? cursor + 1 : 0;
+                    break;
+                case AP_BTN_L1:
+                case AP_BTN_LEFT:
+                    if (filtered_count > 0) {
+                        cursor -= max_visible;
+                        if (cursor < 0) cursor = 0;
+                    }
+                    break;
+                case AP_BTN_R1:
+                case AP_BTN_RIGHT:
+                    if (filtered_count > 0) {
+                        cursor += max_visible;
+                        if (cursor >= filtered_count) cursor = filtered_count - 1;
+                    }
+                    break;
+                case AP_BTN_Y:
+                    if (!opts->hide_filter) {
+                        filter = (filter + 1) % 4;
+                        cursor = 0; scroll_top = 0; last_cursor = -1;
+                        pill_anim_initialized = false;  /* snap pill to new row */
+                    }
+                    break;
+                case AP_BTN_MENU:
+                    ap_show_footer_overflow();
+                    break;
+                case AP_BTN_A:
+                    if (opts->on_detail && filtered_count > 0) {
+                        ap_queue_status s = items[filter_map[cursor]].status;
+                        if (s == AP_QUEUE_DONE || s == AP_QUEUE_FAILED || s == AP_QUEUE_SKIPPED) {
+                            opts->on_detail(&items[filter_map[cursor]], opts->userdata);
+                            callback_refresh = true;
+                            goto done_input;
+                        }
+                    }
+                    break;
+                case AP_BTN_X:
+                    if (has_active) {
+                        if (opts->on_cancel) {
+                            opts->on_cancel(opts->userdata);
+                            callback_refresh = true;
+                            goto done_input;
+                        }
+                    } else if (opts->on_clear && stat_done > 0) {
+                        opts->on_clear(opts->userdata);
+                        callback_refresh = true;
+                        goto done_input;
+                    }
+                    break;
+                case AP_BTN_B:
+                    running = false;
+                    break;
+                default: break;
+            }
+        }
+        done_input:
+
+        if (callback_refresh) {
+            last_frame = SDL_GetTicks();
+            continue;
+        }
+
+        /* Re-clamp after input */
+        if (filtered_count > 0) {
+            if (cursor < 0) cursor = 0;
+            if (cursor >= filtered_count) cursor = filtered_count - 1;
+        } else {
+            cursor = 0;
+        }
+
+        /* ── Scroll adjustment ────────────────────────────────────────────── */
+        if (cursor < scroll_top) scroll_top = cursor;
+        if (filtered_count > 0 && cursor >= scroll_top + max_visible)
+            scroll_top = cursor - max_visible + 1;
+        if (scroll_top < 0) scroll_top = 0;
+
+        /* ── Pill animation ───────────────────────────────────────────────── */
+        int pill_target_y = list_y + (cursor - scroll_top) * (item_h + item_gap);
+        int pill_target_w = needs_scrollbar ? (pill_w - AP_S(10)) : pill_w;
+
+        if (cursor != last_cursor) {
+            if (last_cursor >= 0) {
+                float prev_t = ap__clampf(
+                    (float)(now - pill_anim_start) / AP__PILL_ANIM_MS, 0.0f, 1.0f);
+                pill_from_y = ap__lerpf(pill_from_y, (float)pill_prev_target_y, prev_t);
+                pill_from_w = ap__lerpf(pill_from_w, (float)pill_prev_target_w, prev_t);
+            } else {
+                pill_from_y = (float)pill_target_y;
+                pill_from_w = (float)pill_target_w;
+            }
+            pill_anim_start = now;
+            last_cursor     = cursor;
+            ap_text_scroll_reset(&sel_scroll);
+        }
+        pill_prev_target_y = pill_target_y;
+        pill_prev_target_w = pill_target_w;
+
+        if (!pill_anim_initialized) {
+            pill_anim_y = pill_from_y = (float)pill_target_y;
+            pill_anim_w = pill_from_w = (float)pill_target_w;
+            pill_anim_start       = now;
+            pill_anim_initialized = true;
+        }
+
+        {
+            float t = ap__clampf(
+                (float)(now - pill_anim_start) / AP__PILL_ANIM_MS, 0.0f, 1.0f);
+            pill_anim_y = ap__lerpf(pill_from_y, (float)pill_target_y, t);
+            pill_anim_w = ap__lerpf(pill_from_w, (float)pill_target_w, t);
+            if (t < 1.0f) ap_request_frame();
+            if (pill_anim_y < (float)list_y) pill_anim_y = (float)list_y;
+            int pill_max_y = list_y + list_h - item_h;
+            if (pill_max_y > list_y && pill_anim_y > (float)pill_max_y)
+                pill_anim_y = (float)pill_max_y;
+        }
+
+        /* Keep rendering while jobs are in progress */
+        if (has_active) ap_request_frame();
+
+        /* ── Render ───────────────────────────────────────────────────────── */
+        ap_draw_background();
+
+        /* Title with filter suffix */
+        {
+            char tbuf[320];
+            const char *base = opts->title ? opts->title : "QUEUE";
+            if (!opts->hide_filter)
+                snprintf(tbuf, sizeof(tbuf), "%s [%s]", base, ap__qv_filters[filter]);
+            else
+                snprintf(tbuf, sizeof(tbuf), "%s", base);
+            ap_draw_screen_title(tbuf, opts->status_bar);
+        }
+        if (opts->status_bar) ap_draw_status_bar(opts->status_bar);
+
+        /* Determine which row the pill center is over for text color tracking */
+        int pill_center_y = (int)pill_anim_y + item_h / 2;
+        int pill_row_idx  = (item_h + item_gap > 0)
+            ? (pill_center_y - list_y) / (item_h + item_gap) : 0;
+        if (pill_row_idx < 0)            pill_row_idx = 0;
+        if (pill_row_idx >= max_visible) pill_row_idx = max_visible - 1;
+        int highlight_fi = scroll_top + pill_row_idx;
+
+        /* Pill background */
+        if (filtered_count > 0)
+            ap_draw_pill(margin, (int)pill_anim_y, (int)pill_anim_w, item_h,
+                         theme->highlight);
+
+        /* Items */
+        int text_x = margin + pill_pad;
+
+        for (int vi = 0; vi < max_visible && (scroll_top + vi) < filtered_count; vi++) {
+            int fi = scroll_top + vi;
+            int ri = filter_map[fi];
+            int iy = list_y + vi * (item_h + item_gap);
+
+            ap_queue_item   *item = &items[ri];
+            ap_queue_status  s    = item->status;
+            bool is_selected  = (fi == cursor);
+            bool is_highlight = (fi == highlight_fi);
+
+            ap_color status_color;
+            switch (s) {
+                case AP_QUEUE_DONE:    status_color = col_done;      break;
+                case AP_QUEUE_FAILED:  status_color = col_failed;    break;
+                case AP_QUEUE_RUNNING: status_color = theme->accent; break;
+                default:               status_color = theme->hint;   break;
+            }
+
+            ap_color text_color = is_highlight ? theme->highlighted_text : theme->text;
+            ap_color sub_color  = is_highlight ? theme->highlighted_text : theme->hint;
+            if (is_highlight) status_color = theme->highlighted_text;
+
+            /* Per-item layout: reserve space for status text if present */
+            int content_w  = pill_w - pill_pad * 2;
+            int status_w   = item->status_text[0]
+                ? ap_measure_text(status_font, item->status_text) : 0;
+            int text_max_w = content_w
+                - (status_w > 0 ? status_w + AP_DS(4) : 0);
+            if (text_max_w < AP_S(40)) text_max_w = AP_S(40);
+
+            int title_y = iy;
+            int sub_y   = iy + title_fh + AP_DS(2);
+
+            /* Status text — right-aligned, vertically centered on title row */
+            if (item->status_text[0]) {
+                int sx = margin + pill_w - pill_pad - status_w;
+                int sy = title_y + (title_fh - status_fh) / 2;
+                ap_draw_text(status_font, item->status_text, sx, sy, status_color);
+            }
+
+            /* Title — scroll horizontally when selected and overflowing */
+            {
+                int tw = ap_measure_text(title_font, item->title);
+                if (is_selected && tw > text_max_w) {
+                    ap_text_scroll_update(&sel_scroll, tw, text_max_w, dt);
+                    if (sel_scroll.active) ap_request_frame();
+                    SDL_Rect clip = { text_x, title_y, text_max_w, title_fh };
+                    SDL_RenderSetClipRect(ap_get_renderer(), &clip);
+                    ap_draw_text(title_font, item->title,
+                                 text_x - sel_scroll.offset, title_y, text_color);
+                    SDL_RenderSetClipRect(ap_get_renderer(), NULL);
+                } else {
+                    ap_draw_text_ellipsized(title_font, item->title,
+                                            text_x, title_y, text_color, text_max_w);
+                }
+            }
+
+            /* Subtitle / inline progress bar */
+            {
+                bool has_subtitle   = item->subtitle[0] != '\0';
+                bool has_progress   = item->progress >= 0.0f;
+                int  subtitle_gap   = AP_DS(8);
+                int  subtitle_max_w = content_w;
+                int  bar_x          = text_x;
+                int  bar_w          = 0;
+                int  bar_y          = sub_y + (sub_fh - bar_h) / 2;
+
+                if (has_progress) {
+                    if (has_subtitle) {
+                        int min_subtitle_w = AP_S(40);
+                        int min_bar_w      = AP_DS(56);
+                        int max_bar_w      = AP_DS(140);
+                        int target_bar_w   = content_w / 3;
+                        if (target_bar_w < min_bar_w) target_bar_w = min_bar_w;
+                        if (target_bar_w > max_bar_w) target_bar_w = max_bar_w;
+                        bar_w = target_bar_w;
+                        if (content_w - subtitle_gap - bar_w < min_subtitle_w) {
+                            bar_w = content_w - subtitle_gap - min_subtitle_w;
+                        }
+                        if (bar_w > 0) {
+                            subtitle_max_w = content_w - subtitle_gap - bar_w;
+                            if (subtitle_max_w < min_subtitle_w) subtitle_max_w = min_subtitle_w;
+                            bar_x = text_x + subtitle_max_w + subtitle_gap;
+                        } else {
+                            bar_w = 0;
+                        }
+                    } else {
+                        bar_w = content_w;
+                    }
+                }
+
+                if (has_subtitle) {
+                    ap_draw_text_ellipsized(sub_font, item->subtitle,
+                                            text_x, sub_y,
+                                            sub_color, subtitle_max_w);
+                }
+
+                if (bar_w > 0) {
+                    ap_draw_rounded_rect(bar_x, bar_y, bar_w, bar_h, bar_r, col_bar_bg);
+
+                    ap_color fill;
+                    if      (s == AP_QUEUE_DONE)    fill = col_bar_done;
+                    else if (s == AP_QUEUE_FAILED)  fill = col_bar_fail;
+                    else if (s == AP_QUEUE_SKIPPED) fill = theme->hint;
+                    else                            fill = theme->accent;
+
+                    float p = item->progress > 1.0f ? 1.0f : item->progress;
+                    int fw  = (int)((float)bar_w * p);
+                    if (fw > 0) {
+                        if (fw < bar_h) fw = bar_h;
+                        if (fw > bar_w) fw = bar_w;
+                        ap_draw_rounded_rect(bar_x, bar_y, fw, bar_h, bar_r, fill);
+                    }
+                }
+            }
+        }
+
+        /* Empty state */
+        if (filtered_count == 0) {
+            const char *msg = (stat_total == 0) ? "NO ITEMS IN QUEUE."
+                                                : "NO ITEMS MATCH THIS FILTER.";
+            int mw = ap_measure_text(sub_font, msg);
+            ap_draw_text(sub_font, msg,
+                         (screen_w - mw) / 2,
+                         list_y + (list_h - sub_fh) / 2,
+                         theme->hint);
+        }
+
+        /* Scrollbar — inset to subtitle zone, outside pill area */
+        if (needs_scrollbar) {
+            int sb_x          = screen_w - margin - AP_S(6);
+            int sb_inset      = title_fh + AP_DS(2);  /* align top with first item's subtitle */
+            int sb_bottom_gap = AP_DS(4);
+            int sb_h          = list_h - sb_inset - sb_bottom_gap;
+            if (sb_h > 0) {
+                ap_draw_scrollbar(sb_x, list_y + sb_inset, sb_h,
+                                  max_visible, filtered_count, scroll_top);
+            }
+        }
+
+        /* Summary bar */
+        {
+            int sep_y = crect.y + crect.h - summary_h;
+            SDL_Renderer *rend = ap_get_renderer();
+            SDL_BlendMode prev_blend = SDL_BLENDMODE_NONE;
+            SDL_GetRenderDrawBlendMode(rend, &prev_blend);
+            SDL_SetRenderDrawColor(rend, theme->hint.r, theme->hint.g,
+                                   theme->hint.b, 100);
+            SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
+            SDL_Rect sep_rect = { margin, sep_y, screen_w - margin * 2, 1 };
+            SDL_RenderFillRect(rend, &sep_rect);
+            SDL_SetRenderDrawBlendMode(rend, prev_blend);
+
+            char summary[128];
+            snprintf(summary, sizeof(summary), "%d/%d COMPLETE, %d FAILED",
+                     stat_done, stat_total, stat_failed);
+            int sw = ap_measure_text(sub_font, summary);
+            ap_draw_text(sub_font, summary,
+                         (screen_w - sw) / 2,
+                         sep_y + (summary_h - sub_fh) / 2,
+                         theme->hint);
+        }
+
+        /* Footer */
+        {
+            ap_footer_item fi[4];
+            int nf = 0;
+
+            if (!opts->hide_filter)
+                fi[nf++] = (ap_footer_item){ .button = AP_BTN_Y, .label = "FILTER" };
+            if (opts->on_detail && filtered_count > 0) {
+                ap_queue_status s = items[filter_map[cursor]].status;
+                if (s == AP_QUEUE_DONE || s == AP_QUEUE_FAILED || s == AP_QUEUE_SKIPPED)
+                    fi[nf++] = (ap_footer_item){ .button = AP_BTN_A, .label = "DETAILS" };
+            }
+            fi[nf++] = (ap_footer_item){ .button = AP_BTN_B, .label = "BACK" };
+            if (has_active) {
+                if (opts->on_cancel)
+                    fi[nf++] = (ap_footer_item){
+                        .button = AP_BTN_X, .label = "STOP ALL", .is_confirm = true };
+            } else if (opts->on_clear && stat_done > 0) {
+                fi[nf++] = (ap_footer_item){
+                    .button = AP_BTN_X, .label = "CLEAR DONE", .is_confirm = true };
+            }
+            ap_draw_footer(fi, nf);
+        }
+
+        ap_present();
+    }
+
+    ap_set_footer_overflow_opts(&ap__qv_saved_overflow);
+    free(items);
+    free(filter_map);
+    return AP_OK;
+}
+
+#ifdef AP_ENABLE_CURL
 
 int ap_download_manager(ap_download *downloads, int count,
                         ap_download_opts *opts, ap_download_result *result) {

@@ -29,6 +29,7 @@ This matrix maps Apostrophe's public API surface to the demos that exercise it.
 | Confirmation | `examples/demo/main.c` → `Confirmation` |
 | Selection | `examples/demo/main.c` → `Selection` |
 | Process message: progress, cancel, dynamic text | `examples/demo/main.c` → `Process Message`, `Advanced Process` |
+| Queue viewer: live snapshot, filter, details, cancel, clear, footer overflow | `examples/demo/main.c` → `Queue Viewer` |
 | Detail screen | `examples/demo/main.c` → `Detail Screen` |
 | Detail screen: centered title, section separators, key color override | `examples/demo/main.c` → `Detail Screen (Styled)` |
 | Detail screen: custom font overrides | `examples/demo/main.c` → `Detail Screen (Fonts)` |

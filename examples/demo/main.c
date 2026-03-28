@@ -2407,6 +2407,135 @@ static void demo_list_navigation(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: Queue Viewer
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Simulated queue items for the demo */
+static const struct {
+    const char *title;
+    const char *subtitle;
+    bool        fails;
+} qv_items[] = {
+    { "Looney Tunes",                                                     "Game Boy  [cht]",       false },
+    { "Maru's Mission",                                                   "Game Boy  [cht]",       false },
+    { "Mega Man - Dr. Wily's Revenge",                                    "Game Boy  [cht]",       false },
+    { "Mega Man II",                                                      "Game Boy  [cht]",       true  },
+    { "Metroid II - Return of Samus",                                     "Game Boy  [cht]",       false },
+    { "Final Fantasy Adventure",                                          "Game Boy  [cht]",       false },
+    { "Tetris",                                                           "",                     true  },
+    { "Super Mario Land",                                                 "Game Boy  [cht]",       false },
+    { "Kirby's Dream Land",                                               "Game Boy  [cht]",       false },
+    { "Donkey Kong Land - This entry has a very long title to demonstrate horizontal text scrolling when selected", "Game Boy Color  [art]", false },
+};
+#define QV_ITEM_COUNT ((int)(sizeof(qv_items) / sizeof(qv_items[0])))
+
+typedef struct {
+    uint32_t start_ms;
+    bool     cleared;
+    bool     cancelled;
+    uint32_t cancel_elapsed_ms;
+} QVDemoCtx;
+
+#define QV_ITEM_DURATION_MS 1500
+#define QV_ITEM_STAGGER_MS  700
+
+static int qv_snapshot(ap_queue_item *buf, int max, void *ud) {
+    QVDemoCtx *ctx = (QVDemoCtx *)ud;
+    if (ctx->cleared) return 0;
+
+    int n = (QV_ITEM_COUNT < max) ? QV_ITEM_COUNT : max;
+    uint32_t elapsed = SDL_GetTicks() - ctx->start_ms;
+    uint32_t effective_elapsed = ctx->cancelled ? ctx->cancel_elapsed_ms : elapsed;
+    for (int i = 0; i < n; i++) {
+        uint32_t offset = (uint32_t)(i * QV_ITEM_STAGGER_MS);
+        snprintf(buf[i].title, sizeof(buf[i].title), "%s", qv_items[i].title);
+        snprintf(buf[i].subtitle, sizeof(buf[i].subtitle), "%s", qv_items[i].subtitle);
+        if (effective_elapsed < offset) {
+            buf[i].status = AP_QUEUE_PENDING;
+            snprintf(buf[i].status_text, sizeof(buf[i].status_text), "%s", "QUEUED");
+            buf[i].progress = -1.0f;
+        } else if (effective_elapsed < offset + QV_ITEM_DURATION_MS) {
+            buf[i].status = AP_QUEUE_RUNNING;
+            snprintf(buf[i].status_text, sizeof(buf[i].status_text), "%s", "DOWNLOADING...");
+            buf[i].progress = (float)(effective_elapsed - offset) / (float)QV_ITEM_DURATION_MS;
+        } else {
+            if (qv_items[i].fails) {
+                buf[i].status = AP_QUEUE_FAILED;
+                snprintf(buf[i].status_text, sizeof(buf[i].status_text), "%s", "ERROR");
+                buf[i].progress = 0.4f;
+            } else {
+                buf[i].status = AP_QUEUE_DONE;
+                snprintf(buf[i].status_text, sizeof(buf[i].status_text), "%s", "DONE");
+                buf[i].progress = 1.0f;
+            }
+        }
+
+        /* Example app-side cancellation handling: freeze the queue at the
+         * cancel time and convert any unfinished work to "Cancelled". */
+        if (ctx->cancelled &&
+            (buf[i].status == AP_QUEUE_PENDING || buf[i].status == AP_QUEUE_RUNNING)) {
+            buf[i].status = AP_QUEUE_SKIPPED;
+            snprintf(buf[i].status_text, sizeof(buf[i].status_text), "%s", "CANCELLED");
+            buf[i].progress = -1.0f;
+        }
+
+        buf[i].userdata = NULL;
+    }
+    return n;
+}
+
+static void qv_clear(void *ud) {
+    QVDemoCtx *ctx = (QVDemoCtx *)ud;
+    ctx->cleared = true;
+    ctx->cancelled = false;
+    ctx->cancel_elapsed_ms = 0;
+}
+
+static void qv_cancel(void *ud) {
+    QVDemoCtx *ctx = (QVDemoCtx *)ud;
+    if (ctx->cancelled) return;
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B, .label = "NO",  .is_confirm = false },
+        { .button = AP_BTN_A, .label = "YES", .is_confirm = true  },
+    };
+    ap_message_opts opts = {
+        .message = "CANCEL ALL DOWNLOADS?\n\nRUNNING ITEMS WILL BE MARKED CANCELLED\nAND QUEUED ITEMS WILL BE SKIPPED.",
+        .footer = footer,
+        .footer_count = 2,
+    };
+    ap_confirm_result result;
+    ap_confirmation(&opts, &result);
+
+    if (result.confirmed) {
+        ctx->cancelled = true;
+        ctx->cancel_elapsed_ms = SDL_GetTicks() - ctx->start_ms;
+    }
+}
+
+static void qv_detail(const ap_queue_item *item, void *ud) {
+    (void)ud;
+    char msg[512];
+    const char *sname = item->status_text[0] ? item->status_text : "UNKNOWN";
+    snprintf(msg, sizeof(msg), "%s\n%s\n\nSTATUS: %s",
+             item->title, item->subtitle, sname);
+    demo_show_message(msg);
+}
+
+static void demo_queue_viewer(void) {
+    QVDemoCtx ctx = { .start_ms = SDL_GetTicks() };
+    ap_queue_opts opts = {
+        .title    = "DOWNLOADS",
+        .snapshot = qv_snapshot,
+        .userdata = &ctx,
+        .on_detail = qv_detail,
+        .on_cancel = qv_cancel,
+        .on_clear  = qv_clear,
+    };
+    ap_queue_viewer(&opts);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Main menu
  * ═══════════════════════════════════════════════════════════════════════════ */
 typedef void (*demo_fn)(void);
@@ -2438,6 +2567,7 @@ static const struct {
     { "Input & Theme",       demo_input_theme         },
     { "CPU & Fan",           demo_cpu_fan             },
     { "Background Preview",  demo_background_preview  },
+    { "Queue Viewer",        demo_queue_viewer        },
 };
 
 #define DEMO_COUNT (int)(sizeof(demos) / sizeof(demos[0]))
