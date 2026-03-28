@@ -2726,6 +2726,11 @@ SDL_Texture *ap_load_image(const char *path) {
 void ap_draw_scrollbar(int x, int y, int h, int visible, int total, int offset) {
     if (total <= visible || total <= 0) return;
 
+    SDL_Renderer *rend = ap__g.renderer;
+    SDL_BlendMode prev_blend = SDL_BLENDMODE_NONE;
+    SDL_GetRenderDrawBlendMode(rend, &prev_blend);
+    SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
+
     int bar_w = AP_S(4);
     int track_h = h;
     int thumb_h = ap__max((track_h * visible) / total, AP_S(20));
@@ -2740,6 +2745,8 @@ void ap_draw_scrollbar(int x, int y, int h, int visible, int total, int offset) 
     ap_color thumb_color = ap__g.theme.hint;
     thumb_color.a = 120;
     ap_draw_rounded_rect(x, thumb_y, bar_w, thumb_h, bar_w / 2, thumb_color);
+
+    SDL_SetRenderDrawBlendMode(rend, prev_blend);
 }
 
 void ap_draw_progress_bar(int x, int y, int w, int h, float progress, ap_color fg, ap_color bg) {

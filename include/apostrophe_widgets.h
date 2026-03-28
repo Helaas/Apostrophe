@@ -3927,22 +3927,28 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
         /* Scrollbar — inset to subtitle zone, outside pill area */
         if (needs_scrollbar) {
-            int sb_x    = screen_w - margin - AP_S(6);
-            int sb_inset = title_fh + AP_DS(2);  /* align top with first item's subtitle */
-            ap_draw_scrollbar(sb_x, list_y + sb_inset, list_h - sb_inset,
-                              max_visible, filtered_count, scroll_top);
+            int sb_x          = screen_w - margin - AP_S(6);
+            int sb_inset      = title_fh + AP_DS(2);  /* align top with first item's subtitle */
+            int sb_bottom_gap = AP_DS(4);
+            int sb_h          = list_h - sb_inset - sb_bottom_gap;
+            if (sb_h > 0) {
+                ap_draw_scrollbar(sb_x, list_y + sb_inset, sb_h,
+                                  max_visible, filtered_count, scroll_top);
+            }
         }
 
         /* Summary bar */
         {
             int sep_y = crect.y + crect.h - summary_h;
             SDL_Renderer *rend = ap_get_renderer();
+            SDL_BlendMode prev_blend = SDL_BLENDMODE_NONE;
+            SDL_GetRenderDrawBlendMode(rend, &prev_blend);
             SDL_SetRenderDrawColor(rend, theme->hint.r, theme->hint.g,
                                    theme->hint.b, 100);
             SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
             SDL_Rect sep_rect = { margin, sep_y, screen_w - margin * 2, 1 };
             SDL_RenderFillRect(rend, &sep_rect);
-            SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_NONE);
+            SDL_SetRenderDrawBlendMode(rend, prev_blend);
 
             char summary[128];
             snprintf(summary, sizeof(summary), "%d/%d complete, %d failed",
@@ -3958,19 +3964,15 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
         {
             ap_footer_item fi[4];
             int nf = 0;
-            bool wide_footer = (screen_w >= 1024);
 
-            if (wide_footer)
-                fi[nf++] = (ap_footer_item){ .button = AP_BTN_B, .label = "Back" };
+            if (!opts->hide_filter)
+                fi[nf++] = (ap_footer_item){ .button = AP_BTN_Y, .label = "Filter" };
             if (opts->on_detail && filtered_count > 0) {
                 ap_queue_status s = items[filter_map[cursor]].status;
                 if (s == AP_QUEUE_DONE || s == AP_QUEUE_FAILED || s == AP_QUEUE_SKIPPED)
                     fi[nf++] = (ap_footer_item){ .button = AP_BTN_A, .label = "Details" };
             }
-            if (!opts->hide_filter)
-                fi[nf++] = (ap_footer_item){ .button = AP_BTN_Y, .label = "Filter" };
-            if (!wide_footer)
-                fi[nf++] = (ap_footer_item){ .button = AP_BTN_B, .label = "Back" };
+            fi[nf++] = (ap_footer_item){ .button = AP_BTN_B, .label = "Back" };
             if (has_active) {
                 if (opts->on_cancel)
                     fi[nf++] = (ap_footer_item){

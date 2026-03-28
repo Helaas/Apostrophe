@@ -435,7 +435,7 @@ Live-updating queue of background jobs with animated pill selection, filter cycl
 │───────────────────────────────────────│
 │    3/10 complete, 1 failed            │ ← Summary bar
 │───────────────────────────────────────│
-│  [A] Details  [Y] Filter  [B] Back    │
+│  [Y] Filter  [A] Details  [B] Back    │
 └───────────────────────────────────────┘
 ```
 
@@ -459,6 +459,8 @@ When the highlight pill is on a row, all row text including `status_text` switch
 | X Cancel All | `on_cancel` set and any PENDING/RUNNING items remain |
 | X Clear Done | `on_clear` set and no PENDING/RUNNING items remain |
 | B Back | Always; emitted last on narrow screens so it overflows first |
+
+Footer order is `Y Filter`, then `A Details` when available, with `B Back` emitted last so it is the first left-side action to collapse behind `+N` on narrow screens.
 
 **Features**:
 - Animated pill selection (same lerp as `ap_list`)
