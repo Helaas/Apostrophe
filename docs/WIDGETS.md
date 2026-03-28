@@ -2,6 +2,8 @@
 
 Visual guide to every widget available in `apostrophe_widgets.h`.
 
+This catalog documents Apostrophe **v1.0.0** (2026-03-28).
+
 Widgets that render footer hints inherit the core footer overflow behaviour from `ap_draw_footer()`: overflowing hints stay on one line, show a `+N` marker, and can be inspected with the configured footer overflow chord.
 
 ---
@@ -471,7 +473,7 @@ Footer order is `Y FILTER`, then `A DETAILS` when available, with `B BACK` emitt
 - Detail callback for terminal items (A button)
 - Cancel callback while jobs are active, then clear-done when idle (X button)
 - CPU-idle aware: calls `ap_request_frame()` only while jobs are active; goes idle automatically when all items reach a terminal state
-- Scrollbar aligned with the subtitle zone, outside the pill area
+- Scrollbar aligned with the visible pill stack, outside the pill area
 - Menu / desktop `H`: opens hidden footer actions when the footer shows `+N`
 
 **Usage**:

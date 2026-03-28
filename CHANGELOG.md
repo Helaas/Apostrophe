@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [v1.0.0] - 2026-03-28
+
 ### Added
 
 - **Queue Viewer widget** (`apostrophe_widgets.h`): new `ap_queue_viewer` widget for displaying live-updating background job queues. Features: animated pill selection (same interpolation as `ap_list`), horizontal text scroll on long titles, inline per-item progress bars, filter cycling (All / In Progress / Done / Failed, Y button), summary bar showing "X/Y complete, Z failed" above the footer, detail callback for terminal items (A button), cancel callback while jobs are active plus clear-done callback when idle (X button), Menu/footer-overflow support, and idle-aware frame requests — CPU goes idle automatically when all jobs are terminal. Caller supplies a thread-safe snapshot callback; all threading stays in the caller. Demo entry added.

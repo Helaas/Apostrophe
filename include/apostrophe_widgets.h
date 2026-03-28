@@ -3545,15 +3545,18 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
     int       screen_w = ap_get_screen_width();
     int       margin   = AP_DS(ap__g.device_padding);
     int       pill_pad = AP_DS(AP__BUTTON_PADDING);
-    int       item_gap = 0;
-    int       bar_h    = AP_DS(4);
-    int       bar_r    = AP_DS(2);
-    int       summary_h = AP_DS(14);
 
     TTF_Font *title_font  = ap_get_font(AP_FONT_LARGE);
     TTF_Font *status_font = ap_get_font(AP_FONT_SMALL);  /* right-aligned status text */
     TTF_Font *sub_font    = ap_get_font(AP_FONT_TINY);   /* subtitle row + summary */
-    if (!title_font || !status_font || !sub_font) { free(items); free(filter_map); return AP_ERROR; }
+    TTF_Font *compact_title_font = ap_get_font(AP_FONT_MEDIUM);
+    TTF_Font *compact_sub_font   = ap_get_font(AP_FONT_MICRO);
+    if (!title_font || !status_font || !sub_font ||
+        !compact_title_font || !compact_sub_font) {
+        free(items);
+        free(filter_map);
+        return AP_ERROR;
+    }
 
     /* Enable footer overflow so H/MENU can show hidden items. Font lookup is
      * the only fallible step after allocation, so do it before mutating the
@@ -3566,6 +3569,8 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
     int title_fh  = TTF_FontHeight(title_font);
     int status_fh = TTF_FontHeight(status_font);
     int sub_fh    = TTF_FontHeight(sub_font);
+    int compact_title_fh = TTF_FontHeight(compact_title_font);
+    int compact_sub_fh   = TTF_FontHeight(compact_sub_font);
 
     ap_color col_done     = {100, 200, 100, 255};
     ap_color col_failed   = {255, 100, 100, 255};
@@ -3613,19 +3618,68 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
         }
 
         /* ── Layout ───────────────────────────────────────────────────────── */
-        int item_h = title_fh + sub_fh + AP_DS(4);
+        TTF_Font *layout_title_font  = title_font;
+        TTF_Font *layout_status_font = status_font;
+        TTF_Font *layout_sub_font    = sub_font;
+        int layout_title_fh   = title_fh;
+        int layout_status_fh  = status_fh;
+        int layout_sub_fh     = sub_fh;
+        int layout_title_gap  = AP_DS(2);
+        int layout_bottom_pad = AP_DS(2);
+        int layout_bar_h      = AP_DS(4);
+        int layout_summary_h  = AP_DS(14);
 
-        /* Content rect covers title→footer; reserve summary_h at the bottom.
+        /* Content rect covers title→footer; reserve summary space at the bottom.
          * This widget always draws a title (custom or default "QUEUE"). */
         SDL_Rect crect = ap_get_content_rect(true, true,
-                                              opts->status_bar != NULL);
+                                             opts->status_bar != NULL);
         int list_y = crect.y;
-        int list_h = crect.h - summary_h;
+        int list_h = crect.h - layout_summary_h;
         if (list_h < 0) list_h = 0;
 
-        int max_visible = (item_h + item_gap > 0)
-            ? (list_h + item_gap) / (item_h + item_gap) : 1;
+        int item_h = layout_title_fh + layout_sub_fh + layout_title_gap + layout_bottom_pad;
+        int max_visible = (item_h > 0) ? (list_h / item_h) : 1;
         if (max_visible < 1) max_visible = 1;
+
+        int default_leftover_h = list_h - max_visible * item_h;
+        if (default_leftover_h < 0) default_leftover_h = 0;
+        bool balance_rows = false;
+
+        if (ap__g.device_scale == 3 &&
+            filtered_count > 3 &&
+            max_visible == 3 &&
+            default_leftover_h >= AP_DS(18)) {
+            int compact_title_gap  = AP_DS(1);
+            int compact_bottom_pad = AP_DS(2);
+            int compact_bar_h      = AP_DS(3);
+            int compact_summary_h  = AP_DS(12);
+            int compact_item_h = compact_title_fh + compact_sub_fh
+                               + compact_title_gap + compact_bottom_pad;
+            int compact_list_h = crect.h - compact_summary_h;
+            if (compact_list_h < 0) compact_list_h = 0;
+
+            int compact_max_visible = (compact_item_h > 0)
+                ? (compact_list_h / compact_item_h) : 1;
+            if (compact_max_visible < 1) compact_max_visible = 1;
+
+            if (compact_max_visible >= 4) {
+                balance_rows = true;
+                layout_title_font  = compact_title_font;
+                layout_sub_font    = compact_sub_font;
+                layout_title_fh    = compact_title_fh;
+                layout_sub_fh      = compact_sub_fh;
+                layout_title_gap   = compact_title_gap;
+                layout_bottom_pad  = compact_bottom_pad;
+                layout_bar_h       = compact_bar_h;
+                layout_summary_h   = compact_summary_h;
+                item_h             = compact_item_h;
+                list_h             = compact_list_h;
+                max_visible        = compact_max_visible;
+            }
+        }
+
+        int layout_bar_r = layout_bar_h / 2;
+        if (layout_bar_r < 1) layout_bar_r = 1;
 
         bool needs_scrollbar = (filtered_count > max_visible);
         int  pill_w          = screen_w - margin * 2;
@@ -3726,8 +3780,35 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
             scroll_top = cursor - max_visible + 1;
         if (scroll_top < 0) scroll_top = 0;
 
+        int max_scroll_top = (filtered_count > max_visible)
+            ? (filtered_count - max_visible) : 0;
+        if (scroll_top > max_scroll_top) scroll_top = max_scroll_top;
+
+        int visible_rows = filtered_count - scroll_top;
+        if (visible_rows > max_visible) visible_rows = max_visible;
+        if (visible_rows < 0) visible_rows = 0;
+
+        int used_h = visible_rows * item_h;
+        int leftover_h = list_h - used_h;
+        if (leftover_h < 0) leftover_h = 0;
+
+        int row_gap = 0;
+        if (balance_rows && visible_rows > 1) {
+            row_gap = leftover_h / (visible_rows - 1);
+            if (row_gap > AP_DS(6)) row_gap = AP_DS(6);
+        }
+
+        int used_h_with_gaps = used_h;
+        if (visible_rows > 1) used_h_with_gaps += (visible_rows - 1) * row_gap;
+
+        int body_offset = balance_rows
+            ? ap__max(0, (list_h - used_h_with_gaps) / 2)
+            : 0;
+        int first_row_y = list_y + body_offset;
+        int row_pitch   = item_h + row_gap;
+
         /* ── Pill animation ───────────────────────────────────────────────── */
-        int pill_target_y = list_y + (cursor - scroll_top) * (item_h + item_gap);
+        int pill_target_y = first_row_y + (cursor - scroll_top) * row_pitch;
         int pill_target_w = needs_scrollbar ? (pill_w - AP_S(10)) : pill_w;
 
         if (cursor != last_cursor) {
@@ -3760,9 +3841,11 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
             pill_anim_y = ap__lerpf(pill_from_y, (float)pill_target_y, t);
             pill_anim_w = ap__lerpf(pill_from_w, (float)pill_target_w, t);
             if (t < 1.0f) ap_request_frame();
-            if (pill_anim_y < (float)list_y) pill_anim_y = (float)list_y;
-            int pill_max_y = list_y + list_h - item_h;
-            if (pill_max_y > list_y && pill_anim_y > (float)pill_max_y)
+            if (pill_anim_y < (float)first_row_y) pill_anim_y = (float)first_row_y;
+            int pill_max_y = first_row_y;
+            if (visible_rows > 0)
+                pill_max_y = first_row_y + (visible_rows - 1) * row_pitch;
+            if (pill_anim_y > (float)pill_max_y)
                 pill_anim_y = (float)pill_max_y;
         }
 
@@ -3786,10 +3869,10 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
         /* Determine which row the pill center is over for text color tracking */
         int pill_center_y = (int)pill_anim_y + item_h / 2;
-        int pill_row_idx  = (item_h + item_gap > 0)
-            ? (pill_center_y - list_y) / (item_h + item_gap) : 0;
+        int pill_row_idx  = (row_pitch > 0)
+            ? (pill_center_y - first_row_y) / row_pitch : 0;
         if (pill_row_idx < 0)            pill_row_idx = 0;
-        if (pill_row_idx >= max_visible) pill_row_idx = max_visible - 1;
+        if (visible_rows > 0 && pill_row_idx >= visible_rows) pill_row_idx = visible_rows - 1;
         int highlight_fi = scroll_top + pill_row_idx;
 
         /* Pill background */
@@ -3803,7 +3886,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
         for (int vi = 0; vi < max_visible && (scroll_top + vi) < filtered_count; vi++) {
             int fi = scroll_top + vi;
             int ri = filter_map[fi];
-            int iy = list_y + vi * (item_h + item_gap);
+            int iy = first_row_y + vi * row_pitch;
 
             ap_queue_item   *item = &items[ri];
             ap_queue_status  s    = item->status;
@@ -3825,34 +3908,34 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
             /* Per-item layout: reserve space for status text if present */
             int content_w  = pill_w - pill_pad * 2;
             int status_w   = item->status_text[0]
-                ? ap_measure_text(status_font, item->status_text) : 0;
+                ? ap_measure_text(layout_status_font, item->status_text) : 0;
             int text_max_w = content_w
                 - (status_w > 0 ? status_w + AP_DS(4) : 0);
             if (text_max_w < AP_S(40)) text_max_w = AP_S(40);
 
             int title_y = iy;
-            int sub_y   = iy + title_fh + AP_DS(2);
+            int sub_y   = iy + layout_title_fh + layout_title_gap;
 
             /* Status text — right-aligned, vertically centered on title row */
             if (item->status_text[0]) {
                 int sx = margin + pill_w - pill_pad - status_w;
-                int sy = title_y + (title_fh - status_fh) / 2;
-                ap_draw_text(status_font, item->status_text, sx, sy, status_color);
+                int sy = title_y + (layout_title_fh - layout_status_fh) / 2;
+                ap_draw_text(layout_status_font, item->status_text, sx, sy, status_color);
             }
 
             /* Title — scroll horizontally when selected and overflowing */
             {
-                int tw = ap_measure_text(title_font, item->title);
+                int tw = ap_measure_text(layout_title_font, item->title);
                 if (is_selected && tw > text_max_w) {
                     ap_text_scroll_update(&sel_scroll, tw, text_max_w, dt);
                     if (sel_scroll.active) ap_request_frame();
-                    SDL_Rect clip = { text_x, title_y, text_max_w, title_fh };
+                    SDL_Rect clip = { text_x, title_y, text_max_w, layout_title_fh };
                     SDL_RenderSetClipRect(ap_get_renderer(), &clip);
-                    ap_draw_text(title_font, item->title,
+                    ap_draw_text(layout_title_font, item->title,
                                  text_x - sel_scroll.offset, title_y, text_color);
                     SDL_RenderSetClipRect(ap_get_renderer(), NULL);
                 } else {
-                    ap_draw_text_ellipsized(title_font, item->title,
+                    ap_draw_text_ellipsized(layout_title_font, item->title,
                                             text_x, title_y, text_color, text_max_w);
                 }
             }
@@ -3865,7 +3948,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                 int  subtitle_max_w = content_w;
                 int  bar_x          = text_x;
                 int  bar_w          = 0;
-                int  bar_y          = sub_y + (sub_fh - bar_h) / 2;
+                int  bar_y          = sub_y + (layout_sub_fh - layout_bar_h) / 2;
 
                 if (has_progress) {
                     if (has_subtitle) {
@@ -3892,13 +3975,13 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                 }
 
                 if (has_subtitle) {
-                    ap_draw_text_ellipsized(sub_font, item->subtitle,
+                    ap_draw_text_ellipsized(layout_sub_font, item->subtitle,
                                             text_x, sub_y,
                                             sub_color, subtitle_max_w);
                 }
 
                 if (bar_w > 0) {
-                    ap_draw_rounded_rect(bar_x, bar_y, bar_w, bar_h, bar_r, col_bar_bg);
+                    ap_draw_rounded_rect(bar_x, bar_y, bar_w, layout_bar_h, layout_bar_r, col_bar_bg);
 
                     ap_color fill;
                     if      (s == AP_QUEUE_DONE)    fill = col_bar_done;
@@ -3909,9 +3992,9 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                     float p = item->progress > 1.0f ? 1.0f : item->progress;
                     int fw  = (int)((float)bar_w * p);
                     if (fw > 0) {
-                        if (fw < bar_h) fw = bar_h;
+                        if (fw < layout_bar_h) fw = layout_bar_h;
                         if (fw > bar_w) fw = bar_w;
-                        ap_draw_rounded_rect(bar_x, bar_y, fw, bar_h, bar_r, fill);
+                        ap_draw_rounded_rect(bar_x, bar_y, fw, layout_bar_h, layout_bar_r, fill);
                     }
                 }
             }
@@ -3921,28 +4004,27 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
         if (filtered_count == 0) {
             const char *msg = (stat_total == 0) ? "NO ITEMS IN QUEUE."
                                                 : "NO ITEMS MATCH THIS FILTER.";
-            int mw = ap_measure_text(sub_font, msg);
-            ap_draw_text(sub_font, msg,
+            int mw = ap_measure_text(layout_sub_font, msg);
+            ap_draw_text(layout_sub_font, msg,
                          (screen_w - mw) / 2,
-                         list_y + (list_h - sub_fh) / 2,
+                         list_y + (list_h - layout_sub_fh) / 2,
                          theme->hint);
         }
 
-        /* Scrollbar — inset to subtitle zone, outside pill area */
+        /* Scrollbar — align with the visible pill stack, outside pill area */
         if (needs_scrollbar) {
             int sb_x          = screen_w - margin - AP_S(6);
-            int sb_inset      = title_fh + AP_DS(2);  /* align top with first item's subtitle */
-            int sb_bottom_gap = AP_DS(4);
-            int sb_h          = list_h - sb_inset - sb_bottom_gap;
+            int sb_y          = first_row_y;
+            int sb_h          = used_h_with_gaps;
             if (sb_h > 0) {
-                ap_draw_scrollbar(sb_x, list_y + sb_inset, sb_h,
+                ap_draw_scrollbar(sb_x, sb_y, sb_h,
                                   max_visible, filtered_count, scroll_top);
             }
         }
 
         /* Summary bar */
         {
-            int sep_y = crect.y + crect.h - summary_h;
+            int sep_y = crect.y + crect.h - layout_summary_h;
             SDL_Renderer *rend = ap_get_renderer();
             SDL_BlendMode prev_blend = SDL_BLENDMODE_NONE;
             SDL_GetRenderDrawBlendMode(rend, &prev_blend);
@@ -3956,10 +4038,10 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
             char summary[128];
             snprintf(summary, sizeof(summary), "%d/%d COMPLETE, %d FAILED",
                      stat_done, stat_total, stat_failed);
-            int sw = ap_measure_text(sub_font, summary);
-            ap_draw_text(sub_font, summary,
+            int sw = ap_measure_text(layout_sub_font, summary);
+            ap_draw_text(layout_sub_font, summary,
                          (screen_w - sw) / 2,
-                         sep_y + (summary_h - sub_fh) / 2,
+                         sep_y + (layout_summary_h - layout_sub_fh) / 2,
                          theme->hint);
         }
 
