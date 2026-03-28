@@ -156,6 +156,7 @@ The **combo system** adds support for chords (simultaneous button presses like L
 | Confirmation | `ap_confirmation()` | Modal message dialog |
 | Selection | `ap_selection()` | Horizontal pill-style option chooser |
 | Process Message | `ap_process_message()` | Async worker with progress bar |
+| Queue Viewer | `ap_queue_viewer()` | Live-updating background job queue with filter, detail, cancel/clear, and inline progress |
 | Detail Screen | `ap_detail_screen()` | Scrollable multi-section info view |
 | Color Picker | `ap_color_picker()` | 5×5 color grid selector |
 | Help Overlay | `ap_show_help_overlay()` | Scrollable text overlay (Menu trigger) |

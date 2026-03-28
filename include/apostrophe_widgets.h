@@ -3629,6 +3629,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
         /* ── Input ────────────────────────────────────────────────────────── */
         ap_input_event ev;
+        bool callback_refresh = false;
         while (ap_poll_input(&ev)) {
             if (!ev.pressed) continue;
             switch (ev.button) {
@@ -3667,16 +3668,24 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                 case AP_BTN_A:
                     if (opts->on_detail && filtered_count > 0) {
                         ap_queue_status s = items[filter_map[cursor]].status;
-                        if (s == AP_QUEUE_DONE || s == AP_QUEUE_FAILED || s == AP_QUEUE_SKIPPED)
+                        if (s == AP_QUEUE_DONE || s == AP_QUEUE_FAILED || s == AP_QUEUE_SKIPPED) {
                             opts->on_detail(&items[filter_map[cursor]], opts->userdata);
+                            callback_refresh = true;
+                            goto done_input;
+                        }
                     }
                     break;
                 case AP_BTN_X:
                     if (has_active) {
-                        if (opts->on_cancel)
+                        if (opts->on_cancel) {
                             opts->on_cancel(opts->userdata);
+                            callback_refresh = true;
+                            goto done_input;
+                        }
                     } else if (opts->on_clear && stat_done > 0) {
                         opts->on_clear(opts->userdata);
+                        callback_refresh = true;
+                        goto done_input;
                     }
                     break;
                 case AP_BTN_B:
@@ -3684,6 +3693,12 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                     break;
                 default: break;
             }
+        }
+        done_input:
+
+        if (callback_refresh) {
+            last_frame = SDL_GetTicks();
+            continue;
         }
 
         /* Re-clamp after input */
@@ -3831,36 +3846,45 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                 }
             }
 
-            /* Subtitle */
-            if (item->subtitle[0]) {
-                int subtitle_gap   = AP_DS(8);
-                int subtitle_max_w = content_w;
-                int bar_x          = 0;
-                int bar_w          = 0;
-                int bar_y          = sub_y + (sub_fh - bar_h) / 2;
-                if (item->progress >= 0.0f) {
-                    int min_subtitle_w = AP_S(40);
-                    int min_bar_w      = AP_DS(56);
-                    int max_bar_w      = AP_DS(140);
-                    int target_bar_w   = content_w / 3;
-                    if (target_bar_w < min_bar_w) target_bar_w = min_bar_w;
-                    if (target_bar_w > max_bar_w) target_bar_w = max_bar_w;
-                    bar_w = target_bar_w;
-                    if (content_w - subtitle_gap - bar_w < min_subtitle_w) {
-                        bar_w = content_w - subtitle_gap - min_subtitle_w;
-                    }
-                    if (bar_w > 0) {
-                        subtitle_max_w = content_w - subtitle_gap - bar_w;
-                        if (subtitle_max_w < min_subtitle_w) subtitle_max_w = min_subtitle_w;
-                        bar_x = text_x + subtitle_max_w + subtitle_gap;
+            /* Subtitle / inline progress bar */
+            {
+                bool has_subtitle   = item->subtitle[0] != '\0';
+                bool has_progress   = item->progress >= 0.0f;
+                int  subtitle_gap   = AP_DS(8);
+                int  subtitle_max_w = content_w;
+                int  bar_x          = text_x;
+                int  bar_w          = 0;
+                int  bar_y          = sub_y + (sub_fh - bar_h) / 2;
+
+                if (has_progress) {
+                    if (has_subtitle) {
+                        int min_subtitle_w = AP_S(40);
+                        int min_bar_w      = AP_DS(56);
+                        int max_bar_w      = AP_DS(140);
+                        int target_bar_w   = content_w / 3;
+                        if (target_bar_w < min_bar_w) target_bar_w = min_bar_w;
+                        if (target_bar_w > max_bar_w) target_bar_w = max_bar_w;
+                        bar_w = target_bar_w;
+                        if (content_w - subtitle_gap - bar_w < min_subtitle_w) {
+                            bar_w = content_w - subtitle_gap - min_subtitle_w;
+                        }
+                        if (bar_w > 0) {
+                            subtitle_max_w = content_w - subtitle_gap - bar_w;
+                            if (subtitle_max_w < min_subtitle_w) subtitle_max_w = min_subtitle_w;
+                            bar_x = text_x + subtitle_max_w + subtitle_gap;
+                        } else {
+                            bar_w = 0;
+                        }
                     } else {
-                        bar_w = 0;
+                        bar_w = content_w;
                     }
                 }
 
-                ap_draw_text_ellipsized(sub_font, item->subtitle,
-                                        text_x, sub_y,
-                                        sub_color, subtitle_max_w);
+                if (has_subtitle) {
+                    ap_draw_text_ellipsized(sub_font, item->subtitle,
+                                            text_x, sub_y,
+                                            sub_color, subtitle_max_w);
+                }
 
                 if (bar_w > 0) {
                     ap_draw_rounded_rect(bar_x, bar_y, bar_w, bar_h, bar_r, col_bar_bg);

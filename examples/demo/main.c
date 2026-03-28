@@ -2422,7 +2422,7 @@ static const struct {
     { "Mega Man II",                                                      "Game Boy  [cht]",       true  },
     { "Metroid II - Return of Samus",                                     "Game Boy  [cht]",       false },
     { "Final Fantasy Adventure",                                          "Game Boy  [cht]",       false },
-    { "Tetris",                                                           "Game Boy  [cht]",       true  },
+    { "Tetris",                                                           "",                     true  },
     { "Super Mario Land",                                                 "Game Boy  [cht]",       false },
     { "Kirby's Dream Land",                                               "Game Boy  [cht]",       false },
     { "Donkey Kong Land - This entry has a very long title to demonstrate horizontal text scrolling when selected", "Game Boy Color  [art]", false },
@@ -2493,8 +2493,8 @@ static void qv_cancel(void *ud) {
     if (ctx->cancelled) return;
 
     ap_footer_item footer[] = {
-        { AP_BTN_B, "No",  false },
-        { AP_BTN_A, "Yes", true  },
+        { .button = AP_BTN_B, .label = "No",  .is_confirm = false },
+        { .button = AP_BTN_A, .label = "Yes", .is_confirm = true  },
     };
     ap_message_opts opts = {
         .message = "Cancel all downloads?\n\nRunning items will be marked Cancelled\nand queued items will be skipped.",
@@ -2520,7 +2520,7 @@ static void qv_detail(const ap_queue_item *item, void *ud) {
 }
 
 static void demo_queue_viewer(void) {
-    QVDemoCtx ctx = { SDL_GetTicks() };
+    QVDemoCtx ctx = { .start_ms = SDL_GetTicks() };
     ap_queue_opts opts = {
         .title    = "Downloads",
         .snapshot = qv_snapshot,
