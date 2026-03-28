@@ -426,19 +426,16 @@ Live-updating queue of background jobs with animated pill selection, filter cycl
 │───────────────────────────────────────│
 │  ┌──────────────────────────────────┐ │
 │  │ Mega Man - Dr. Wily's Revenge    │ │ ← Pill on selected row
-│  │ Game Boy  [cht]            ░ SB  │ │ ← Subtitle + scrollbar
-│  │ ████████████░░░░░░░ 65%          │ │ ← Progress bar
+│  │ Game Boy  [cht]  ████████░░░░░░  │ │ ← Subtitle + inline progress bar
 │  └──────────────────────────────────┘ │
 │    Maru's Mission          Downloading│
-│    Game Boy  [cht]               ░ SB │
-│    ████████████████████████████ 100%  │
+│    Game Boy  [cht]  ████████████████  │
 │    Looney Tunes                  Done │
-│    Game Boy  [cht]               ░ SB │
-│    ████████████████████████████ 100%  │
+│    Game Boy  [cht]  ████████████████  │
 │───────────────────────────────────────│
 │    3/10 complete, 1 failed            │ ← Summary bar
 │───────────────────────────────────────│
-│  [Y] Filter  [A] Details  [B] Back    │
+│  [A] Details  [Y] Filter  [B] Back    │
 └───────────────────────────────────────┘
 ```
 
@@ -451,25 +448,28 @@ Live-updating queue of background jobs with animated pill selection, filter cycl
 | `AP_QUEUE_DONE` | Green `(100,255,100)` |
 | `AP_QUEUE_FAILED` | Red `(255,100,100)` |
 
+When the highlight pill is on a row, all row text including `status_text` switches to the highlighted text color, matching Scrapegoat's selected-state behavior.
+
 **Footer visibility**:
 
 | Button | Shown when |
 |--------|-----------|
-| Y FILTER | `hide_filter` is false (default) |
-| A DETAILS | `on_detail` set and selected item is terminal |
-| X CLEAR DONE | `on_clear` set and no PENDING/RUNNING items remain |
-| B BACK | Always (last, so it overflows to `+1` on narrow screens) |
+| Y Filter | `hide_filter` is false (default) |
+| A Details | `on_detail` set and selected item is terminal |
+| X Clear Done | `on_clear` set and no PENDING/RUNNING items remain |
+| B Back | Always; emitted last on narrow screens so it overflows first |
 
 **Features**:
 - Animated pill selection (same lerp as `ap_list`)
 - Horizontal text scroll on long titles when selected
-- Per-item progress bars (omit bar entirely when `progress < 0`)
+- Per-item inline progress bars on the subtitle row (omit bar entirely when `progress < 0`)
 - Filter cycling: All / In Progress / Done / Failed (Y button)
 - Summary bar showing `X/Y complete, Z failed`
 - Detail callback for terminal items (A button)
 - Clear-done callback when no active jobs remain (X button)
 - CPU-idle aware: calls `ap_request_frame()` only while jobs are active; goes idle automatically when all items reach a terminal state
 - Scrollbar aligned with the subtitle zone, outside the pill area
+- Menu / desktop `H`: opens hidden footer actions when the footer shows `+N`
 
 **Usage**:
 ```c
@@ -506,7 +506,7 @@ ap_queue_viewer(&opts);
 
 **Snapshot contract**: `snapshot` is called every frame on the render thread. The callback must be safe to call concurrently with your worker threads — protect shared state with a mutex and copy into the caller-supplied `buf`.
 
-**Progress bar**: set `progress` to a value in `[0.0, 1.0]` to draw a bar, or to any negative value to omit the bar for that item. If *no* item in the snapshot has `progress >= 0`, the row height is reduced (no bar slot reserved).
+**Progress bar**: set `progress` to a value in `[0.0, 1.0]` to draw an inline bar on the subtitle row, or to any negative value to omit the bar for that item.
 
 ---
 

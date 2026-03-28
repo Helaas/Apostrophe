@@ -3575,13 +3575,11 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
         int  stat_done    = 0;
         int  stat_failed  = 0;
         bool has_active   = false;
-        bool any_progress = false;
         for (int i = 0; i < count; i++) {
             ap_queue_status s = items[i].status;
             if      (s == AP_QUEUE_DONE || s == AP_QUEUE_SKIPPED)  stat_done++;
             else if (s == AP_QUEUE_FAILED)                          stat_failed++;
             if      (s == AP_QUEUE_PENDING || s == AP_QUEUE_RUNNING) has_active = true;
-            if      (items[i].progress >= 0.0f)                    any_progress = true;
         }
 
         /* ── Filter map ───────────────────────────────────────────────────── */
@@ -3600,7 +3598,6 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
         /* ── Layout ───────────────────────────────────────────────────────── */
         int item_h = title_fh + sub_fh + AP_DS(4);
-        if (any_progress) item_h += AP_DS(2) + bar_h;
 
         /* Content rect covers title→footer; reserve summary_h at the bottom */
         SDL_Rect crect = ap_get_content_rect(opts->title != NULL, true,
@@ -3657,6 +3654,9 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                         cursor = 0; scroll_top = 0; last_cursor = -1;
                         pill_anim_initialized = false;  /* snap pill to new row */
                     }
+                    break;
+                case AP_BTN_MENU:
+                    ap_show_footer_overflow();
                     break;
                 case AP_BTN_A:
                     if (opts->on_detail && filtered_count > 0) {
@@ -3785,11 +3785,13 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
             ap_color text_color = is_highlight ? theme->highlighted_text : theme->text;
             ap_color sub_color  = is_highlight ? theme->highlighted_text : theme->hint;
+            if (is_highlight) status_color = theme->highlighted_text;
 
             /* Per-item layout: reserve space for status text if present */
+            int content_w  = pill_w - pill_pad * 2;
             int status_w   = item->status_text[0]
                 ? ap_measure_text(sub_font, item->status_text) : 0;
-            int text_max_w = pill_w - pill_pad * 2
+            int text_max_w = content_w
                 - (status_w > 0 ? status_w + AP_DS(4) : 0);
             if (text_max_w < AP_S(40)) text_max_w = AP_S(40);
 
@@ -3822,27 +3824,49 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
             /* Subtitle */
             if (item->subtitle[0]) {
+                int subtitle_gap   = AP_DS(8);
+                int subtitle_max_w = content_w;
+                int bar_x          = 0;
+                int bar_w          = 0;
+                int bar_y          = sub_y + (sub_fh - bar_h) / 2;
+                if (item->progress >= 0.0f) {
+                    int min_subtitle_w = AP_S(40);
+                    int min_bar_w      = AP_DS(56);
+                    int max_bar_w      = AP_DS(140);
+                    int target_bar_w   = content_w / 3;
+                    if (target_bar_w < min_bar_w) target_bar_w = min_bar_w;
+                    if (target_bar_w > max_bar_w) target_bar_w = max_bar_w;
+                    bar_w = target_bar_w;
+                    if (content_w - subtitle_gap - bar_w < min_subtitle_w) {
+                        bar_w = content_w - subtitle_gap - min_subtitle_w;
+                    }
+                    if (bar_w > 0) {
+                        subtitle_max_w = content_w - subtitle_gap - bar_w;
+                        if (subtitle_max_w < min_subtitle_w) subtitle_max_w = min_subtitle_w;
+                        bar_x = text_x + subtitle_max_w + subtitle_gap;
+                    } else {
+                        bar_w = 0;
+                    }
+                }
+
                 ap_draw_text_ellipsized(sub_font, item->subtitle,
                                         text_x, sub_y,
-                                        sub_color, pill_w - pill_pad * 2);
-            }
+                                        sub_color, subtitle_max_w);
 
-            /* Progress bar (only when at least one item has progress) */
-            if (any_progress) {
-                int bar_y = sub_y + sub_fh + AP_DS(2);
-                int bw    = pill_w - pill_pad * 2;
-                ap_draw_rounded_rect(text_x, bar_y, bw, bar_h, bar_r, col_bar_bg);
-                if (item->progress >= 0.0f) {
+                if (bar_w > 0) {
+                    ap_draw_rounded_rect(bar_x, bar_y, bar_w, bar_h, bar_r, col_bar_bg);
+
                     ap_color fill;
-                    if      (s == AP_QUEUE_DONE)   fill = col_bar_done;
+                    if      (s == AP_QUEUE_DONE)    fill = col_bar_done;
                     else if (s == AP_QUEUE_FAILED)  fill = col_bar_fail;
                     else                            fill = theme->accent;
-                    float p  = item->progress < 0.0f ? 0.0f
-                             : item->progress > 1.0f ? 1.0f : item->progress;
-                    int   fw = (int)((float)bw * p);
+
+                    float p = item->progress > 1.0f ? 1.0f : item->progress;
+                    int fw  = (int)((float)bar_w * p);
                     if (fw > 0) {
                         if (fw < bar_h) fw = bar_h;
-                        ap_draw_rounded_rect(text_x, bar_y, fw, bar_h, bar_r, fill);
+                        if (fw > bar_w) fw = bar_w;
+                        ap_draw_rounded_rect(bar_x, bar_y, fw, bar_h, bar_r, fill);
                     }
                 }
             }
@@ -3892,17 +3916,22 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
         {
             ap_footer_item fi[4];
             int nf = 0;
-            if (!opts->hide_filter)
-                fi[nf++] = (ap_footer_item){ .button = AP_BTN_Y, .label = "FILTER" };
+            bool wide_footer = (screen_w >= 1024);
+
+            if (wide_footer)
+                fi[nf++] = (ap_footer_item){ .button = AP_BTN_B, .label = "Back" };
             if (opts->on_detail && filtered_count > 0) {
                 ap_queue_status s = items[filter_map[cursor]].status;
                 if (s == AP_QUEUE_DONE || s == AP_QUEUE_FAILED || s == AP_QUEUE_SKIPPED)
-                    fi[nf++] = (ap_footer_item){ .button = AP_BTN_A, .label = "DETAILS" };
+                    fi[nf++] = (ap_footer_item){ .button = AP_BTN_A, .label = "Details" };
             }
+            if (!opts->hide_filter)
+                fi[nf++] = (ap_footer_item){ .button = AP_BTN_Y, .label = "Filter" };
+            if (!wide_footer)
+                fi[nf++] = (ap_footer_item){ .button = AP_BTN_B, .label = "Back" };
             if (opts->on_clear && !has_active && stat_done > 0)
                 fi[nf++] = (ap_footer_item){
-                    .button = AP_BTN_X, .label = "CLEAR DONE", .is_confirm = true };
-            fi[nf++] = (ap_footer_item){ .button = AP_BTN_B, .label = "BACK" };
+                    .button = AP_BTN_X, .label = "Clear Done", .is_confirm = true };
             ap_draw_footer(fi, nf);
         }
 

@@ -1070,11 +1070,12 @@ Live-updating, filterable display for background job queues. The widget polls a 
 **Features**:
 - Animated pill selection (same as list widget)
 - Horizontal text scroll on long titles when selected
-- Per-item progress bars (shown when any item's `progress ≥ 0`)
+- Per-item inline progress bars on the subtitle row
 - Filter cycling: All / In Progress / Done / Failed (Y button)
 - Summary bar: `"X/Y complete, Z failed"` above footer
 - A: Detail callback for terminal items (DONE/FAILED/SKIPPED)
 - X: Clear-done callback when no active items remain
+- Menu / desktop `H`: open hidden footer actions when the footer shows `+N`
 - Idle-aware: calls `ap_request_frame()` only while jobs are active
 
 **`ap_queue_status`**:
@@ -1095,7 +1096,7 @@ typedef struct {
     char            subtitle[128];   // Small secondary label
     char            status_text[64]; // Right-aligned status string
     ap_queue_status status;          // Color-coding and filter
-    float           progress;        // 0.0–1.0 = progress bar; < 0 = no bar
+    float           progress;        // 0.0–1.0 = inline progress bar; < 0 = no bar
     void           *userdata;        // Caller-defined context
 } ap_queue_item;
 ```
