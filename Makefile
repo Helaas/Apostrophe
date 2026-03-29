@@ -42,13 +42,21 @@ STAGING_DIR  := $(BUILD_DIR)/staging
 EXAMPLES_DIR := examples
 INCLUDE_DIR  := include
 RES_DIR      := res
+CACHE_DIR    := .cache
+NEXTUI_PREVIEW_REPO := https://github.com/LoveRetro/NextUI.git
+NEXTUI_PREVIEW_COMMIT := 7d201cf293f3a253e09749b8bb002e0b9f66d652
+NEXTUI_PREVIEW_CACHE := $(CACHE_DIR)/nextui-preview
+NEXTUI_PREVIEW_REPO_DIR := $(NEXTUI_PREVIEW_CACHE)/repo
+NEXTUI_PREVIEW_ASSETS_DIR := $(NEXTUI_PREVIEW_CACHE)/assets
+NEXTUI_PREVIEW_READY := $(NEXTUI_PREVIEW_CACHE)/.ready
 
 # Example names
 EXAMPLES := hello demo download combo perf
 
 # ─── Phony targets ───────────────────────────────────────────────────────
 
-.PHONY: all native mac linux windows tg5040 tg5050 my355 package deploy clean help
+.PHONY: all native mac linux windows tg5040 tg5050 my355 package deploy clean help \
+	run-mac-demo run-mac-download setup-nextui-preview-cache clean-nextui-preview-cache FORCE
 
 # ─── Native (auto-detect host OS) ─────────────────────────────────────
 
@@ -94,7 +102,102 @@ mac-%:
 run-mac-%: mac-%
 	@cd $(BUILD_DIR)/mac/$* && ./$*
 
+run-mac-demo: run-mac-nextui-demo
+run-mac-download: run-mac-nextui-download
+
+run-mac-nextui-%: mac-% setup-nextui-preview-cache
+	@set -euo pipefail; \
+	if [ -z "$${AP_STATUS_ASSETS_DIR:-}" ]; then \
+		export AP_STATUS_ASSETS_DIR="$(CURDIR)/$(NEXTUI_PREVIEW_ASSETS_DIR)"; \
+	fi; \
+	if [ -z "$${AP_NEXTVAL_PATH:-}" ]; then \
+		export AP_NEXTVAL_PATH="$(CURDIR)/$(NEXTUI_PREVIEW_CACHE)/nextval.json"; \
+	fi; \
+	if [ -z "$${AP_MINUI_SETTINGS_PATH:-}" ]; then \
+		export AP_MINUI_SETTINGS_PATH="$(CURDIR)/$(NEXTUI_PREVIEW_CACHE)/minuisettings.txt"; \
+	fi; \
+	if [ -z "$${AP_PREVIEW_WIFI_STRENGTH:-}" ]; then \
+		export AP_PREVIEW_WIFI_STRENGTH=3; \
+	fi; \
+	if [ -z "$${AP_PREVIEW_BATTERY_PERCENT:-}" ]; then \
+		export AP_PREVIEW_BATTERY_PERCENT=100; \
+	fi; \
+	if [ -z "$${AP_PREVIEW_CHARGING:-}" ]; then \
+		export AP_PREVIEW_CHARGING=0; \
+	fi; \
+	cd "$(BUILD_DIR)/mac/$*" && "./$*"
+
 run-mac: run-mac-hello
+
+setup-nextui-preview-cache: $(NEXTUI_PREVIEW_READY)
+
+$(NEXTUI_PREVIEW_READY): FORCE
+	@set -euo pipefail; \
+	ready=1; \
+	for file in \
+		"$(NEXTUI_PREVIEW_ASSETS_DIR)/assets@1x.png" \
+		"$(NEXTUI_PREVIEW_ASSETS_DIR)/assets@2x.png" \
+		"$(NEXTUI_PREVIEW_ASSETS_DIR)/assets@3x.png" \
+		"$(NEXTUI_PREVIEW_ASSETS_DIR)/assets@4x.png" \
+		"$(NEXTUI_PREVIEW_CACHE)/nextval.json" \
+		"$(NEXTUI_PREVIEW_CACHE)/minuisettings.txt" \
+		"$(NEXTUI_PREVIEW_CACHE)/.commit" \
+		"$(NEXTUI_PREVIEW_CACHE)/.source-url"; do \
+		[ -f "$$file" ] || ready=0; \
+	done; \
+	if [ "$$ready" -eq 1 ] && \
+		[ "$$(cat "$(NEXTUI_PREVIEW_CACHE)/.commit")" = "$(NEXTUI_PREVIEW_COMMIT)" ] && \
+		[ "$$(cat "$(NEXTUI_PREVIEW_CACHE)/.source-url")" = "$(NEXTUI_PREVIEW_REPO)" ]; then \
+		echo "✓ NextUI preview cache ready ($(NEXTUI_PREVIEW_COMMIT))"; \
+		touch "$@"; \
+		exit 0; \
+	fi; \
+	echo "Preparing NextUI preview cache ($(NEXTUI_PREVIEW_COMMIT))..."; \
+	rm -rf "$(NEXTUI_PREVIEW_ASSETS_DIR)"; \
+	mkdir -p "$(NEXTUI_PREVIEW_CACHE)" "$(NEXTUI_PREVIEW_ASSETS_DIR)"; \
+	if [ ! -d "$(NEXTUI_PREVIEW_REPO_DIR)/.git" ]; then \
+		git init "$(NEXTUI_PREVIEW_REPO_DIR)" >/dev/null; \
+	fi; \
+	if git -C "$(NEXTUI_PREVIEW_REPO_DIR)" remote get-url origin >/dev/null 2>&1; then \
+		git -C "$(NEXTUI_PREVIEW_REPO_DIR)" remote set-url origin "$(NEXTUI_PREVIEW_REPO)"; \
+	else \
+		git -C "$(NEXTUI_PREVIEW_REPO_DIR)" remote add origin "$(NEXTUI_PREVIEW_REPO)"; \
+	fi; \
+	git -C "$(NEXTUI_PREVIEW_REPO_DIR)" config advice.detachedHead false; \
+	git -C "$(NEXTUI_PREVIEW_REPO_DIR)" sparse-checkout init --no-cone >/dev/null 2>&1 || true; \
+	git -C "$(NEXTUI_PREVIEW_REPO_DIR)" sparse-checkout set --no-cone \
+		skeleton/SYSTEM/res/assets@1x.png \
+		skeleton/SYSTEM/res/assets@2x.png \
+		skeleton/SYSTEM/res/assets@3x.png \
+		skeleton/SYSTEM/res/assets@4x.png >/dev/null; \
+	git -C "$(NEXTUI_PREVIEW_REPO_DIR)" fetch --depth 1 origin "$(NEXTUI_PREVIEW_COMMIT)" >/dev/null; \
+	git -C "$(NEXTUI_PREVIEW_REPO_DIR)" checkout --detach --force "$(NEXTUI_PREVIEW_COMMIT)" >/dev/null; \
+	cp "$(NEXTUI_PREVIEW_REPO_DIR)"/skeleton/SYSTEM/res/assets@{1,2,3,4}x.png "$(NEXTUI_PREVIEW_ASSETS_DIR)"/; \
+	printf '%s\n' \
+		'{' \
+		'  "font": 1,' \
+		'  "color1": "0xFFFFFF",' \
+		'  "color2": "0x9B2257",' \
+		'  "color3": "0x1E2329",' \
+		'  "color4": "0xFFFFFF",' \
+		'  "color5": "0x000000",' \
+		'  "color6": "0xFFFFFF",' \
+		'  "color7": "0x000000",' \
+		'  "radius": 0' \
+		'}' > "$(NEXTUI_PREVIEW_CACHE)/nextval.json"; \
+	printf '%s\n' \
+		'showclock=1' \
+		'clock24h=1' \
+		'batteryperc=0' > "$(NEXTUI_PREVIEW_CACHE)/minuisettings.txt"; \
+	printf '%s\n' "$(NEXTUI_PREVIEW_COMMIT)" > "$(NEXTUI_PREVIEW_CACHE)/.commit"; \
+	printf '%s\n' "$(NEXTUI_PREVIEW_REPO)" > "$(NEXTUI_PREVIEW_CACHE)/.source-url"; \
+	touch "$@"; \
+	echo "✓ NextUI preview cache ready ($(NEXTUI_PREVIEW_COMMIT))";
+
+clean-nextui-preview-cache:
+	rm -rf $(NEXTUI_PREVIEW_CACHE)
+
+FORCE:
 
 # ─── Linux (native) ───────────────────────────────────────────────────
 
@@ -315,6 +418,8 @@ help:
 	@echo "  make deploy         Deploy to connected device via adb"
 	@echo ""
 	@echo "  Other:"
+	@echo "  make setup-nextui-preview-cache  Fetch pinned NextUI preview sprites into .cache"
+	@echo "  make clean-nextui-preview-cache  Remove the cached desktop preview assets"
 	@echo "  make clean          Remove build artifacts"
 	@echo ""
 	@echo "Examples: $(EXAMPLES)"

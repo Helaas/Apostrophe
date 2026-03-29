@@ -194,6 +194,9 @@ if (rc == AP_OK) {
 make native
 make run-native
 
+# Optional: fetch the pinned NextUI preview cache used by the desktop demos
+make setup-nextui-preview-cache
+
 # Override the desktop preview resolution to match device targets
 # Substitute other width/height values as needed.
 AP_WINDOW_WIDTH=1024 AP_WINDOW_HEIGHT=768 make run-native-demo   # Brick
@@ -206,11 +209,19 @@ AP_WINDOW_WIDTH=640 AP_WINDOW_HEIGHT=480 make run-native-demo    # Miyoo Flip
 ```bash
 make mac
 make run-mac
+make run-mac-demo      # auto-uses .cache/nextui-preview when available
+make run-mac-download  # same desktop NextUI preview path for the status bar demo
 
 # Same preview override when running the macOS target directly
 # Substitute other width/height values as needed.
 AP_WINDOW_WIDTH=1024 AP_WINDOW_HEIGHT=768 make run-mac-demo
 ```
+
+`make setup-nextui-preview-cache` sparse-checks out the pinned NextUI sprite sheets into
+`.cache/nextui-preview/` and generates local `nextval.json` and `minuisettings.txt` fixtures.
+`run-mac-demo` and `run-mac-download` automatically point `AP_STATUS_ASSETS_DIR`,
+`AP_NEXTVAL_PATH`, and `AP_MINUI_SETTINGS_PATH` at that cache unless you already exported your
+own override values.
 
 ### Linux
 
