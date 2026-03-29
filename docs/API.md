@@ -1089,7 +1089,7 @@ Live-updating, filterable display for background job queues. The widget polls a 
 - Animated pill selection (same as list widget)
 - Horizontal text scroll on long titles when selected
 - Per-item inline progress bars on the subtitle row
-- Filter cycling: ALL / IN PROGRESS / DONE / FAILED (Y button)
+- Filter cycling: ALL / IN PROGRESS / DONE / FAILED by default, overrideable via `filter_labels[4]` (Y button)
 - Summary bar: `"X/Y COMPLETE, Z FAILED"` above footer
 - A: Detail callback for terminal items (DONE/FAILED/SKIPPED)
 - X: Cancel callback while active, clear-done callback when idle
@@ -1131,6 +1131,7 @@ typedef struct {
     ap_queue_clear_fn     on_clear;    // Optional: X button when queue idle
     ap_status_bar_opts   *status_bar;  // Optional: top-right status pill
     bool                  hide_filter; // Set true to hide Y=FILTER cycling
+    const char           *filter_labels[4]; // Optional filter labels: [0]=ALL, [1]=IN PROGRESS (PENDING+RUNNING), [2]=DONE, [3]=FAILED; NULL or "" entries use defaults
 } ap_queue_opts;
 ```
 
@@ -1164,9 +1165,10 @@ static void my_cancel(void *ud) {
 }
 
 ap_queue_opts opts = {
-    .title     = "DOWNLOADS",
-    .snapshot  = my_snapshot,
-    .on_cancel = my_cancel,
+    .title         = "DOWNLOADS",
+    .snapshot      = my_snapshot,
+    .on_cancel     = my_cancel,
+    .filter_labels = { "ALL", "ACTIVE", "COMPLETE", "ERRORS" },
 };
 ap_queue_viewer(&opts);
 ```
