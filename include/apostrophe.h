@@ -27,6 +27,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #include <errno.h>
 #include <math.h>
@@ -751,6 +752,7 @@ static bool ap__env_parse_int(const char *name, int *out) {
     char *end = NULL;
     long parsed = strtol(value, &end, 10);
     if (errno != 0 || end == value || (end && *end != '\0')) return false;
+    if (parsed < INT_MIN || parsed > INT_MAX) return false;
 
     *out = (int)parsed;
     return true;
@@ -3842,56 +3844,52 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     bool ap__clock_forces_wide = (opts->show_clock == AP_CLOCK_SHOW);
     if (opts->show_clock == AP_CLOCK_AUTO)
         ap__clock_forces_wide = ap__read_nextui_setting_int("showclock", 0) != 0;
-    if (!wifi_visible && !ap__clock_forces_wide && opts->show_battery) {
+    if (ap__g.status_assets && !wifi_visible && !ap__clock_forces_wide && opts->show_battery) {
         int iw = AP__BATTERY_W * s;
         int ih = AP__BATTERY_H * s;
         int bx = pill_x + (pill_h - (iw + s)) / 2; /* NextUI centers with +FIXED_SCALE fudge */
         int by = pill_y + (pill_h - ih) / 2;
-        if (ap__g.status_assets) {
-            int bat = ap__get_battery_percent();
-            bool charging = ap__is_charging();
-            bool show_pct = ap__read_nextui_setting_int("batteryperc", 0) && !charging;
-            if (charging) {
-                ap__blit_status_icon(47, 51, AP__BATTERY_W, AP__BATTERY_H,
-                                     bx, by, iw, ih, ap__g.theme.hint);
-                int bolt_w = 12 * s, bolt_h = 6 * s;
-                ap__blit_status_icon(81, 41, 12, 6,
-                                     bx + 3 * s, by + 2 * s,
-                                     bolt_w, bolt_h, ap__g.theme.hint);
-            } else {
-                bool low = (bat >= 0 && bat <= 10);
-                ap__blit_status_icon(low ? 66 : 47, 51, AP__BATTERY_W, AP__BATTERY_H,
-                                     bx, by, iw, ih, ap__g.theme.hint);
-                if (!show_pct && bat >= 0) {
-                    /* Fill bar: clipped from right proportional to charge level */
-                    int fill_src_x = (bat <= 20) ? 1 : 81;
-                    int fill_src_y = (bat <= 20) ? 55 : 33;
-                    int fill_full_w = 12 * s;
-                    int fill_h_px = 6 * s;
-                    int fill_w = fill_full_w * bat / 100;
-                    int clip_off = fill_full_w - fill_w;
-                    if (fill_w > 0) {
-                        SDL_Rect fsrc = { fill_src_x * s + clip_off, fill_src_y * s, fill_w, fill_h_px };
-                        SDL_Rect fdst = { bx + 3 * s + clip_off, by + 2 * s, fill_w, fill_h_px };
-                        SDL_SetTextureColorMod(ap__g.status_assets, ap__g.theme.hint.r, ap__g.theme.hint.g, ap__g.theme.hint.b);
-                        SDL_SetTextureAlphaMod(ap__g.status_assets, ap__g.theme.hint.a);
-                        SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &fsrc, &fdst);
-                    }
+        int bat = ap__get_battery_percent();
+        bool charging = ap__is_charging();
+        bool show_pct = ap__read_nextui_setting_int("batteryperc", 0) && !charging;
+        if (charging) {
+            ap__blit_status_icon(47, 51, AP__BATTERY_W, AP__BATTERY_H,
+                                 bx, by, iw, ih, ap__g.theme.hint);
+            int bolt_w = 12 * s, bolt_h = 6 * s;
+            ap__blit_status_icon(81, 41, 12, 6,
+                                 bx + 3 * s, by + 2 * s,
+                                 bolt_w, bolt_h, ap__g.theme.hint);
+        } else {
+            bool low = (bat >= 0 && bat <= 10);
+            ap__blit_status_icon(low ? 66 : 47, 51, AP__BATTERY_W, AP__BATTERY_H,
+                                 bx, by, iw, ih, ap__g.theme.hint);
+            if (!show_pct && bat >= 0) {
+                /* Fill bar: clipped from right proportional to charge level */
+                int fill_src_x = (bat <= 20) ? 1 : 81;
+                int fill_src_y = (bat <= 20) ? 55 : 33;
+                int fill_full_w = 12 * s;
+                int fill_h_px = 6 * s;
+                int fill_w = fill_full_w * bat / 100;
+                int clip_off = fill_full_w - fill_w;
+                if (fill_w > 0) {
+                    SDL_Rect fsrc = { fill_src_x * s + clip_off, fill_src_y * s, fill_w, fill_h_px };
+                    SDL_Rect fdst = { bx + 3 * s + clip_off, by + 2 * s, fill_w, fill_h_px };
+                    SDL_SetTextureColorMod(ap__g.status_assets, ap__g.theme.hint.r, ap__g.theme.hint.g, ap__g.theme.hint.b);
+                    SDL_SetTextureAlphaMod(ap__g.status_assets, ap__g.theme.hint.a);
+                    SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &fsrc, &fdst);
                 }
             }
-            if (show_pct && bat >= 0) {
-                char pct_text[8];
-                snprintf(pct_text, sizeof(pct_text), "%d", bat);
-                TTF_Font *micro = ap_get_font(AP_FONT_MICRO);
-                if (!micro) micro = font;
-                int tw = ap_measure_text(micro, pct_text);
-                int th = TTF_FontHeight(micro);
-                int tx = bx + (iw - tw) / 2 + 1;
-                int ty = by + (ih - th) / 2 - 1;
-                ap_draw_text(micro, pct_text, tx, ty, ap__g.theme.hint);
-            }
-        } else {
-            ap_draw_text(font, "BAT", pill_x + margin, pill_y + (pill_h - TTF_FontHeight(font)) / 2, ap__g.theme.hint);
+        }
+        if (show_pct && bat >= 0) {
+            char pct_text[8];
+            snprintf(pct_text, sizeof(pct_text), "%d", bat);
+            TTF_Font *micro = ap_get_font(AP_FONT_MICRO);
+            if (!micro) micro = font;
+            int tw = ap_measure_text(micro, pct_text);
+            int th = TTF_FontHeight(micro);
+            int tx = bx + (iw - tw) / 2 + 1;
+            int ty = by + (ih - th) / 2 - 1;
+            ap_draw_text(micro, pct_text, tx, ty, ap__g.theme.hint);
         }
         return;
     }
