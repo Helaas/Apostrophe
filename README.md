@@ -40,15 +40,32 @@ brew install sdl2 sdl2_ttf sdl2_image
 
 # Optional: libcurl for the Download Manager widget
 brew install curl
+
+# Optional: fetch the pinned NextUI preview cache used by the desktop demos
+make setup-nextui-preview-cache
+
 make mac
 make run-mac          # Runs the hello world example
 make run-mac-demo     # Runs the widget demo
+make run-mac-download # Runs the status bar / download demo
 
 # Preview other device resolutions on desktop
 # Substitute other width/height values as needed.
 AP_WINDOW_WIDTH=1024 AP_WINDOW_HEIGHT=768 make run-mac-demo   # Brick
 AP_WINDOW_WIDTH=1280 AP_WINDOW_HEIGHT=720 make run-mac-demo   # Smart Pro / Smart Pro S
 AP_WINDOW_WIDTH=640 AP_WINDOW_HEIGHT=480 make run-mac-demo    # Miyoo Flip
+
+# `run-mac-demo` and `run-mac-download` automatically use `.cache/nextui-preview`
+# unless you already exported AP_STATUS_ASSETS_DIR / AP_NEXTVAL_PATH / AP_MINUI_SETTINGS_PATH.
+
+# Override with your own local asset/settings cache
+AP_STATUS_ASSETS_DIR=/path/to/nextui-preview/assets \
+AP_NEXTVAL_PATH=/path/to/nextui-preview/nextval.json \
+AP_MINUI_SETTINGS_PATH=/path/to/nextui-preview/minuisettings.txt \
+AP_PREVIEW_WIFI_STRENGTH=3 \
+AP_PREVIEW_BATTERY_PERCENT=100 \
+AP_PREVIEW_CHARGING=0 \
+make run-mac-demo
 ```
 
 ### 3. Build for Device
@@ -68,6 +85,11 @@ make all              # All device platforms
 make package          # Create .pakz archives (zipped Pak bundles)
 make deploy           # Push to connected device via adb
 ```
+
+The preview cache target sparse-checks out only `skeleton/SYSTEM/res/assets@{1,2,3,4}x.png`
+from `https://github.com/LoveRetro/NextUI.git` pinned to commit
+`7d201cf293f3a253e09749b8bb002e0b9f66d652`, then generates local `nextval.json` and
+`minuisettings.txt` files under `.cache/nextui-preview/`.
 
 ## Usage
 
@@ -138,7 +160,7 @@ All pixel values are specified at a **1024px reference width** and automatically
 
 ### Theming
 
-On device, colors are loaded from NextUI's theme system (`nextval.elf`). Apostrophe accepts both the current `color7` background key and the legacy `bgcolor` key for backward compatibility. On macOS, sensible defaults are used. You can override the accent color via `ap_config.primary_color_hex`.
+On device, colors are loaded from NextUI's theme system (`nextval.elf`). Apostrophe accepts both the current `color7` background key and the legacy `bgcolor` key for backward compatibility. On desktop, you can load the same theme and status-bar sprites by setting `AP_NEXTVAL_PATH`, `AP_STATUS_ASSETS_DIR`, and `AP_MINUI_SETTINGS_PATH`; otherwise sensible defaults are used. Apostrophe does not bundle the upstream NextUI sprite assets; `make setup-nextui-preview-cache` fetches them into `.cache/nextui-preview/` for local demo use only. You can still override the accent color via `ap_config.primary_color_hex`.
 
 ### Input
 

@@ -190,25 +190,41 @@ typedef struct {
 typedef struct {
     int  show_clock;     // AP_CLOCK_AUTO (default), AP_CLOCK_SHOW, or AP_CLOCK_HIDE
     bool use_24h;        // Only used when show_clock == AP_CLOCK_SHOW
-    bool show_battery;   // Show battery icon (device only)
-    bool show_wifi;      // Show wifi icon when connected (device only)
+    bool show_battery;   // Show battery icon from device or desktop preview state
+    bool show_wifi;      // Show wifi icon when connected / previewed
 } ap_status_bar_opts;
 ```
 
 **Clock behaviour:** By default (`show_clock` left at 0 / `AP_CLOCK_AUTO`), the clock
 visibility and format are read from the NextUI device settings (`showclock` and `clock24h`
-in `minuisettings.txt`). On desktop builds, auto mode means the clock is never shown (no
-settings file). Use `AP_CLOCK_SHOW` to force the clock visible regardless of device
-settings, or `AP_CLOCK_HIDE` to always suppress it. When using `AP_CLOCK_SHOW`, the
-`use_24h` field controls the time format; in auto mode, `clock24h` from device settings
-is used instead.
+in `minuisettings.txt`). On desktop builds, auto mode follows the preview settings file
+from `AP_MINUI_SETTINGS_PATH` when provided; otherwise auto mode hides the clock. Use
+`AP_CLOCK_SHOW` to force the clock visible regardless of settings, or `AP_CLOCK_HIDE` to
+always suppress it. When using `AP_CLOCK_SHOW`, the `use_24h` field controls the time
+format; in auto mode, `clock24h` from the settings file is used instead.
 
-**Wifi behaviour:** When `show_wifi` is true, the wifi icon is only shown when the device
-is connected to a network (signal strength > 0). When disconnected, the icon is hidden
-and the pill shrinks accordingly. This matches NextUI's behaviour of hiding the wifi icon
-when not connected.
+**Wifi behaviour:** When `show_wifi` is true, the wifi icon is only shown when the current
+device or desktop preview signal strength is greater than 0. When disconnected, the icon is
+hidden and the pill shrinks accordingly. This matches NextUI's behaviour of hiding the wifi
+icon when not connected.
 
-On device builds, battery and wifi icons are rendered from the NextUI asset spritesheet (`/mnt/SDCARD/.system/res/assets@Nx.png`). Pills (status bar, footer) use pre-rendered sprites from the same asset sheet for smooth anti-aliased edges. On macOS dev builds, sprites are not available so pills use procedural drawing and status fields are rendered as text placeholders.
+On device builds, battery and wifi icons are rendered from the NextUI asset spritesheet
+(`$SDCARD_PATH/.system/res/assets@Nx.png`, defaulting to `/mnt/SDCARD/.system/res/assets@Nx.png`).
+On desktop builds, the same sprite path is used when `AP_STATUS_ASSETS_DIR` points at a folder
+containing `assets@1x.png` through `assets@4x.png`. Pills (status bar, footer) then use the
+same pre-rendered sprites for smooth anti-aliased edges on both device and desktop. Without
+status assets, desktop falls back to procedural pill drawing and text placeholders. Apostrophe
+does not bundle the upstream NextUI sprite sheets; these files must come from your own local
+preview cache or device/source checkout.
+
+Desktop preview environment variables:
+
+- `AP_STATUS_ASSETS_DIR`: directory containing `assets@Nx.png`
+- `AP_NEXTVAL_PATH`: JSON file used for NextUI theme colors on desktop
+- `AP_MINUI_SETTINGS_PATH`: mock `minuisettings.txt` used by `AP_CLOCK_AUTO` and `batteryperc`
+- `AP_PREVIEW_WIFI_STRENGTH`: preview wifi strength (`0`..`3`)
+- `AP_PREVIEW_BATTERY_PERCENT`: preview battery level (`0`..`100`)
+- `AP_PREVIEW_CHARGING`: preview charging state (`0` or `1`)
 
 ### Lifecycle
 
@@ -350,7 +366,7 @@ Draw a filled rectangle.
 
 #### `void ap_draw_pill(int x, int y, int w, int h, ap_color color)`
 
-Draw a pill shape (fully rounded rectangle where corner radius = h/2). On device, uses the pre-rendered pill sprite from the NextUI asset sheet for smooth anti-aliased edges. Falls back to procedural drawing on desktop.
+Draw a pill shape (fully rounded rectangle where corner radius = h/2). Uses the pre-rendered NextUI pill sprite when status assets are loaded; otherwise falls back to procedural drawing.
 
 #### `void ap_draw_rounded_rect(int x, int y, int w, int h, int radius, ap_color color)`
 
@@ -443,7 +459,7 @@ Programmatically open the hidden-actions overlay when hidden footer items exist.
 
 #### `void ap_draw_status_bar(ap_status_bar_opts *opts)`
 
-Draw a status bar pill at the top-right of the screen. Shows clock, battery, and wifi status. On device, battery and wifi icons come from the NextUI asset spritesheet. Position matches NextUI's `PADDING` offset (10px unscaled).
+Draw a status bar pill at the top-right of the screen. Shows clock, battery, and wifi status. Battery and wifi icons come from the NextUI asset spritesheet whenever status assets are loaded. Position matches NextUI's `PADDING` offset (10px unscaled).
 
 #### `int ap_get_status_bar_width(ap_status_bar_opts *opts)`
 

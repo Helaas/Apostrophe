@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Desktop NextUI preview cache** (`Makefile`, `README.md`, `docs/GETTING_STARTED.md`): added `make setup-nextui-preview-cache` and `make clean-nextui-preview-cache` to populate a local `.cache/nextui-preview/` via sparse checkout from `https://github.com/LoveRetro/NextUI.git` pinned to `7d201cf293f3a253e09749b8bb002e0b9f66d652`. The cache generates local `nextval.json` and `minuisettings.txt` fixtures for desktop preview use without bundling upstream GPL sprite assets.
+
+### Changed
+
+- **Desktop demo NextUI parity** (`Makefile`, `examples/demo/main.c`, `examples/download/main.c`): `run-mac-demo` and `run-mac-download` now auto-wire `AP_STATUS_ASSETS_DIR`, `AP_NEXTVAL_PATH`, `AP_MINUI_SETTINGS_PATH`, and preview battery/wifi defaults from `.cache/nextui-preview/` when no overrides are provided. The demo and download examples now opt into NextUI styling on desktop as well as on device.
 
 ## [v1.0.0] - 2026-03-28
 
