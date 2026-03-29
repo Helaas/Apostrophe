@@ -364,6 +364,7 @@ typedef struct {
     ap_queue_clear_fn     on_clear;    /* Optional: X button when queue idle */
     ap_status_bar_opts   *status_bar;  /* Optional: top-right status pill */
     bool                  hide_filter; /* Set true to suppress Y=FILTER button */
+    const char           *filter_labels[4]; /* Optional labels for ALL/RUNNING/DONE/FAILED filters; NULL entries use defaults */
 } ap_queue_opts;
 
 /* Runs the queue viewer event loop. Returns AP_OK when user exits (B). */
@@ -3522,7 +3523,13 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
     /* Filter: 0=All, 1=In Progress, 2=Done, 3=Failed */
     int filter = 0;
-    static const char *ap__qv_filters[] = { "ALL", "IN PROGRESS", "DONE", "FAILED" };
+    static const char *ap__qv_default_filters[] = { "ALL", "IN PROGRESS", "DONE", "FAILED" };
+    const char *ap__qv_filters[4];
+    for (int i = 0; i < 4; i++) {
+        ap__qv_filters[i] = ap__qv_default_filters[i];
+        if (opts->filter_labels[i] && opts->filter_labels[i][0])
+            ap__qv_filters[i] = opts->filter_labels[i];
+    }
 
     int cursor     = 0;
     int scroll_top = 0;

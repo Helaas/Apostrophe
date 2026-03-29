@@ -468,7 +468,7 @@ Footer order is `Y FILTER`, then `A DETAILS` when available, with `B BACK` emitt
 - Animated pill selection (same lerp as `ap_list`)
 - Horizontal text scroll on long titles when selected
 - Per-item inline progress bars on the subtitle row (omit bar entirely when `progress < 0`)
-- Filter cycling: ALL / IN PROGRESS / DONE / FAILED (Y button)
+- Filter cycling: ALL / IN PROGRESS / DONE / FAILED by default, overrideable via `filter_labels[4]` (Y button)
 - Summary bar showing `X/Y COMPLETE, Z FAILED`
 - Detail callback for terminal items (A button)
 - Cancel callback while jobs are active, then clear-done when idle (X button)
@@ -504,12 +504,13 @@ static void my_clear(void *ud) {
 }
 
 ap_queue_opts opts = {
-    .title      = "DOWNLOADS",
-    .snapshot   = my_snapshot,
-    .userdata   = &my_ctx,
-    .on_detail  = my_detail,
-    .on_cancel  = my_cancel,
-    .on_clear   = my_clear,
+    .title         = "DOWNLOADS",
+    .snapshot      = my_snapshot,
+    .userdata      = &my_ctx,
+    .on_detail     = my_detail,
+    .on_cancel     = my_cancel,
+    .on_clear      = my_clear,
+    .filter_labels = { "ALL", "ACTIVE", "DONE", "ERRORS" },
 };
 ap_queue_viewer(&opts);
 ```
