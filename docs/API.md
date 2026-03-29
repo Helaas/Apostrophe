@@ -1131,7 +1131,7 @@ typedef struct {
     ap_queue_clear_fn     on_clear;    // Optional: X button when queue idle
     ap_status_bar_opts   *status_bar;  // Optional: top-right status pill
     bool                  hide_filter; // Set true to hide Y=FILTER cycling
-    const char           *filter_labels[4]; // Optional ALL/RUNNING/DONE/FAILED labels; NULL entries use defaults
+    const char           *filter_labels[4]; // Optional filter labels: [0]=ALL, [1]=IN PROGRESS (PENDING+RUNNING), [2]=DONE, [3]=FAILED; NULL or "" entries use defaults
 } ap_queue_opts;
 ```
 

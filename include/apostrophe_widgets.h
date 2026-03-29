@@ -364,7 +364,7 @@ typedef struct {
     ap_queue_clear_fn     on_clear;    /* Optional: X button when queue idle */
     ap_status_bar_opts   *status_bar;  /* Optional: top-right status pill */
     bool                  hide_filter; /* Set true to suppress Y=FILTER button */
-    const char           *filter_labels[4]; /* Optional labels for ALL/RUNNING/DONE/FAILED filters; NULL entries use defaults */
+    const char           *filter_labels[4]; /* Optional labels for filters: [0]=ALL, [1]=PENDING||RUNNING (default "IN PROGRESS"), [2]=DONE||SKIPPED, [3]=FAILED; NULL or "" entries use defaults */
 } ap_queue_opts;
 
 /* Runs the queue viewer event loop. Returns AP_OK when user exits (B). */
