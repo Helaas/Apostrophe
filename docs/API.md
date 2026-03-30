@@ -439,7 +439,7 @@ Draw the footer bar at the bottom of the screen with button hints.
 
 Non-confirm items render in one continuous outer pill on the left; confirm items render in one continuous outer pill on the right. Inside each outer pill, every item shows an inner button pill (letter/symbol) followed by a text label. Sizing matches NextUI: `PILL_SIZE` (30) outer height, `BUTTON_SIZE` (20) inner circles, all scaled by `device_scale`. Font tiers: `AP_FONT_MEDIUM` (14 base) for single-char button labels, `AP_FONT_TINY` (10 base) for multi-char labels, `AP_FONT_SMALL` (12 base) for hint text.
 
-When footer overflow handling is enabled and the hints do not fit on one row, Apostrophe keeps the footer on a single line, preserves the right-aligned confirm group, shows a compact `+N` marker for hidden hints, and opens a hidden-actions overlay via the Menu button. Hidden footer items remain normal actions; only their on-screen hints are collapsed.
+When footer overflow handling is enabled and the hints do not fit on one row, Apostrophe keeps the footer on a single line, preserves the right-aligned confirm group, shows a compact `+N` marker for hidden hints, and exposes a hidden-actions overlay that can be opened by calling `ap_show_footer_overflow()` (commonly bound to the Menu button) or by configuring a chord. Hidden footer items remain normal actions; only their on-screen hints are collapsed.
 
 #### `int ap_get_footer_height(void)`
 
