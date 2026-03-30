@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Footer overflow chord disabled by default** (`apostrophe.h`): the L1+R1 shoulder button chord no longer opens the hidden-actions overlay, and there is no default Menu→overflow binding in core. Apps and widgets that draw footers may wire the Menu button to `ap_show_footer_overflow()` (and/or a custom chord via `ap_set_footer_overflow_opts()`), but this is opt-in per screen.
 - **Desktop demo NextUI parity** (`Makefile`, `examples/demo/main.c`, `examples/download/main.c`): `run-mac-demo` and `run-mac-download` now auto-wire `AP_STATUS_ASSETS_DIR`, `AP_NEXTVAL_PATH`, `AP_MINUI_SETTINGS_PATH`, and preview battery/wifi defaults from `.cache/nextui-preview/` when no overrides are provided. The demo and download examples now opt into NextUI styling on desktop as well as on device.
 - **Queue Viewer filter labels** (`apostrophe_widgets.h`): `ap_queue_opts` now accepts an optional `filter_labels[4]` override so downstream apps can rename the built-in queue filters without forking the widget. Unset entries still fall back to `ALL`, `IN PROGRESS`, `DONE`, and `FAILED`.
 

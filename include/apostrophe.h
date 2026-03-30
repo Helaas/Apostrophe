@@ -2930,8 +2930,8 @@ void ap_set_footer_overflow_opts(const ap_footer_overflow_opts *opts) {
         ap__g.footer_overflow_opts = *opts;
     } else {
         ap__g.footer_overflow_opts.enabled = true;
-        ap__g.footer_overflow_opts.chord_a = AP_BTN_L1;
-        ap__g.footer_overflow_opts.chord_b = AP_BTN_R1;
+        ap__g.footer_overflow_opts.chord_a = AP_BTN_NONE;
+        ap__g.footer_overflow_opts.chord_b = AP_BTN_NONE;
     }
 
     memset(ap__g.footer_overflow_swallow, 0, sizeof(ap__g.footer_overflow_swallow));
@@ -4273,8 +4273,8 @@ int ap_init(ap_config *cfg) {
     ap__g.input_repeat_delay_ms = AP_INPUT_REPEAT_DELAY;
     ap__g.input_repeat_rate_ms = AP_INPUT_REPEAT_RATE;
     ap__g.footer_overflow_opts.enabled = true;
-    ap__g.footer_overflow_opts.chord_a = AP_BTN_L1;
-    ap__g.footer_overflow_opts.chord_b = AP_BTN_R1;
+    ap__g.footer_overflow_opts.chord_a = AP_BTN_NONE;
+    ap__g.footer_overflow_opts.chord_b = AP_BTN_NONE;
 
     uint32_t sdl_flags = SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_EVENTS;
     #if !AP_PLATFORM_IS_DEVICE
