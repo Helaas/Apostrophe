@@ -456,18 +456,22 @@ ap_list_opts ap_list_default_opts(const char *title, ap_list_item *items, int co
     return opts;
 }
 
+static inline int ap__alpha_group_for_text(const char *text) {
+    int g = 0; /* default: non-alpha */
+    if (text && text[0]) {
+        char c = (char)tolower((unsigned char)text[0]);
+        if (c >= 'a' && c <= 'z') g = (c - 'a') + 1;
+    }
+    return g;
+}
+
 static inline void ap__build_alpha_index(const ap_list_item *items, int item_count,
                                         int alpha_starts[27], int *alpha_count,
                                         int *item_alpha) {
     *alpha_count = 0;
     int prev_group = -1;
     for (int i = 0; i < item_count; i++) {
-        const char *lbl = items[i].label;
-        int g = 0; /* default: non-alpha */
-        if (lbl && lbl[0]) {
-            char c = (char)tolower((unsigned char)lbl[0]);
-            if (c >= 'a' && c <= 'z') g = (c - 'a') + 1;
-        }
+        int g = ap__alpha_group_for_text(items[i].label);
         if (g != prev_group) {
             if (*alpha_count < 27) {
                 alpha_starts[*alpha_count] = i;
@@ -3519,7 +3523,13 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
     int max_items  = (opts->max_items > 0) ? opts->max_items : 256;
     ap_queue_item *items      = (ap_queue_item *)calloc((size_t)max_items, sizeof(ap_queue_item));
     int           *filter_map = (int *)calloc((size_t)max_items, sizeof(int));
-    if (!items || !filter_map) { free(items); free(filter_map); return AP_ERROR; }
+    int           *filter_alpha = (int *)calloc((size_t)max_items, sizeof(int));
+    if (!items || !filter_map || !filter_alpha) {
+        free(items);
+        free(filter_map);
+        free(filter_alpha);
+        return AP_ERROR;
+    }
 
     /* Filter: 0=All, 1=In Progress, 2=Done, 3=Failed */
     int filter = 0;
@@ -3562,6 +3572,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
         !compact_title_font || !compact_sub_font) {
         free(items);
         free(filter_map);
+        free(filter_alpha);
         return AP_ERROR;
     }
 
@@ -3622,6 +3633,20 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                 case 3: match = (s == AP_QUEUE_FAILED);  break;
             }
             if (match) filter_map[filtered_count++] = i;
+        }
+
+        int alpha_starts[27];
+        int alpha_count = 0;
+        {
+            int prev_group = -1;
+            for (int i = 0; i < filtered_count; i++) {
+                int g = ap__alpha_group_for_text(items[filter_map[i]].title);
+                if (g != prev_group) {
+                    if (alpha_count < 27) alpha_starts[alpha_count++] = i;
+                    prev_group = g;
+                }
+                filter_alpha[i] = alpha_count - 1;
+            }
         }
 
         /* ── Layout ───────────────────────────────────────────────────────── */
@@ -3713,18 +3738,30 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
                     if (filtered_count > 0)
                         cursor = (cursor < filtered_count - 1) ? cursor + 1 : 0;
                     break;
-                case AP_BTN_L1:
                 case AP_BTN_LEFT:
                     if (filtered_count > 0) {
                         cursor -= max_visible;
                         if (cursor < 0) cursor = 0;
                     }
                     break;
-                case AP_BTN_R1:
                 case AP_BTN_RIGHT:
                     if (filtered_count > 0) {
                         cursor += max_visible;
                         if (cursor >= filtered_count) cursor = filtered_count - 1;
+                    }
+                    break;
+                case AP_BTN_L1:
+                    if (filtered_count > 0) {
+                        int gi = filter_alpha[cursor] - 1;
+                        if (gi >= 0)
+                            cursor = alpha_starts[gi];
+                    }
+                    break;
+                case AP_BTN_R1:
+                    if (filtered_count > 0) {
+                        int gi = filter_alpha[cursor] + 1;
+                        if (gi < alpha_count)
+                            cursor = alpha_starts[gi];
                     }
                     break;
                 case AP_BTN_Y:
@@ -4082,6 +4119,7 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
     ap_set_footer_overflow_opts(&ap__qv_saved_overflow);
     free(items);
     free(filter_map);
+    free(filter_alpha);
     return AP_OK;
 }
 
@@ -4214,6 +4252,11 @@ int ap_download_manager(ap_download *downloads, int count,
                     item_h = label_h + AP_S(4) + bar_h + (show_speed ? AP_S(2) + speed_h : 0);
                     max_visible = content_h / (item_h + item_gap);
                     if (max_visible < 1) max_visible = 1;
+                    {
+                        int max_scroll = count - max_visible;
+                        if (max_scroll < 0) max_scroll = 0;
+                        if (scroll > max_scroll) scroll = max_scroll;
+                    }
                     break;
                 case AP_BTN_A:
                     if (all_done || result->cancelled) goto dm_exit;
@@ -4310,8 +4353,13 @@ int ap_download_manager(ap_download *downloads, int count,
 
         /* Scrollbar */
         if (count > max_visible) {
-            ap_draw_scrollbar(bar_x + bar_w + AP_S(12), content_y,
-                content_h, content_h, count * (item_h + item_gap), scroll * (item_h + item_gap));
+            int visible_rows = count - scroll;
+            if (visible_rows > max_visible) visible_rows = max_visible;
+            if (visible_rows > 0) {
+                int used_h = visible_rows * item_h + (visible_rows - 1) * item_gap;
+                ap_draw_scrollbar(bar_x + bar_w + AP_S(12), content_y,
+                    used_h, max_visible, count, scroll);
+            }
         }
 
         /* Footer */

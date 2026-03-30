@@ -476,6 +476,8 @@ Footer order is `Y FILTER`, then `A DETAILS` when available, with `B BACK` emitt
 - Scrollbar aligned with the visible pill stack, outside the pill area
 - Menu / desktop `H`: opens hidden footer actions when the footer shows `+N`
 
+Navigation matches `ap_list()`: `D-Pad Left/Right` skip by one visible page, while `L1/R1` jump to the previous/next first-letter group in the current filter. For best results, keep queue titles pre-sorted.
+
 **Usage**:
 ```c
 /* Thread-safe snapshot: copy your job state into buf each frame */
