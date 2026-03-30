@@ -208,6 +208,10 @@ device or desktop preview signal strength is greater than 0. When disconnected, 
 hidden and the pill shrinks accordingly. This matches NextUI's behaviour of hiding the wifi
 icon when not connected.
 
+Battery and wifi can be enabled independently. When status sprites are active, the clock is
+hidden, and exactly one of those icons is visible, Apostrophe renders a centered square pill
+for that single icon so width calculation and drawing stay aligned.
+
 On device builds, battery and wifi icons are rendered from the NextUI asset spritesheet
 (`$SDCARD_PATH/.system/res/assets@Nx.png`, defaulting to `/mnt/SDCARD/.system/res/assets@Nx.png`).
 On desktop builds, the same sprite path is used when `AP_STATUS_ASSETS_DIR` points at a folder
@@ -459,11 +463,11 @@ Programmatically open the hidden-actions overlay when hidden footer items exist.
 
 #### `void ap_draw_status_bar(ap_status_bar_opts *opts)`
 
-Draw a status bar pill at the top-right of the screen. Shows clock, battery, and wifi status. Battery and wifi icons come from the NextUI asset spritesheet whenever status assets are loaded. Position matches NextUI's `PADDING` offset (10px unscaled).
+Draw a status bar pill at the top-right of the screen. Shows clock, battery, and wifi status. Battery and wifi icons come from the NextUI asset spritesheet whenever status assets are loaded. Position matches NextUI's `PADDING` offset (10px unscaled). When sprites are active and only one battery/wifi icon is visible with the clock hidden, the pill collapses to a centered square icon pill.
 
 #### `int ap_get_status_bar_width(ap_status_bar_opts *opts)`
 
-Calculate the pixel width of the status bar pill, including padding. Use this to clip long title text to avoid overlap.
+Calculate the pixel width of the status bar pill, including padding. Use this to clip long title text to avoid overlap. The result matches `ap_draw_status_bar()` for all clock/battery/wifi combinations, including square single-icon sprite pills.
 
 #### `int ap_get_status_bar_height(void)`
 
@@ -1095,6 +1099,8 @@ Live-updating, filterable display for background job queues. The widget polls a 
 - X: Cancel callback while active, clear-done callback when idle
 - Menu / desktop `H`: open hidden footer actions when the footer shows `+N`
 - Idle-aware: calls `ap_request_frame()` only while jobs are active
+
+Navigation matches `ap_list()`: `D-Pad Left/Right` skip by one visible page, while `L1/R1` jump to the previous/next first-letter group within the active filter. For best results, keep queue titles pre-sorted.
 
 **`ap_queue_status`**:
 ```c

@@ -3742,74 +3742,163 @@ static void ap__blit_status_icon(int src_x, int src_y, int src_w, int src_h,
 /* Helper: icon pixel size using the loaded spritesheet scale (1:1, no GPU upscaling) */
 #define AP__ICON_PX(logical) ((logical) * ap__g.status_asset_scale)
 
+typedef struct {
+    bool use_sprite_layout;
+    bool wifi_visible;
+    bool battery_visible;
+    bool clock_visible;
+    bool clock_24h;
+    int  wifi_strength;
+    int  visible_icon_count;
+    bool single_icon_sprite_mode;
+} ap__status_bar_layout;
+
+/* Resolve status-bar visibility once so width and draw logic stay in sync. */
+static inline ap__status_bar_layout ap__resolve_status_bar_layout(const ap_status_bar_opts *opts) {
+    ap__status_bar_layout layout = {0};
+    if (!opts) return layout;
+
+    layout.use_sprite_layout = (ap__g.status_assets != NULL);
+    layout.battery_visible   = opts->show_battery;
+    layout.clock_24h         = opts->use_24h;
+
+    if (opts->show_wifi) {
+        layout.wifi_strength = ap__get_wifi_strength();
+        layout.wifi_visible  = (layout.wifi_strength > 0);
+    }
+
+    if (opts->show_clock == AP_CLOCK_SHOW) {
+        layout.clock_visible = true;
+    } else if (opts->show_clock == AP_CLOCK_AUTO) {
+        layout.clock_visible = ap__read_nextui_setting_int("showclock", 0) != 0;
+        if (layout.clock_visible)
+            layout.clock_24h = ap__read_nextui_setting_int("clock24h", 1) != 0;
+    }
+
+    if (layout.wifi_visible)    layout.visible_icon_count++;
+    if (layout.battery_visible) layout.visible_icon_count++;
+
+    layout.single_icon_sprite_mode =
+        layout.use_sprite_layout && !layout.clock_visible && layout.visible_icon_count == 1;
+
+    return layout;
+}
+
+static int ap__measure_status_bar_width(const ap_status_bar_opts *opts, TTF_Font *font,
+                                        const ap__status_bar_layout *layout) {
+    if (!opts || !layout) return 0;
+
+    int s = ap__g.device_scale ? ap__g.device_scale : 2;
+    int margin = AP_DS(AP__BUTTON_MARGIN);
+    int total_w = margin;
+    bool has_any = false;
+
+    if (layout->wifi_visible) {
+        int wifi_w = layout->use_sprite_layout ? (AP__WIFI_SIZE * s)
+                                               : (font ? ap_measure_text(font, "WiFi") : AP__WIFI_SIZE * s);
+        total_w += wifi_w + margin;
+        has_any = true;
+    }
+
+    if (layout->battery_visible) {
+        int battery_w = layout->use_sprite_layout ? (AP__BATTERY_W * s)
+                                                  : (font ? ap_measure_text(font, "BAT") : AP__BATTERY_W * s);
+        total_w += battery_w + margin;
+        has_any = true;
+    }
+
+    if (layout->clock_visible && font) {
+        char clock_text[32];
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        if (layout->clock_24h)
+            strftime(clock_text, sizeof(clock_text), "%H:%M", t);
+        else
+            strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
+        total_w += ap_measure_text(font, clock_text) + margin;
+        has_any = true;
+    }
+
+    if (!has_any) return 0;
+    if (layout->single_icon_sprite_mode) return AP_DS(AP__PILL_SIZE);
+    return total_w;
+}
+
+static void ap__draw_status_bar_wifi_sprite(int x, int y, int wifi_strength) {
+    int s = ap__g.device_scale ? ap__g.device_scale : 2;
+    int iw = AP__WIFI_SIZE * s;
+    int ih = AP__WIFI_SIZE * s;
+    int sx;
+
+    switch (wifi_strength) {
+        case 3:  sx = 1;  break;  /* high */
+        case 2:  sx = 14; break;  /* med */
+        case 1:  sx = 27; break;  /* low */
+        default: sx = 40; break;  /* off/disconnected */
+    }
+
+    ap__blit_status_icon(sx, 104, AP__WIFI_SIZE, AP__WIFI_SIZE,
+                         x, y, iw, ih, ap__g.theme.hint);
+}
+
+static void ap__draw_status_bar_battery_sprite(int x, int y, TTF_Font *font) {
+    int s = ap__g.device_scale ? ap__g.device_scale : 2;
+    int iw = AP__BATTERY_W * s;
+    int ih = AP__BATTERY_H * s;
+    int bat = ap__get_battery_percent();
+    bool charging = ap__is_charging();
+    bool show_pct = ap__read_nextui_setting_int("batteryperc", 0) && !charging;
+
+    if (charging) {
+        ap__blit_status_icon(47, 51, AP__BATTERY_W, AP__BATTERY_H,
+                             x, y, iw, ih, ap__g.theme.hint);
+        ap__blit_status_icon(81, 41, 12, 6,
+                             x + 3 * s, y + 2 * s,
+                             12 * s, 6 * s, ap__g.theme.hint);
+    } else {
+        bool low = (bat >= 0 && bat <= 10);
+        ap__blit_status_icon(low ? 66 : 47, 51, AP__BATTERY_W, AP__BATTERY_H,
+                             x, y, iw, ih, ap__g.theme.hint);
+        if (!show_pct && bat >= 0) {
+            int fill_src_x = (bat <= 20) ? 1 : 81;
+            int fill_src_y = (bat <= 20) ? 55 : 33;
+            int fill_full_w = 12 * s;
+            int fill_h_px = 6 * s;
+            int fill_w = fill_full_w * bat / 100;
+            int clip_off = fill_full_w - fill_w;
+            if (fill_w > 0) {
+                SDL_Rect fsrc = { fill_src_x * s + clip_off, fill_src_y * s, fill_w, fill_h_px };
+                SDL_Rect fdst = { x + 3 * s + clip_off, y + 2 * s, fill_w, fill_h_px };
+                SDL_SetTextureColorMod(ap__g.status_assets, ap__g.theme.hint.r, ap__g.theme.hint.g, ap__g.theme.hint.b);
+                SDL_SetTextureAlphaMod(ap__g.status_assets, ap__g.theme.hint.a);
+                SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &fsrc, &fdst);
+            }
+        }
+    }
+
+    if (show_pct && bat >= 0) {
+        char pct_text[8];
+        TTF_Font *micro = ap_get_font(AP_FONT_MICRO);
+        if (!micro) micro = font;
+        snprintf(pct_text, sizeof(pct_text), "%d", bat);
+        if (micro) {
+            int tw = ap_measure_text(micro, pct_text);
+            int th = TTF_FontHeight(micro);
+            int tx = x + (iw - tw) / 2 + 1;
+            int ty = y + (ih - th) / 2 - 1;
+            ap_draw_text(micro, pct_text, tx, ty, ap__g.theme.hint);
+        }
+    }
+}
+
 /* Calculate the rendered pixel width of the status bar pill.
    Layout matches NextUI's GFX_blitHardwareGroup: BUTTON_MARGIN between each element. */
 int ap_get_status_bar_width(ap_status_bar_opts *opts) {
     if (!opts) return 0;
 
     TTF_Font *font = ap_get_font(AP_FONT_SMALL);
-    int s = ap__g.device_scale ? ap__g.device_scale : 2;
-    int margin = AP_DS(AP__BUTTON_MARGIN); /* inter-element spacing */
-    int total_w = margin; /* left inset inside pill */
-    bool has_any = false;
-    bool use_sprite_layout = (ap__g.status_assets != NULL);
-
-    /* Wifi icon — hide when disconnected (matches NextUI). */
-    bool wifi_visible = false;
-    if (opts->show_wifi) {
-        wifi_visible = (ap__get_wifi_strength() > 0);
-        if (wifi_visible) {
-            int wifi_w = use_sprite_layout ? (AP__WIFI_SIZE * s)
-                                           : (font ? ap_measure_text(font, "WiFi") : AP__WIFI_SIZE * s);
-            total_w += wifi_w + margin;
-            has_any = true;
-        }
-    }
-
-    /* Battery icon */
-    if (opts->show_battery) {
-        int battery_w = use_sprite_layout ? (AP__BATTERY_W * s)
-                                          : (font ? ap_measure_text(font, "BAT") : AP__BATTERY_W * s);
-        total_w += battery_w + margin;
-        has_any = true;
-    }
-
-    /* Clock — mirror effective visibility logic from ap_draw_status_bar */
-    {
-        bool clock_visible = false;
-        bool clock_24h = opts->use_24h;
-        if (opts->show_clock == AP_CLOCK_SHOW) {
-            clock_visible = true;
-        } else if (opts->show_clock == AP_CLOCK_AUTO) {
-            clock_visible = ap__read_nextui_setting_int("showclock", 0) != 0;
-            if (clock_visible)
-                clock_24h = ap__read_nextui_setting_int("clock24h", 1) != 0;
-        }
-        if (clock_visible && font) {
-            char clock_text[32];
-            time_t now = time(NULL);
-            struct tm *t = localtime(&now);
-            if (clock_24h)
-                strftime(clock_text, sizeof(clock_text), "%H:%M", t);
-            else
-                strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);
-            total_w += ap_measure_text(font, clock_text) + margin;
-            has_any = true;
-        }
-    }
-
-    if (!has_any) return 0;
-
-    /* If only battery and no other elements, return square pill.
-       Clock HIDE (2) and AUTO with no clock → battery-only square pill. */
-    bool clock_forces_wide = (opts->show_clock == AP_CLOCK_SHOW);
-    if (opts->show_clock == AP_CLOCK_AUTO)
-        clock_forces_wide = ap__read_nextui_setting_int("showclock", 0) != 0;
-    if (use_sprite_layout && !wifi_visible && !clock_forces_wide) {
-        return AP_DS(AP__PILL_SIZE);
-    }
-
-    return total_w;
+    ap__status_bar_layout layout = ap__resolve_status_bar_layout(opts);
+    return ap__measure_status_bar_width(opts, font, &layout);
 }
 
 void ap_draw_status_bar(ap_status_bar_opts *opts) {
@@ -3818,11 +3907,12 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     TTF_Font *font = ap_get_font(AP_FONT_SMALL);
     if (!font) return;
 
-    int s = ap__g.device_scale ? ap__g.device_scale : 2;
     int padding = AP_DS(ap__g.device_padding); /* outer UI padding */
     int margin = AP_DS(AP__BUTTON_MARGIN);     /* inter-element gap inside pill */
+    int s = ap__g.device_scale ? ap__g.device_scale : 2;
+    ap__status_bar_layout layout = ap__resolve_status_bar_layout(opts);
 
-    int pill_w = ap_get_status_bar_width(opts);
+    int pill_w = ap__measure_status_bar_width(opts, font, &layout);
     if (pill_w <= 0) return;
 
     int pill_h = AP_DS(AP__PILL_SIZE);
@@ -3831,65 +3921,19 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
 
     ap_draw_pill(pill_x, pill_y, pill_w, pill_h, ap__g.theme.accent);
 
-    /* Determine actual wifi visibility (same logic as ap_get_status_bar_width) */
-    int wifi_strength = 0;
-    bool wifi_visible = false;
-    if (opts->show_wifi) {
-        wifi_strength = ap__get_wifi_strength();
-        wifi_visible = (wifi_strength > 0);
-    }
-
-    /* Battery-only mode: center battery in a square pill.
-       Entered when wifi is off and clock is not forced wide (SHOW or auto-visible). */
-    bool ap__clock_forces_wide = (opts->show_clock == AP_CLOCK_SHOW);
-    if (opts->show_clock == AP_CLOCK_AUTO)
-        ap__clock_forces_wide = ap__read_nextui_setting_int("showclock", 0) != 0;
-    if (ap__g.status_assets && !wifi_visible && !ap__clock_forces_wide && opts->show_battery) {
-        int iw = AP__BATTERY_W * s;
-        int ih = AP__BATTERY_H * s;
-        int bx = pill_x + (pill_h - (iw + s)) / 2; /* NextUI centers with +FIXED_SCALE fudge */
-        int by = pill_y + (pill_h - ih) / 2;
-        int bat = ap__get_battery_percent();
-        bool charging = ap__is_charging();
-        bool show_pct = ap__read_nextui_setting_int("batteryperc", 0) && !charging;
-        if (charging) {
-            ap__blit_status_icon(47, 51, AP__BATTERY_W, AP__BATTERY_H,
-                                 bx, by, iw, ih, ap__g.theme.hint);
-            int bolt_w = 12 * s, bolt_h = 6 * s;
-            ap__blit_status_icon(81, 41, 12, 6,
-                                 bx + 3 * s, by + 2 * s,
-                                 bolt_w, bolt_h, ap__g.theme.hint);
-        } else {
-            bool low = (bat >= 0 && bat <= 10);
-            ap__blit_status_icon(low ? 66 : 47, 51, AP__BATTERY_W, AP__BATTERY_H,
-                                 bx, by, iw, ih, ap__g.theme.hint);
-            if (!show_pct && bat >= 0) {
-                /* Fill bar: clipped from right proportional to charge level */
-                int fill_src_x = (bat <= 20) ? 1 : 81;
-                int fill_src_y = (bat <= 20) ? 55 : 33;
-                int fill_full_w = 12 * s;
-                int fill_h_px = 6 * s;
-                int fill_w = fill_full_w * bat / 100;
-                int clip_off = fill_full_w - fill_w;
-                if (fill_w > 0) {
-                    SDL_Rect fsrc = { fill_src_x * s + clip_off, fill_src_y * s, fill_w, fill_h_px };
-                    SDL_Rect fdst = { bx + 3 * s + clip_off, by + 2 * s, fill_w, fill_h_px };
-                    SDL_SetTextureColorMod(ap__g.status_assets, ap__g.theme.hint.r, ap__g.theme.hint.g, ap__g.theme.hint.b);
-                    SDL_SetTextureAlphaMod(ap__g.status_assets, ap__g.theme.hint.a);
-                    SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &fsrc, &fdst);
-                }
-            }
-        }
-        if (show_pct && bat >= 0) {
-            char pct_text[8];
-            snprintf(pct_text, sizeof(pct_text), "%d", bat);
-            TTF_Font *micro = ap_get_font(AP_FONT_MICRO);
-            if (!micro) micro = font;
-            int tw = ap_measure_text(micro, pct_text);
-            int th = TTF_FontHeight(micro);
-            int tx = bx + (iw - tw) / 2 + 1;
-            int ty = by + (ih - th) / 2 - 1;
-            ap_draw_text(micro, pct_text, tx, ty, ap__g.theme.hint);
+    if (layout.single_icon_sprite_mode) {
+        if (layout.battery_visible) {
+            int iw = AP__BATTERY_W * s;
+            int ih = AP__BATTERY_H * s;
+            int bx = pill_x + (pill_h - (iw + s)) / 2; /* NextUI centers with +FIXED_SCALE fudge */
+            int by = pill_y + (pill_h - ih) / 2;
+            ap__draw_status_bar_battery_sprite(bx, by, font);
+        } else if (layout.wifi_visible) {
+            int iw = AP__WIFI_SIZE * s;
+            int ih = AP__WIFI_SIZE * s;
+            int wx = pill_x + (pill_h - iw) / 2;
+            int wy = pill_y + (pill_h - ih) / 2;
+            ap__draw_status_bar_wifi_sprite(wx, wy, layout.wifi_strength);
         }
         return;
     }
@@ -3899,24 +3943,14 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
     int cy = pill_y;
 
     /* Wifi icon */
-    if (wifi_visible) {
+    if (layout.wifi_visible) {
         int iw = AP__WIFI_SIZE * s;
         int ih = AP__WIFI_SIZE * s;
         int iy = cy + (pill_h - ih) / 2;
 
         if (ap__g.status_assets) {
-            if (wifi_strength > 0) {      /* hide icon entirely when disconnected */
-                int sx;
-                switch (wifi_strength) {
-                    case 3:  sx = 1;  break;  /* high */
-                    case 2:  sx = 14; break;  /* med */
-                    case 1:  sx = 27; break;  /* low */
-                    default: sx = 40; break;  /* off/disconnected (1–3 only reach here) */
-                }
-                ap__blit_status_icon(sx, 104, AP__WIFI_SIZE, AP__WIFI_SIZE,
-                                     cx, iy, iw, ih, ap__g.theme.hint);
-                cx += iw + margin;
-            }
+            ap__draw_status_bar_wifi_sprite(cx, iy, layout.wifi_strength);
+            cx += iw + margin;
         } else {
             int text_w = ap_measure_text(font, "WiFi");
             ap_draw_text(font, "WiFi", cx, cy + (pill_h - TTF_FontHeight(font)) / 2, ap__g.theme.hint);
@@ -3931,48 +3965,7 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
         int iy = cy + (pill_h - ih) / 2;
 
         if (ap__g.status_assets) {
-            int bat = ap__get_battery_percent();
-            bool charging = ap__is_charging();
-            bool show_pct = ap__read_nextui_setting_int("batteryperc", 0) && !charging;
-            if (charging) {
-                ap__blit_status_icon(47, 51, AP__BATTERY_W, AP__BATTERY_H,
-                                     cx, iy, iw, ih, ap__g.theme.hint);
-                int bolt_w = 12 * s, bolt_h = 6 * s;
-                ap__blit_status_icon(81, 41, 12, 6,
-                                     cx + 3 * s, iy + 2 * s,
-                                     bolt_w, bolt_h, ap__g.theme.hint);
-            } else {
-                bool low = (bat >= 0 && bat <= 10);
-                ap__blit_status_icon(low ? 66 : 47, 51, AP__BATTERY_W, AP__BATTERY_H,
-                                     cx, iy, iw, ih, ap__g.theme.hint);
-                if (!show_pct && bat >= 0) {
-                    /* Fill bar: clipped from right proportional to charge level */
-                    int fill_src_x = (bat <= 20) ? 1 : 81;
-                    int fill_src_y = (bat <= 20) ? 55 : 33;
-                    int fill_full_w = 12 * s;
-                    int fill_h_px = 6 * s;
-                    int fill_w = fill_full_w * bat / 100;
-                    int clip_off = fill_full_w - fill_w;
-                    if (fill_w > 0) {
-                        SDL_Rect fsrc = { fill_src_x * s + clip_off, fill_src_y * s, fill_w, fill_h_px };
-                        SDL_Rect fdst = { cx + 3 * s + clip_off, iy + 2 * s, fill_w, fill_h_px };
-                        SDL_SetTextureColorMod(ap__g.status_assets, ap__g.theme.hint.r, ap__g.theme.hint.g, ap__g.theme.hint.b);
-                        SDL_SetTextureAlphaMod(ap__g.status_assets, ap__g.theme.hint.a);
-                        SDL_RenderCopy(ap__g.renderer, ap__g.status_assets, &fsrc, &fdst);
-                    }
-                }
-            }
-            if (show_pct && bat >= 0) {
-                char pct_text[8];
-                snprintf(pct_text, sizeof(pct_text), "%d", bat);
-                TTF_Font *micro = ap_get_font(AP_FONT_MICRO);
-                if (!micro) micro = font;
-                int tw = ap_measure_text(micro, pct_text);
-                int th = TTF_FontHeight(micro);
-                int tx = cx + (iw - tw) / 2 + 1;
-                int ty = iy + (ih - th) / 2 - 1;
-                ap_draw_text(micro, pct_text, tx, ty, ap__g.theme.hint);
-            }
+            ap__draw_status_bar_battery_sprite(cx, iy, font);
         } else {
             int text_w = ap_measure_text(font, "BAT");
             ap_draw_text(font, "BAT", cx, cy + (pill_h - TTF_FontHeight(font)) / 2, ap__g.theme.hint);
@@ -3985,22 +3978,11 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
 
     /* Clock (rightmost) */
     {
-        bool effective_show_clock = false;
-        bool effective_24h = opts->use_24h;
-        if (opts->show_clock == AP_CLOCK_SHOW) {
-            effective_show_clock = true;
-        } else if (opts->show_clock == AP_CLOCK_AUTO) {
-            effective_show_clock = ap__read_nextui_setting_int("showclock", 0) != 0;
-            if (effective_show_clock)
-                effective_24h = ap__read_nextui_setting_int("clock24h", 1) != 0;
-        }
-        /* AP_CLOCK_HIDE (2) leaves effective_show_clock = false */
-
-        if (effective_show_clock) {
+        if (layout.clock_visible) {
             char clock_text[32];
             time_t now = time(NULL);
             struct tm *t = localtime(&now);
-            if (effective_24h)
+            if (layout.clock_24h)
                 strftime(clock_text, sizeof(clock_text), "%H:%M", t);
             else
                 strftime(clock_text, sizeof(clock_text), "%I:%M %p", t);

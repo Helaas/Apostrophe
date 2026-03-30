@@ -21,6 +21,12 @@ static ap_status_bar_opts status_bar = {
     .show_wifi    = true,
 };
 
+static ap_status_bar_opts wifi_only_status_bar = {
+    .show_clock   = AP_CLOCK_HIDE,
+    .show_battery = false,
+    .show_wifi    = true,
+};
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Demo: Download Manager
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -97,7 +103,7 @@ static void demo_downloads(void) {
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Demo: Status bar on a list
  * ═══════════════════════════════════════════════════════════════════════════ */
-static void demo_status_bar_list(void) {
+static void demo_status_bar_list_with_config(const char *title, ap_status_bar_opts *bar) {
     ap_list_item items[] = {
         { .label = "Item One"   },
         { .label = "Item Two"   },
@@ -112,13 +118,21 @@ static void demo_status_bar_list(void) {
         { .button = AP_BTN_A, .label = "SELECT", .is_confirm = true },
     };
 
-    ap_list_opts opts = ap_list_default_opts("Status Bar Demo", items, count);
+    ap_list_opts opts = ap_list_default_opts(title, items, count);
     opts.footer       = footer;
     opts.footer_count = 2;
-    opts.status_bar   = &status_bar;
+    opts.status_bar   = bar;
 
     ap_list_result result;
     ap_list(&opts, &result);
+}
+
+static void demo_status_bar_list(void) {
+    demo_status_bar_list_with_config("Status Bar Demo", &status_bar);
+}
+
+static void demo_status_bar_wifi_only(void) {
+    demo_status_bar_list_with_config("WiFi Only Status", &wifi_only_status_bar);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -175,9 +189,10 @@ static const struct {
     const char *label;
     demo_fn     fn;
 } demos[] = {
-    { "Start Downloads",       demo_downloads        },
-    { "List with Status Bar",  demo_status_bar_list   },
-    { "Detail + Status Bar",   demo_status_bar_detail },
+    { "Start Downloads",         demo_downloads             },
+    { "List with Status Bar",    demo_status_bar_list       },
+    { "List with WiFi-Only Bar", demo_status_bar_wifi_only  },
+    { "Detail + Status Bar",     demo_status_bar_detail     },
 };
 
 #define DEMO_COUNT (int)(sizeof(demos) / sizeof(demos[0]))
