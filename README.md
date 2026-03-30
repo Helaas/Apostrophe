@@ -2,7 +2,7 @@
 
 A header-only C UI toolkit for building graphical tools (Paks) on retro gaming handhelds running [NextUI](https://github.com/LoveRetro/NextUI).
 
-Current release: **v1.0.0** (2026-03-28).
+Current release: **v1.1.0** (2026-03-30).
 
 Inspired by [Gabagool](https://github.com/BrandonKowalski/gabagool) (Go). Its framework design directly informed the structure of this project, and this C port would not have been feasible without that foundation.
 

@@ -2,7 +2,7 @@
 
 This guide helps you migrate UI code from [Gabagool](https://github.com/LoveRetro/gabagool) to Apostrophe.
 
-This guide targets Apostrophe **v1.0.0** (2026-03-28).
+This guide targets Apostrophe **v1.1.0** (2026-03-30).
 
 ## Overview of Changes
 

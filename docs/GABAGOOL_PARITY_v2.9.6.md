@@ -1,6 +1,6 @@
 # Gabagool Parity Matrix (`v2.9.6`)
 
-This document tracks Apostrophe **v1.0.0** parity against Gabagool `v2.9.6`.
+This document tracks Apostrophe **v1.1.0** parity against Gabagool `v2.9.6`.
 
 ## Sources
 

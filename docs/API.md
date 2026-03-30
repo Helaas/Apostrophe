@@ -2,7 +2,7 @@
 
 Complete reference for all public functions, types, and macros in `apostrophe.h` and `apostrophe_widgets.h`.
 
-This reference documents Apostrophe **v1.0.0** (2026-03-28).
+This reference documents Apostrophe **v1.1.0** (2026-03-30).
 
 ---
 

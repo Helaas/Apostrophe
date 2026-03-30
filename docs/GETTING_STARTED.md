@@ -2,7 +2,7 @@
 
 This guide walks you through creating your first NextUI Pak using Apostrophe.
 
-This guide targets Apostrophe **v1.0.0** (2026-03-28).
+This guide targets Apostrophe **v1.1.0** (2026-03-30).
 
 ## Prerequisites
 
