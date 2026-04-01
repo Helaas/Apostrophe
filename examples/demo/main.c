@@ -2538,6 +2538,66 @@ static void demo_queue_viewer(void) {
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Main menu
  * ═══════════════════════════════════════════════════════════════════════════ */
+static void demo_file_picker(void) {
+    const char *mode_labels[] = { "File", "Folder", "Both + Hidden" };
+    ap_file_picker_mode modes[] = {
+        AP_FILE_PICKER_FILES, AP_FILE_PICKER_DIRS, AP_FILE_PICKER_BOTH
+    };
+
+    ap_list_item mode_items[] = {
+        AP_LIST_ITEM("File",          NULL),
+        AP_LIST_ITEM("Folder",        NULL),
+        AP_LIST_ITEM("Both + Hidden", NULL),
+    };
+
+    ap_footer_item mode_footer[] = {
+        { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_A, .label = "OPEN", .is_confirm = true },
+    };
+
+    int last_idx = 0;
+    int last_vis = 0;
+
+    while (1) {
+        ap_list_opts mopts = ap_list_default_opts("Picker Mode", mode_items, 3);
+        mopts.footer = mode_footer;
+        mopts.footer_count = 2;
+        mopts.initial_index = last_idx;
+        mopts.visible_start_index = last_vis;
+
+        ap_list_result mresult;
+        int mrc = ap_list(&mopts, &mresult);
+        last_vis = mresult.visible_start_index;
+        if (mrc != AP_OK || mresult.action == AP_ACTION_BACK) break;
+        if (mresult.selected_index < 0 || mresult.selected_index >= 3) continue;
+        last_idx = mresult.selected_index;
+
+        ap_file_picker_opts fp = ap_file_picker_default_opts(mode_labels[mresult.selected_index]);
+        fp.mode = modes[mresult.selected_index];
+        fp.allow_create = (fp.mode != AP_FILE_PICKER_FILES);
+        fp.show_hidden = (fp.mode == AP_FILE_PICKER_BOTH);
+        if (fp.mode == AP_FILE_PICKER_DIRS || fp.mode == AP_FILE_PICKER_BOTH)
+            fp.title = NULL;
+
+        /* Demonstrate extension filter for file-only mode */
+        const char *exts[] = { "zip", "7z", "rar", "txt", "json", "png", "jpg" };
+        if (fp.mode == AP_FILE_PICKER_FILES) {
+            fp.extensions = exts;
+            fp.extension_count = 7;
+        }
+
+        ap_file_picker_result fp_result;
+        int rc = ap_file_picker(&fp, &fp_result);
+
+        if (rc == AP_OK) {
+            char msg[1100];
+            snprintf(msg, sizeof(msg), "Selected:\n%s\n\nIs directory: %s",
+                     fp_result.path, fp_result.is_directory ? "Yes" : "No");
+            demo_show_message(msg);
+        }
+    }
+}
+
 typedef void (*demo_fn)(void);
 
 static const struct {
@@ -2568,6 +2628,7 @@ static const struct {
     { "CPU & Fan",           demo_cpu_fan             },
     { "Background Preview",  demo_background_preview  },
     { "Queue Viewer",        demo_queue_viewer        },
+    { "File Picker",         demo_file_picker         },
 };
 
 #define DEMO_COUNT (int)(sizeof(demos) / sizeof(demos[0]))

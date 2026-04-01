@@ -147,8 +147,8 @@ On device, leave `font_path` unset / `NULL` to use the font currently configured
 ```
 apostrophe.h          — Core: init, lifecycle, input, drawing, theming, fonts, scaling
 apostrophe_widgets.h  — Widgets: list, options list, keyboard, confirmation,
-                        selection, process message, download manager,
-                        detail screen, color picker, help overlay
+                        selection, process message, download manager, queue manager,
+                        detail screen, color picker, help overlay, file picker
 ```
 
 All widgets use a **blocking model**: they run their own event loop and return a result struct when the user completes an action or presses back (`AP_CANCELLED`).
@@ -182,6 +182,7 @@ The **combo system** adds support for chords (simultaneous button presses like L
 | Queue Viewer | `ap_queue_viewer()` | Live-updating background job queue with filter, detail, cancel/clear, and inline progress |
 | Detail Screen | `ap_detail_screen()` | Scrollable multi-section info view |
 | Color Picker | `ap_color_picker()` | 5×5 color grid selector |
+| File Picker | `ap_file_picker()` | Filesystem browser for selecting files or directories with optional folder creation in dir-capable modes |
 | Help Overlay | `ap_show_help_overlay()` | Scrollable text overlay (Menu trigger) |
 
 ## Docs
