@@ -3373,13 +3373,51 @@ static void ap__file_picker_normalize_path(char *path) {
     }
 }
 
+static size_t ap__file_picker_capped_len(const char *text, size_t max_len) {
+    size_t len = 0;
+    if (!text) return 0;
+    while (len < max_len && text[len]) len++;
+    return len;
+}
+
+static void ap__file_picker_copy_text(char *dst, size_t dst_size, const char *src) {
+    size_t copy_len;
+    if (!dst || dst_size == 0) return;
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+    copy_len = ap__file_picker_capped_len(src, dst_size - 1);
+    memcpy(dst, src, copy_len);
+    dst[copy_len] = '\0';
+}
+
+static void ap__file_picker_append_text(char *dst, size_t dst_size, const char *src) {
+    size_t dst_len;
+    size_t copy_len;
+
+    if (!dst || dst_size == 0 || !src || !src[0]) return;
+
+    dst_len = ap__file_picker_capped_len(dst, dst_size - 1);
+    dst[dst_len] = '\0';
+
+    copy_len = ap__file_picker_capped_len(src, dst_size - dst_len - 1);
+
+    if (copy_len > 0) {
+        memcpy(dst + dst_len, src, copy_len);
+        dst[dst_len + copy_len] = '\0';
+    }
+}
+
 static bool ap__file_picker_copy_path(char *dst, size_t dst_size, const char *src) {
+    size_t src_len;
     if (!dst || dst_size == 0 || !src || !src[0]) return false;
-    int n = snprintf(dst, dst_size, "%s", src);
-    if (n < 0 || (size_t)n >= dst_size) {
-        if (dst_size > 0) dst[0] = '\0';
+    src_len = strlen(src);
+    if (src_len >= dst_size) {
+        dst[0] = '\0';
         return false;
     }
+    memcpy(dst, src, src_len + 1);
     ap__file_picker_normalize_path(dst);
     return true;
 }
@@ -3491,7 +3529,7 @@ static void ap__file_picker_root_label(char *out, size_t out_size,
 
     const char *base = strrchr(root, '/');
     if (base && base[1]) {
-        snprintf(out, out_size, "%s", base + 1);
+        ap__file_picker_copy_text(out, out_size, base + 1);
         return;
     }
 #ifdef _WIN32
@@ -3500,7 +3538,7 @@ static void ap__file_picker_root_label(char *out, size_t out_size,
         return;
     }
 #endif
-    snprintf(out, out_size, "%s", root);
+    ap__file_picker_copy_text(out, out_size, root);
 }
 
 static void ap__file_picker_format_title(char *out, size_t out_size,
@@ -3512,14 +3550,15 @@ static void ap__file_picker_format_title(char *out, size_t out_size,
 
     if (!root_label || !root_label[0] || !root || !current_path) return;
     if (strcmp(current_path, root) == 0) {
-        snprintf(out, out_size, "%s", root_label);
+        ap__file_picker_copy_text(out, out_size, root_label);
         return;
     }
     if (ap__file_picker_is_path_inside(current_path, root)) {
-        snprintf(out, out_size, "%s%s", root_label, current_path + strlen(root));
+        ap__file_picker_copy_text(out, out_size, root_label);
+        ap__file_picker_append_text(out, out_size, current_path + strlen(root));
         return;
     }
-    snprintf(out, out_size, "%s", current_path);
+    ap__file_picker_copy_text(out, out_size, current_path);
 }
 
 /* Resolve the default root path per platform */
@@ -3665,14 +3704,20 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
         dir = opendir(current_path);
         if (!dir) {
             char errmsg[512];
-            snprintf(errmsg, sizeof(errmsg), "Cannot open directory '%s':\n%s", current_path, strerror(errno));
+            errmsg[0] = '\0';
+            ap__file_picker_append_text(errmsg, sizeof(errmsg), "Cannot open directory '");
+            ap__file_picker_append_text(errmsg, sizeof(errmsg), current_path);
+            ap__file_picker_append_text(errmsg, sizeof(errmsg), "':\n");
+            ap__file_picker_append_text(errmsg, sizeof(errmsg), strerror(errno));
             ap__file_picker_show_message(errmsg);
 
             /* Try to go up */
             if (strcmp(current_path, effective_root) == 0) return AP_ERROR;
             if (!ap__file_picker_parent_path(current_path) ||
-                !ap__file_picker_is_path_inside(current_path, effective_root))
-                snprintf(current_path, sizeof(current_path), "%s", effective_root);
+                !ap__file_picker_is_path_inside(current_path, effective_root)) {
+                if (!ap__file_picker_copy_path(current_path, sizeof(current_path), effective_root))
+                    return AP_ERROR;
+            }
             continue;
         }
 
