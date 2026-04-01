@@ -3665,7 +3665,7 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
         dir = opendir(current_path);
         if (!dir) {
             char errmsg[512];
-            snprintf(errmsg, sizeof(errmsg), "Cannot open directory:\n%s", strerror(errno));
+            snprintf(errmsg, sizeof(errmsg), "Cannot open directory '%s':\n%s", current_path, strerror(errno));
             ap__file_picker_show_message(errmsg);
 
             /* Try to go up */
