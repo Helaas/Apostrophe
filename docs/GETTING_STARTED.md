@@ -1,6 +1,7 @@
 # Getting Started with Apostrophe
 
 This guide walks you through creating your first NextUI Pak using Apostrophe.
+It reflects the same overall setup used by the current real projects such as `nextui-shortcuts-pak` and `nextui-scrapegoat-pak`.
 
 This guide targets Apostrophe **v1.1.0** (2026-03-30).
 
@@ -80,37 +81,40 @@ make my355-download USE_BUNDLED_CURL=1
 
 ## Project Structure
 
-A typical Apostrophe project looks like this:
+A small experiment can be very simple:
 
 ```
 MyPak/
 ├── main.c              # Your application code
-├── font.ttf            # Font file (required)
+├── font.ttf            # Optional desktop test font
 ├── Makefile            # Build configuration
-└── pak/
-    └── launch.sh       # NextUI launch script
+├── launch.sh           # NextUI launch script
+└── pak.json            # Pak metadata
 ```
 
-For a multi-platform project using the Apostrophe repo structure:
+Real multi-platform Apostrophe paks usually look more like this:
 
 ```
 MyProject/
-├── include/
-│   ├── apostrophe.h
-│   └── apostrophe_widgets.h
-├── res/
-│   └── font.ttf
-├── examples/
-│   └── myapp/
-│       ├── main.c
-│       └── pak/
-│           └── launch.sh
+├── Makefile
+├── launch.sh
+├── pak.json
+├── src/
+│   └── main.c
 ├── ports/
 │   ├── tg5040/Makefile
 │   ├── tg5050/Makefile
 │   └── my355/Makefile
-└── Makefile
+└── third_party/
+    └── apostrophe/
+        ├── include/
+        │   ├── apostrophe.h
+        │   └── apostrophe_widgets.h
+        └── res/
+            └── font.ttf
 ```
+
+That second layout is closer to how real projects are currently structured: application code under `src/`, platform packaging under `ports/`, and Apostrophe vendored under `third_party/apostrophe`.
 
 ## Step 1: Include the Headers
 
@@ -125,13 +129,16 @@ Create a `main.c` file. Define the implementation macros in exactly **one** tran
 
 If your project has multiple `.c` files, only one should have the `#define` lines. All others just `#include` the headers normally.
 
+If you vendor Apostrophe under `third_party/apostrophe`, add `-Ithird_party/apostrophe/include` to your compiler flags and keep the `#include "apostrophe.h"` form shown above.
+
 ## Step 2: Initialise
 
 ```c
 int main(int argc, char *argv[]) {
     ap_config cfg = {
         .window_title = "My Pak",
-        .font_path    = "font.ttf",
+        .font_path    = AP_PLATFORM_IS_DEVICE ? NULL
+                        : "third_party/apostrophe/res/font.ttf",
         .log_path     = ap_resolve_log_path("myapp"), // optional helper
         .is_nextui    = AP_PLATFORM_IS_DEVICE,
     };
@@ -149,6 +156,8 @@ int main(int argc, char *argv[]) {
 
 `ap_init()` handles everything: SDL initialisation, window/renderer creation, font loading, theme loading (on device), input setup, and screen size detection.
 `ap_resolve_log_path()` maps logs to `LOGS_PATH`, then `SHARED_USERDATA_PATH/logs`, then `HOME/.userdata/logs`.
+
+`font_path` is mainly a desktop concern. On device, leave it as `NULL` and Apostrophe will load the font selected in NextUI (`font1.ttf` / `font2.ttf`) automatically. For desktop testing, pointing `font_path` at a bundled `.ttf` gives you predictable rendering across machines.
 
 ## Step 3: Show a Widget
 
@@ -194,7 +203,8 @@ if (rc == AP_OK) {
 make native
 make run-native
 
-# Optional: fetch the pinned NextUI preview cache used by the desktop demos
+# Optional: fetch the pinned NextUI preview cache used by the macOS demo aliases
+# and reusable on Linux/Windows via the AP_* overrides
 make setup-nextui-preview-cache
 
 # Override the desktop preview resolution to match device targets
@@ -203,6 +213,8 @@ AP_WINDOW_WIDTH=1024 AP_WINDOW_HEIGHT=768 make run-native-demo   # Brick
 AP_WINDOW_WIDTH=1280 AP_WINDOW_HEIGHT=720 make run-native-demo   # Smart Pro / Smart Pro S
 AP_WINDOW_WIDTH=640 AP_WINDOW_HEIGHT=480 make run-native-demo    # Miyoo Flip
 ```
+
+`run-native-demo` resolves to the host-specific demo target. On macOS, the `run-mac-demo` and `run-mac-download` aliases automatically point at `.cache/nextui-preview`. On Linux/Windows, export `AP_STATUS_ASSETS_DIR`, `AP_NEXTVAL_PATH`, and `AP_MINUI_SETTINGS_PATH` yourself if you want the same NextUI preview assets.
 
 ### macOS
 
