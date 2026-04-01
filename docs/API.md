@@ -38,6 +38,7 @@ This reference documents Apostrophe **v1.1.0** (2026-03-30).
   - [Detail Screen](#detail-screen)
   - [Color Picker](#color-picker)
   - [Help Overlay](#help-overlay)
+  - [File Picker](#file-picker)
 
 ---
 
@@ -1250,3 +1251,79 @@ void ap_show_help_overlay(const char *text);
 ```
 
 Full-screen scrollable text overlay. Typically triggered by Menu in widgets that have `help_text` configured.
+
+### File Picker
+
+#### Types
+
+```c
+typedef enum {
+    AP_FILE_PICKER_FILES = 0,   /* Only files are selectable            */
+    AP_FILE_PICKER_DIRS  = 1,   /* Only directories are selectable      */
+    AP_FILE_PICKER_BOTH  = 2,   /* Files and directories are selectable */
+} ap_file_picker_mode;
+```
+
+```c
+typedef struct {
+    const char           *title;           /* Screen title (NULL = show relative path from root) */
+    ap_file_picker_mode   mode;            /* What can be selected */
+    const char           *initial_path;    /* Starting directory (NULL = root_path) */
+    const char           *root_path;       /* Navigation boundary (NULL = auto-detect per platform) */
+    const char          **extensions;      /* File extension filter array, e.g. {"zip","7z"} */
+    int                   extension_count; /* Number of entries in extensions array */
+    bool                  allow_create;    /* Show NEW FOLDER action (X button) */
+    bool                  show_hidden;     /* Show files/directories starting with '.' */
+    ap_status_bar_opts   *status_bar;      /* Optional status bar */
+} ap_file_picker_opts;
+```
+
+```c
+typedef struct {
+    char path[1024];      /* Full absolute path of the selected item */
+    bool is_directory;    /* True when the selected item is a directory */
+} ap_file_picker_result;
+```
+
+#### Functions
+
+| Function | Description |
+|----------|-------------|
+| `ap_file_picker_default_opts(title)` | Create default options (mode = FILES, no filter, no create) |
+| `ap_file_picker(opts, result)` | Show blocking file picker. Returns `AP_OK` on selection, `AP_CANCELLED` on back from root |
+
+#### Controls
+
+| Button | Action |
+|--------|--------|
+| D-Pad Up/Down | Navigate items |
+| D-Pad Left/Right | Page up/down |
+| L1/R1 | Jump between letter groups |
+| A | Open folder / select file |
+| B | Go up one directory (cancel at root) |
+| X | Create new folder (if `allow_create`) |
+| START | Select current directory (DIRS / BOTH modes) |
+
+#### Root Path Resolution
+
+| Platform | Default root |
+|----------|-------------|
+| Device (`AP_PLATFORM_IS_DEVICE`) | `SDCARD_PATH` env var, or `/mnt/SDCARD` |
+| Windows | `USERPROFILE` env var, or `.` |
+| macOS / Linux | `HOME` env var, or `.` |
+
+#### Usage Example
+
+```c
+ap_file_picker_opts opts = ap_file_picker_default_opts("Select ROM");
+opts.mode = AP_FILE_PICKER_FILES;
+opts.allow_create = true;
+opts.extensions = (const char *[]){"zip", "7z"};
+opts.extension_count = 2;
+
+ap_file_picker_result result;
+int rc = ap_file_picker(&opts, &result);
+if (rc == AP_OK) {
+    printf("Selected: %s (dir=%d)\n", result.path, result.is_directory);
+}
+```

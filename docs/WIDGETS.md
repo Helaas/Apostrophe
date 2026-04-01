@@ -418,6 +418,57 @@ ap_show_help_overlay("Navigate with D-Pad.\nPress A to select.\nPress B to go ba
 
 ---
 
+## File Picker (`ap_file_picker`)
+
+Filesystem browser for selecting files or directories. Built on `ap_list()` — inherits all list navigation (scrolling, pill animation, L1/R1 letter-skip). Folders sort first and show a trailing `>` chevron; files show their uppercase extension. Supports inline folder creation via `ap_keyboard()`.
+
+```
+┌─────────────────────────────┐
+│  Select ROM                 │ ← Title (or relative path)
+│─────────────────────────────│
+│  ┌─────────────────────┐    │
+│  │ ▸ Roms              > │  │ ← Folder (highlighted, chevron)
+│  └─────────────────────┘    │
+│    Saves                 >  │ ← Folder
+│    readme.txt          TXT  │ ← File (extension label)
+│    game.zip            ZIP  │ ← File (extension label)
+│    photo.png           PNG  │
+│─────────────────────────────│
+│ [B] BACK [X] NEW FOLDER    │
+│                 [A] OPEN    │ ← Footer
+└─────────────────────────────┘
+```
+
+**Modes**:
+- `AP_FILE_PICKER_FILES` — Only files are selectable (A on folder enters it)
+- `AP_FILE_PICKER_DIRS` — Only directories are selectable (A enters, START selects current dir)
+- `AP_FILE_PICKER_BOTH` — Files and directories are selectable
+
+**Features**:
+- Folders first, then files, both alphabetically sorted (case-insensitive)
+- Extension filter: restrict visible files to specific extensions
+- Hidden file toggle: show/hide dotfiles and dotdirs
+- Inline folder creation: X button opens keyboard, creates directory
+- Path sandboxing: on device limited to `SDCARD_PATH`, on desktop to `$HOME`
+- Empty directory placeholder when no entries match filters
+
+**Usage**:
+```c
+ap_file_picker_opts opts = ap_file_picker_default_opts("Select ROM");
+opts.mode = AP_FILE_PICKER_FILES;
+opts.allow_create = true;
+opts.extensions = (const char *[]){"zip", "7z"};
+opts.extension_count = 2;
+
+ap_file_picker_result result;
+int rc = ap_file_picker(&opts, &result);
+if (rc == AP_OK) {
+    printf("Selected: %s\n", result.path);
+}
+```
+
+---
+
 ## Queue Viewer (`ap_queue_viewer`)
 
 Live-updating queue of background jobs with animated pill selection, filter cycling, and optional progress bars. The widget is a pure display layer — the caller supplies a thread-safe snapshot callback; all threading and job logic remain in the caller.

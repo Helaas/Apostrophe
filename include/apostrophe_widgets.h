@@ -23,6 +23,15 @@
 #include <pthread.h>
 #include <ctype.h>
 
+/* dirent.h is included by apostrophe.h on Linux; macOS and Windows need it
+   here for the file picker widget. */
+#if defined(__APPLE__)
+#include <dirent.h>
+#endif
+#ifdef _WIN32
+#include <dirent.h>   /* MSYS2/MinGW provides POSIX dirent */
+#endif
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * List Widget
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -307,6 +316,54 @@ int ap_color_picker(ap_color initial, ap_color *result);
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 void ap_show_help_overlay(const char *text);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * File Picker — filesystem browser for selecting files or directories
+ *
+ * Presents a scrollable directory listing built on ap_list(). The caller
+ * chooses whether files, directories, or both are selectable. Navigation
+ * into subdirectories uses A; B goes up one level (or cancels at root).
+ * An optional "New Folder" action (X button) opens ap_keyboard() inline.
+ *
+ * On device builds the browser is sandboxed to SDCARD_PATH (env) or
+ * /mnt/SDCARD. On desktop it defaults to $HOME (or $USERPROFILE on
+ * Windows, CWD as final fallback).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef enum {
+    AP_FILE_PICKER_FILES = 0,   /* Only files are selectable            */
+    AP_FILE_PICKER_DIRS  = 1,   /* Only directories are selectable      */
+    AP_FILE_PICKER_BOTH  = 2,   /* Files and directories are selectable */
+} ap_file_picker_mode;
+
+/* Options controlling file picker behavior.
+ *
+ * NOTE: Always use designated initializers or ap_file_picker_default_opts()
+ * to avoid breakage when fields are added in future releases.
+ */
+typedef struct {
+    const char           *title;           /* Screen title (NULL = show relative path from root) */
+    ap_file_picker_mode   mode;            /* What can be selected */
+    const char           *initial_path;    /* Starting directory (NULL = root_path) */
+    const char           *root_path;       /* Navigation boundary (NULL = auto-detect per platform) */
+    const char          **extensions;      /* File extension filter array, e.g. {"zip","7z"} */
+    int                   extension_count; /* Number of entries in extensions array */
+    bool                  allow_create;    /* Show NEW FOLDER action (X button) */
+    bool                  show_hidden;     /* Show files/directories starting with '.' */
+    ap_status_bar_opts   *status_bar;      /* Optional status bar */
+} ap_file_picker_opts;
+
+/* Result from closing the file picker */
+typedef struct {
+    char path[1024];      /* Full absolute path of the selected item */
+    bool is_directory;    /* True when the selected item is a directory */
+} ap_file_picker_result;
+
+/* Create default file picker options (mode = FILES, no filter, no create) */
+ap_file_picker_opts ap_file_picker_default_opts(const char *title);
+
+/* Show a blocking file picker. Returns AP_OK on selection, AP_CANCELLED on back from root. */
+int                 ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Queue Viewer — live-updating job queue display
@@ -3264,6 +3321,337 @@ void ap_show_help_overlay(const char *text) {
 
         ap_present();
 
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * FILE PICKER Implementation
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Resolve the default root path per platform */
+static const char *ap__file_picker_resolve_root(void) {
+#if AP_PLATFORM_IS_DEVICE
+    const char *sdcard = getenv("SDCARD_PATH");
+    return (sdcard && sdcard[0]) ? sdcard : "/mnt/SDCARD";
+#elif defined(_WIN32)
+    const char *home = getenv("USERPROFILE");
+    return (home && home[0]) ? home : ".";
+#else
+    const char *home = getenv("HOME");
+    return (home && home[0]) ? home : ".";
+#endif
+}
+
+/* Case-insensitive extension match */
+static bool ap__file_picker_ext_match(const char *filename,
+                                       const char **extensions, int ext_count) {
+    if (!extensions || ext_count <= 0) return true;
+    const char *dot = strrchr(filename, '.');
+    if (!dot || !dot[1]) return false;
+    dot++;
+    for (int i = 0; i < ext_count; i++) {
+        if (strcasecmp(dot, extensions[i]) == 0) return true;
+    }
+    return false;
+}
+
+/* Internal entry for sorting */
+typedef struct {
+    char *name;
+    char *full_path;
+    bool  is_dir;
+} ap__file_picker_entry;
+
+/* qsort comparator: dirs first, then case-insensitive alpha */
+static int ap__file_picker_cmp(const void *a, const void *b) {
+    const ap__file_picker_entry *ea = (const ap__file_picker_entry *)a;
+    const ap__file_picker_entry *eb = (const ap__file_picker_entry *)b;
+    if (ea->is_dir != eb->is_dir) return ea->is_dir ? -1 : 1;
+    return strcasecmp(ea->name, eb->name);
+}
+
+ap_file_picker_opts ap_file_picker_default_opts(const char *title) {
+    ap_file_picker_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.title = title;
+    opts.mode = AP_FILE_PICKER_FILES;
+    return opts;
+}
+
+int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
+    if (!opts || !result) return AP_ERROR;
+
+    /* Resolve root */
+    const char *root = opts->root_path;
+    if (!root || !root[0]) root = ap__file_picker_resolve_root();
+
+    char current_path[1024];
+    if (opts->initial_path && opts->initial_path[0])
+        snprintf(current_path, sizeof(current_path), "%s", opts->initial_path);
+    else
+        snprintf(current_path, sizeof(current_path), "%s", root);
+
+    int capacity = 512;
+    ap__file_picker_entry *entries = NULL;
+    ap_list_item *items = NULL;
+    bool *is_dir_map = NULL;
+    char **trailing_pool = NULL; /* pool for uppercase extension strings */
+
+    for (;;) {
+        /* ── Scan directory ─────────────────────────────────────────── */
+        DIR *dir = opendir(current_path);
+        if (!dir) {
+            /* Show error and go back */
+            ap_footer_item ef[] = {{ .button = AP_BTN_A, .label = "OK", .is_confirm = true }};
+            char errmsg[512];
+            snprintf(errmsg, sizeof(errmsg), "Cannot open directory:\n%s", strerror(errno));
+            ap_message_opts mopts = { .message = errmsg, .footer = ef, .footer_count = 1 };
+            ap_confirm_result cr;
+            ap_confirmation(&mopts, &cr);
+
+            /* Try to go up */
+            if (strcmp(current_path, root) == 0) return AP_ERROR;
+            char *last_sep = strrchr(current_path, '/');
+            if (last_sep && last_sep != current_path)
+                *last_sep = '\0';
+            else
+                snprintf(current_path, sizeof(current_path), "%s", root);
+            continue;
+        }
+
+        entries = (ap__file_picker_entry *)malloc(sizeof(ap__file_picker_entry) * (size_t)capacity);
+        int entry_count = 0;
+
+        struct dirent *ent;
+        while ((ent = readdir(dir)) != NULL) {
+            /* Skip . and .. */
+            if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
+                continue;
+            /* Skip hidden unless requested */
+            if (!opts->show_hidden && ent->d_name[0] == '.')
+                continue;
+
+            /* Build full path for stat */
+            char full[1024];
+            snprintf(full, sizeof(full), "%s/%s", current_path, ent->d_name);
+
+            struct stat st;
+            if (stat(full, &st) != 0) continue;
+
+            bool is_directory = S_ISDIR(st.st_mode);
+
+            /* In DIRS mode, hide files entirely */
+            if (opts->mode == AP_FILE_PICKER_DIRS && !is_directory) continue;
+
+            /* Apply extension filter to files */
+            if (!is_directory && !ap__file_picker_ext_match(ent->d_name,
+                    opts->extensions, opts->extension_count))
+                continue;
+
+            /* Grow array if needed */
+            if (entry_count >= capacity) {
+                capacity *= 2;
+                entries = (ap__file_picker_entry *)realloc(entries,
+                    sizeof(ap__file_picker_entry) * (size_t)capacity);
+            }
+
+            entries[entry_count].name = strdup(ent->d_name);
+            entries[entry_count].full_path = strdup(full);
+            entries[entry_count].is_dir = is_directory;
+            entry_count++;
+        }
+        closedir(dir);
+
+        /* Sort: dirs first, then alpha */
+        if (entry_count > 0)
+            qsort(entries, (size_t)entry_count, sizeof(ap__file_picker_entry),
+                  ap__file_picker_cmp);
+
+        /* ── Build list items ───────────────────────────────────────── */
+        int list_count = entry_count > 0 ? entry_count : 1;
+        items = (ap_list_item *)calloc((size_t)list_count, sizeof(ap_list_item));
+        is_dir_map = (bool *)calloc((size_t)list_count, sizeof(bool));
+        trailing_pool = (char **)calloc((size_t)list_count, sizeof(char *));
+        bool is_empty = (entry_count == 0);
+
+        if (is_empty) {
+            items[0] = (ap_list_item){ .label = "(empty)" };
+            is_dir_map[0] = false;
+        } else {
+            for (int i = 0; i < entry_count; i++) {
+                items[i].label = entries[i].name;
+                items[i].metadata = entries[i].full_path;
+                if (entries[i].is_dir) {
+                    items[i].trailing_text = ">";
+                } else {
+                    /* Uppercase file extension as trailing text */
+                    const char *dot = strrchr(entries[i].name, '.');
+                    if (dot && dot[1]) {
+                        dot++;
+                        size_t len = strlen(dot);
+                        char *upper = (char *)malloc(len + 1);
+                        for (size_t c = 0; c < len; c++)
+                            upper[c] = (char)toupper((unsigned char)dot[c]);
+                        upper[len] = '\0';
+                        items[i].trailing_text = upper;
+                        trailing_pool[i] = upper;
+                    }
+                }
+                is_dir_map[i] = entries[i].is_dir;
+            }
+        }
+
+        /* ── Build title ────────────────────────────────────────────── */
+        char title_buf[1024];
+        const char *title_str;
+        if (opts->title) {
+            title_str = opts->title;
+        } else {
+            /* Show relative path from root */
+            size_t root_len = strlen(root);
+            if (strncmp(current_path, root, root_len) == 0 && current_path[root_len] == '/')
+                snprintf(title_buf, sizeof(title_buf), "%s", current_path + root_len);
+            else if (strcmp(current_path, root) == 0)
+                snprintf(title_buf, sizeof(title_buf), "/");
+            else
+                snprintf(title_buf, sizeof(title_buf), "%s", current_path);
+            title_str = title_buf;
+        }
+
+        /* ── Build footer ───────────────────────────────────────────── */
+        ap_footer_item footer[4];
+        int footer_count = 0;
+
+        footer[footer_count++] = (ap_footer_item){ .button = AP_BTN_B, .label = "BACK" };
+        if (opts->allow_create)
+            footer[footer_count++] = (ap_footer_item){ .button = AP_BTN_X, .label = "NEW FOLDER" };
+
+        if (opts->mode == AP_FILE_PICKER_FILES) {
+            footer[footer_count++] = (ap_footer_item){
+                .button = AP_BTN_A, .label = "OPEN", .is_confirm = true };
+        } else if (opts->mode == AP_FILE_PICKER_DIRS) {
+            footer[footer_count++] = (ap_footer_item){ .button = AP_BTN_A, .label = "OPEN" };
+            footer[footer_count++] = (ap_footer_item){
+                .button = AP_BTN_START, .label = "SELECT", .is_confirm = true };
+        } else { /* BOTH */
+            footer[footer_count++] = (ap_footer_item){ .button = AP_BTN_A, .label = "OPEN" };
+            footer[footer_count++] = (ap_footer_item){
+                .button = AP_BTN_START, .label = "SELECT HERE", .is_confirm = true };
+        }
+
+        /* ── Show list ──────────────────────────────────────────────── */
+        ap_list_opts lopts = ap_list_default_opts(title_str, items, list_count);
+        lopts.footer = footer;
+        lopts.footer_count = footer_count;
+        lopts.status_bar = opts->status_bar;
+        if (opts->allow_create)
+            lopts.action_button = AP_BTN_X;
+        if (opts->mode == AP_FILE_PICKER_DIRS || opts->mode == AP_FILE_PICKER_BOTH)
+            lopts.confirm_button = AP_BTN_START;
+
+        ap_list_result lresult;
+        int rc = ap_list(&lopts, &lresult);
+
+        /* ── Handle result ──────────────────────────────────────────── */
+        int ret = -99; /* sentinel: keep looping */
+
+        if (rc == AP_CANCELLED) {
+            /* B pressed — go up or cancel */
+            if (strcmp(current_path, root) == 0) {
+                ret = AP_CANCELLED;
+            } else {
+                char *last_sep = strrchr(current_path, '/');
+                if (last_sep && last_sep != current_path)
+                    *last_sep = '\0';
+                else
+                    snprintf(current_path, sizeof(current_path), "%s", root);
+            }
+        } else if (rc == AP_OK) {
+            switch (lresult.action) {
+            case AP_ACTION_SELECTED: {
+                if (is_empty) break; /* "(empty)" placeholder — do nothing */
+                int idx = lresult.selected_index;
+                if (idx >= 0 && idx < entry_count) {
+                    if (is_dir_map[idx]) {
+                        /* Enter directory */
+                        snprintf(current_path, sizeof(current_path), "%s",
+                                 items[idx].metadata);
+                    } else {
+                        /* File selected (only reachable if mode allows files) */
+                        if (opts->mode == AP_FILE_PICKER_FILES ||
+                            opts->mode == AP_FILE_PICKER_BOTH) {
+                            snprintf(result->path, sizeof(result->path), "%s",
+                                     items[idx].metadata);
+                            result->is_directory = false;
+                            ret = AP_OK;
+                        }
+                    }
+                }
+                break;
+            }
+            case AP_ACTION_TRIGGERED: {
+                /* X button — new folder */
+                ap_keyboard_result kb_result;
+                int kb_ret = ap_keyboard("", "Enter folder name",
+                                          AP_KB_GENERAL, &kb_result);
+                if (kb_ret == AP_OK && kb_result.text[0] != '\0') {
+                    char new_path[1024];
+                    snprintf(new_path, sizeof(new_path), "%s/%s",
+                             current_path, kb_result.text);
+#ifdef _WIN32
+                    int mk = _mkdir(new_path);
+#else
+                    int mk = mkdir(new_path, 0755);
+#endif
+                    if (mk != 0) {
+                        ap_footer_item ef[] = {
+                            { .button = AP_BTN_A, .label = "OK", .is_confirm = true }
+                        };
+                        char errmsg[512];
+                        snprintf(errmsg, sizeof(errmsg),
+                                 "Failed to create folder:\n%s", strerror(errno));
+                        ap_message_opts mopts2 = {
+                            .message = errmsg, .footer = ef, .footer_count = 1
+                        };
+                        ap_confirm_result cr;
+                        ap_confirmation(&mopts2, &cr);
+                    }
+                }
+                /* Refresh directory listing */
+                break;
+            }
+            case AP_ACTION_CONFIRMED: {
+                /* START button — select current directory */
+                if (opts->mode == AP_FILE_PICKER_DIRS ||
+                    opts->mode == AP_FILE_PICKER_BOTH) {
+                    snprintf(result->path, sizeof(result->path), "%s", current_path);
+                    result->is_directory = true;
+                    ret = AP_OK;
+                }
+                break;
+            }
+            default:
+                break;
+            }
+        } else {
+            /* ap_list returned an error */
+            ret = AP_ERROR;
+        }
+
+        /* ── Cleanup iteration ──────────────────────────────────────── */
+        for (int i = 0; i < entry_count; i++) {
+            free(entries[i].name);
+            free(entries[i].full_path);
+        }
+        free(entries); entries = NULL;
+        for (int i = 0; i < list_count; i++) {
+            free(trailing_pool[i]);
+        }
+        free(trailing_pool); trailing_pool = NULL;
+        free(items); items = NULL;
+        free(is_dir_map); is_dir_map = NULL;
+
+        if (ret != -99) return ret;
     }
 }
 

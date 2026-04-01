@@ -5,7 +5,10 @@ All notable changes to Apostrophe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
-Nothing yet. Check back soon!
+
+### Added
+
+- **File Picker widget** (`apostrophe_widgets.h`): new `ap_file_picker` widget for browsing the filesystem and selecting files or directories. Features: configurable mode (files only, directories only, or both), sorted directory listing with folders first, visual folder/file differentiation via trailing chevron `>` and uppercase extension labels, inline "New Folder" creation via `ap_keyboard()`, extension filtering, hidden-file toggle, and platform-aware path sandboxing (`SDCARD_PATH` on device, `$HOME` on desktop). Demo entries added for all three modes.
 
 ## [v1.1.0] - 2026-03-30
 
