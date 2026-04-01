@@ -1272,7 +1272,7 @@ typedef struct {
     const char           *root_path;       /* Navigation boundary (NULL = auto-detect per platform) */
     const char          **extensions;      /* File extension filter array, e.g. {"zip","7z"} */
     int                   extension_count; /* Number of entries in extensions array */
-    bool                  allow_create;    /* Show NEW FOLDER action (X button) */
+    bool                  allow_create;    /* Show NEW DIR action (X button) in DIRS/BOTH modes */
     bool                  show_hidden;     /* Show files/directories starting with '.' */
     ap_status_bar_opts   *status_bar;      /* Optional status bar */
 } ap_file_picker_opts;
@@ -1301,7 +1301,7 @@ typedef struct {
 | L1/R1 | Jump between letter groups |
 | A | Open folder / select file |
 | B | Go up one directory (cancel at root) |
-| X | Create new folder (if `allow_create`) |
+| X | Create new folder (DIRS / BOTH modes with `allow_create`) |
 | START | Select current directory (DIRS / BOTH modes) |
 
 #### Root Path Resolution
@@ -1312,12 +1312,18 @@ typedef struct {
 | Windows | `USERPROFILE` env var, or `.` |
 | macOS / Linux | `HOME` env var, or `.` |
 
+Notes:
+- On device, `SDCARD_PATH` is always the hard ceiling even if `root_path` is provided.
+- On desktop, `root_path` overrides the default home root when provided.
+- `initial_path` is only used when it resolves to a directory inside the effective root.
+- `allow_create` is ignored in `AP_FILE_PICKER_FILES`.
+- New-folder creation only accepts a single path component; separators and `.` / `..` are rejected.
+
 #### Usage Example
 
 ```c
 ap_file_picker_opts opts = ap_file_picker_default_opts("Select ROM");
 opts.mode = AP_FILE_PICKER_FILES;
-opts.allow_create = true;
 opts.extensions = (const char *[]){"zip", "7z"};
 opts.extension_count = 2;
 

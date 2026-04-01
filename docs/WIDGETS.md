@@ -420,7 +420,7 @@ ap_show_help_overlay("Navigate with D-Pad.\nPress A to select.\nPress B to go ba
 
 ## File Picker (`ap_file_picker`)
 
-Filesystem browser for selecting files or directories. Built on `ap_list()` — inherits all list navigation (scrolling, pill animation, L1/R1 letter-skip). Folders sort first and show a trailing `>` chevron; files show their uppercase extension. Supports inline folder creation via `ap_keyboard()`.
+Filesystem browser for selecting files or directories. Built on `ap_list()` — inherits all list navigation (scrolling, pill animation, L1/R1 letter-skip). Folders sort first and show a trailing `>` chevron; files show their uppercase extension. Supports inline folder creation via `ap_keyboard()` in directory-capable modes.
 
 ```
 ┌─────────────────────────────┐
@@ -434,8 +434,8 @@ Filesystem browser for selecting files or directories. Built on `ap_list()` — 
 │    game.zip            ZIP  │ ← File (extension label)
 │    photo.png           PNG  │
 │─────────────────────────────│
-│ [B] BACK [X] NEW FOLDER    │
-│                 [A] OPEN    │ ← Footer
+│ [A] ENTER [X] NEW DIR [B] BACK │
+│                [START] HERE │ ← Footer
 └─────────────────────────────┘
 ```
 
@@ -447,16 +447,16 @@ Filesystem browser for selecting files or directories. Built on `ap_list()` — 
 **Features**:
 - Folders first, then files, both alphabetically sorted (case-insensitive)
 - Extension filter: restrict visible files to specific extensions
-- Hidden file toggle: show/hide dotfiles and dotdirs
-- Inline folder creation: X button opens keyboard, creates directory
-- Path sandboxing: on device limited to `SDCARD_PATH`, on desktop to `$HOME`
+- Hidden file option: show/hide dotfiles and dotdirs
+- Inline folder creation: X button opens keyboard, creates directory in `AP_FILE_PICKER_DIRS` / `AP_FILE_PICKER_BOTH`
+- Root enforcement: on device the picker never leaves `SDCARD_PATH`; on desktop it defaults to `$HOME` unless you pass `root_path`
+- Relative-path header when `title == NULL` (for example `SDCARD/roms`)
 - Empty directory placeholder when no entries match filters
 
 **Usage**:
 ```c
 ap_file_picker_opts opts = ap_file_picker_default_opts("Select ROM");
 opts.mode = AP_FILE_PICKER_FILES;
-opts.allow_create = true;
 opts.extensions = (const char *[]){"zip", "7z"};
 opts.extension_count = 2;
 

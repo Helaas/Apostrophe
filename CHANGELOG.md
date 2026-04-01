@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **File Picker widget** (`apostrophe_widgets.h`): new `ap_file_picker` widget for browsing the filesystem and selecting files or directories. Features: configurable mode (files only, directories only, or both), sorted directory listing with folders first, visual folder/file differentiation via trailing chevron `>` and uppercase extension labels, inline "New Folder" creation via `ap_keyboard()`, extension filtering, hidden-file toggle, and platform-aware path sandboxing (`SDCARD_PATH` on device, `$HOME` on desktop). Demo entries added for all three modes.
+- **File Picker widget** (`apostrophe_widgets.h`): new `ap_file_picker` widget for browsing the filesystem and selecting files or directories. Features: configurable mode (files only, directories only, or both), sorted directory listing with folders first, visual folder/file differentiation via trailing chevron `>` and uppercase extension labels, inline folder creation in dir-capable modes via `ap_keyboard()`, extension filtering, hidden-file option, and enforced rooted browsing (`SDCARD_PATH` on device, `$HOME` by default on desktop, or a caller-provided `root_path`). Demo entries added for all three modes.
 
 ## [v1.1.0] - 2026-03-30
 

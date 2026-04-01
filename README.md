@@ -182,7 +182,7 @@ The **combo system** adds support for chords (simultaneous button presses like L
 | Queue Viewer | `ap_queue_viewer()` | Live-updating background job queue with filter, detail, cancel/clear, and inline progress |
 | Detail Screen | `ap_detail_screen()` | Scrollable multi-section info view |
 | Color Picker | `ap_color_picker()` | 5×5 color grid selector |
-| File Picker | `ap_file_picker()` | Filesystem browser for selecting files or directories with folder creation |
+| File Picker | `ap_file_picker()` | Filesystem browser for selecting files or directories with optional folder creation in dir-capable modes |
 | Help Overlay | `ap_show_help_overlay()` | Scrollable text overlay (Menu trigger) |
 
 ## Docs

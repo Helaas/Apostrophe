@@ -2539,15 +2539,15 @@ static void demo_queue_viewer(void) {
  *  Main menu
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void demo_file_picker(void) {
-    const char *mode_labels[] = { "Select File", "Select Folder", "Select Either" };
+    const char *mode_labels[] = { "File", "Folder", "Both" };
     ap_file_picker_mode modes[] = {
         AP_FILE_PICKER_FILES, AP_FILE_PICKER_DIRS, AP_FILE_PICKER_BOTH
     };
 
     ap_list_item mode_items[] = {
-        AP_LIST_ITEM("Select File",   NULL),
-        AP_LIST_ITEM("Select Folder", NULL),
-        AP_LIST_ITEM("Select Either", NULL),
+        AP_LIST_ITEM("File",   NULL),
+        AP_LIST_ITEM("Folder", NULL),
+        AP_LIST_ITEM("Both",   NULL),
     };
 
     ap_footer_item mode_footer[] = {
@@ -2559,7 +2559,7 @@ static void demo_file_picker(void) {
     int last_vis = 0;
 
     while (1) {
-        ap_list_opts mopts = ap_list_default_opts("File Picker Mode", mode_items, 3);
+        ap_list_opts mopts = ap_list_default_opts("Picker Mode", mode_items, 3);
         mopts.footer = mode_footer;
         mopts.footer_count = 2;
         mopts.initial_index = last_idx;
@@ -2574,7 +2574,9 @@ static void demo_file_picker(void) {
 
         ap_file_picker_opts fp = ap_file_picker_default_opts(mode_labels[mresult.selected_index]);
         fp.mode = modes[mresult.selected_index];
-        fp.allow_create = true;
+        fp.allow_create = (fp.mode != AP_FILE_PICKER_FILES);
+        if (fp.mode == AP_FILE_PICKER_DIRS || fp.mode == AP_FILE_PICKER_BOTH)
+            fp.title = NULL;
 
         /* Demonstrate extension filter for file-only mode */
         const char *exts[] = { "zip", "7z", "rar", "txt", "json", "png", "jpg" };
