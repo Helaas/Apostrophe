@@ -447,11 +447,13 @@ Filesystem browser for selecting files or directories. Built on `ap_list()` — 
 **Features**:
 - Folders first, then files, both alphabetically sorted (case-insensitive)
 - Extension filter: restrict visible files to specific extensions
-- Hidden file option: show/hide dotfiles and dotdirs
+- Hidden file option: set `show_hidden = true` to include dotfiles like `.env` and dotdirs like `.config`
 - Inline folder creation: X button opens keyboard, creates directory in `AP_FILE_PICKER_DIRS` / `AP_FILE_PICKER_BOTH`
 - Root enforcement: on device the picker never leaves `SDCARD_PATH`; on desktop it defaults to `$HOME` unless you pass `root_path`
 - Relative-path header when `title == NULL` (for example `SDCARD/roms`)
 - Empty directory placeholder when no entries match filters
+
+Dotfiles still participate in the normal extension filter. For example, `.env` is treated like an `env` extension when `show_hidden` is enabled.
 
 **Usage**:
 ```c

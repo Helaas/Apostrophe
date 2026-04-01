@@ -2539,15 +2539,15 @@ static void demo_queue_viewer(void) {
  *  Main menu
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void demo_file_picker(void) {
-    const char *mode_labels[] = { "File", "Folder", "Both" };
+    const char *mode_labels[] = { "File", "Folder", "Both + Hidden" };
     ap_file_picker_mode modes[] = {
         AP_FILE_PICKER_FILES, AP_FILE_PICKER_DIRS, AP_FILE_PICKER_BOTH
     };
 
     ap_list_item mode_items[] = {
-        AP_LIST_ITEM("File",   NULL),
-        AP_LIST_ITEM("Folder", NULL),
-        AP_LIST_ITEM("Both",   NULL),
+        AP_LIST_ITEM("File",          NULL),
+        AP_LIST_ITEM("Folder",        NULL),
+        AP_LIST_ITEM("Both + Hidden", NULL),
     };
 
     ap_footer_item mode_footer[] = {
@@ -2575,6 +2575,7 @@ static void demo_file_picker(void) {
         ap_file_picker_opts fp = ap_file_picker_default_opts(mode_labels[mresult.selected_index]);
         fp.mode = modes[mresult.selected_index];
         fp.allow_create = (fp.mode != AP_FILE_PICKER_FILES);
+        fp.show_hidden = (fp.mode == AP_FILE_PICKER_BOTH);
         if (fp.mode == AP_FILE_PICKER_DIRS || fp.mode == AP_FILE_PICKER_BOTH)
             fp.title = NULL;
 

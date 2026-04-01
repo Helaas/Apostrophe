@@ -37,7 +37,7 @@ This matrix reflects Apostrophe **v1.1.0** (2026-03-30).
 | Detail screen: custom font overrides | `examples/demo/main.c` → `Detail Screen (Fonts)` |
 | Color picker | `examples/demo/main.c` → `Color Picker` |
 | Help overlay | `examples/demo/main.c` → `Help Overlay` |
-| File picker: files, dirs, both modes, extension filter, folder creation | `examples/demo/main.c` → `File Picker` |
+| File picker: files, dirs, both mode with hidden files, extension filter, folder creation | `examples/demo/main.c` → `File Picker` |
 | Download manager | `examples/download/main.c` |
 
 ## Platform Notes

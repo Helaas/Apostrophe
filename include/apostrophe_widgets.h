@@ -353,7 +353,7 @@ typedef struct {
     const char          **extensions;      /* File extension filter array, e.g. {"zip","7z"} */
     int                   extension_count; /* Number of entries in extensions array */
     bool                  allow_create;    /* Show NEW DIR action (X button) in DIRS/BOTH modes */
-    bool                  show_hidden;     /* Show files/directories starting with '.' */
+    bool                  show_hidden;     /* Show dotfiles/dotdirs (e.g. .env, .gitignore, .config) */
     ap_status_bar_opts   *status_bar;      /* Optional status bar */
 } ap_file_picker_opts;
 
@@ -3564,6 +3564,29 @@ static int ap__file_picker_cmp(const void *a, const void *b) {
     return ap__file_picker_stricmp(ea->name, eb->name);
 }
 
+static void ap__file_picker_free_entries(ap__file_picker_entry *entries, int entry_count) {
+    if (!entries) return;
+    for (int i = 0; i < entry_count; i++) {
+        free(entries[i].name);
+        free(entries[i].full_path);
+    }
+    free(entries);
+}
+
+static void ap__file_picker_free_iteration_allocs(ap_list_item *items,
+                                                  bool *is_dir_map,
+                                                  char **trailing_pool,
+                                                  int list_count) {
+    if (trailing_pool) {
+        for (int i = 0; i < list_count; i++) {
+            free(trailing_pool[i]);
+        }
+        free(trailing_pool);
+    }
+    free(items);
+    free(is_dir_map);
+}
+
 ap_file_picker_opts ap_file_picker_default_opts(const char *title) {
     ap_file_picker_opts opts;
     memset(&opts, 0, sizeof(opts));
@@ -3632,8 +3655,14 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
                               opts->mode == AP_FILE_PICKER_BOTH);
 
     for (;;) {
+        DIR *dir = NULL;
+        int entry_count = 0;
+        int list_count = 0;
+        bool is_empty = false;
+        int ret = -99; /* sentinel: keep looping */
+
         /* ── Scan directory ─────────────────────────────────────────── */
-        DIR *dir = opendir(current_path);
+        dir = opendir(current_path);
         if (!dir) {
             char errmsg[512];
             snprintf(errmsg, sizeof(errmsg), "Cannot open directory:\n%s", strerror(errno));
@@ -3648,7 +3677,10 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
         }
 
         entries = (ap__file_picker_entry *)malloc(sizeof(ap__file_picker_entry) * (size_t)capacity);
-        int entry_count = 0;
+        if (!entries) {
+            ret = AP_ERROR;
+            goto cleanup_iteration;
+        }
 
         struct dirent *ent;
         while ((ent = readdir(dir)) != NULL) {
@@ -3679,17 +3711,34 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
 
             /* Grow array if needed */
             if (entry_count >= capacity) {
-                capacity *= 2;
-                entries = (ap__file_picker_entry *)realloc(entries,
-                    sizeof(ap__file_picker_entry) * (size_t)capacity);
+                int new_capacity = capacity * 2;
+                ap__file_picker_entry *new_entries =
+                    (ap__file_picker_entry *)realloc(entries,
+                        sizeof(ap__file_picker_entry) * (size_t)new_capacity);
+                if (!new_entries) {
+                    ret = AP_ERROR;
+                    goto cleanup_iteration;
+                }
+                entries = new_entries;
+                capacity = new_capacity;
             }
 
-            entries[entry_count].name = strdup(ent->d_name);
-            entries[entry_count].full_path = strdup(full);
+            char *name = strdup(ent->d_name);
+            char *full_path = strdup(full);
+            if (!name || !full_path) {
+                free(name);
+                free(full_path);
+                ret = AP_ERROR;
+                goto cleanup_iteration;
+            }
+
+            entries[entry_count].name = name;
+            entries[entry_count].full_path = full_path;
             entries[entry_count].is_dir = is_directory;
             entry_count++;
         }
         closedir(dir);
+        dir = NULL;
 
         /* Sort: dirs first, then alpha */
         if (entry_count > 0)
@@ -3697,11 +3746,15 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
                   ap__file_picker_cmp);
 
         /* ── Build list items ───────────────────────────────────────── */
-        int list_count = entry_count > 0 ? entry_count : 1;
+        list_count = entry_count > 0 ? entry_count : 1;
         items = (ap_list_item *)calloc((size_t)list_count, sizeof(ap_list_item));
         is_dir_map = (bool *)calloc((size_t)list_count, sizeof(bool));
         trailing_pool = (char **)calloc((size_t)list_count, sizeof(char *));
-        bool is_empty = (entry_count == 0);
+        if (!items || !is_dir_map || !trailing_pool) {
+            ret = AP_ERROR;
+            goto cleanup_iteration;
+        }
+        is_empty = (entry_count == 0);
 
         if (is_empty) {
             items[0] = (ap_list_item){ .label = "(empty)" };
@@ -3719,6 +3772,10 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
                         dot++;
                         size_t len = strlen(dot);
                         char *upper = (char *)malloc(len + 1);
+                        if (!upper) {
+                            ret = AP_ERROR;
+                            goto cleanup_iteration;
+                        }
                         for (size_t c = 0; c < len; c++)
                             upper[c] = (char)toupper((unsigned char)dot[c]);
                         upper[len] = '\0';
@@ -3777,9 +3834,6 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
 
         ap_list_result lresult;
         int rc = ap_list(&lopts, &lresult);
-
-        /* ── Handle result ──────────────────────────────────────────── */
-        int ret = -99; /* sentinel: keep looping */
 
         if (rc == AP_CANCELLED) {
             /* B pressed — go up or cancel */
@@ -3882,17 +3936,17 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
         }
 
         /* ── Cleanup iteration ──────────────────────────────────────── */
-        for (int i = 0; i < entry_count; i++) {
-            free(entries[i].name);
-            free(entries[i].full_path);
+cleanup_iteration:
+        if (dir) {
+            closedir(dir);
+            dir = NULL;
         }
-        free(entries); entries = NULL;
-        for (int i = 0; i < list_count; i++) {
-            free(trailing_pool[i]);
-        }
-        free(trailing_pool); trailing_pool = NULL;
-        free(items); items = NULL;
-        free(is_dir_map); is_dir_map = NULL;
+        ap__file_picker_free_entries(entries, entry_count);
+        entries = NULL;
+        ap__file_picker_free_iteration_allocs(items, is_dir_map, trailing_pool, list_count);
+        trailing_pool = NULL;
+        items = NULL;
+        is_dir_map = NULL;
 
         if (ret != -99) return ret;
     }

@@ -1273,7 +1273,7 @@ typedef struct {
     const char          **extensions;      /* File extension filter array, e.g. {"zip","7z"} */
     int                   extension_count; /* Number of entries in extensions array */
     bool                  allow_create;    /* Show NEW DIR action (X button) in DIRS/BOTH modes */
-    bool                  show_hidden;     /* Show files/directories starting with '.' */
+    bool                  show_hidden;     /* Show dotfiles/dotdirs (e.g. .env, .gitignore, .config) */
     ap_status_bar_opts   *status_bar;      /* Optional status bar */
 } ap_file_picker_opts;
 ```
@@ -1317,7 +1317,9 @@ Notes:
 - On desktop, `root_path` overrides the default home root when provided.
 - `initial_path` is only used when it resolves to a directory inside the effective root.
 - `allow_create` is ignored in `AP_FILE_PICKER_FILES`.
+- Set `show_hidden = true` to list and select dotfiles like `.env` and dot-directories like `.config`.
 - New-folder creation only accepts a single path component; separators and `.` / `..` are rejected.
+- Dotfiles still use the normal extension-filter logic when `extensions` are configured.
 
 #### Usage Example
 
