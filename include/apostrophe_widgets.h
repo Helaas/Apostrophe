@@ -3387,8 +3387,7 @@ static void ap__file_picker_copy_text(char *dst, size_t dst_size, const char *sr
         dst[0] = '\0';
         return;
     }
-    copy_len = strlen(src);
-    if (copy_len >= dst_size) copy_len = dst_size - 1;
+    copy_len = ap__file_picker_capped_len(src, dst_size - 1);
     memcpy(dst, src, copy_len);
     dst[copy_len] = '\0';
 }
@@ -3399,19 +3398,15 @@ static void ap__file_picker_append_text(char *dst, size_t dst_size, const char *
 
     if (!dst || dst_size == 0 || !src || !src[0]) return;
 
-    dst_len = ap__file_picker_capped_len(dst, dst_size);
-    if (dst_len >= dst_size) {
-        dst[dst_size - 1] = '\0';
-        return;
-    }
+    dst_len = ap__file_picker_capped_len(dst, dst_size - 1);
+    dst[dst_len] = '\0';
 
-    copy_len = strlen(src);
-    if (copy_len > dst_size - dst_len - 1) {
-        copy_len = dst_size - dst_len - 1;
-    }
+    copy_len = ap__file_picker_capped_len(src, dst_size - dst_len - 1);
 
-    memcpy(dst + dst_len, src, copy_len);
-    dst[dst_len + copy_len] = '\0';
+    if (copy_len > 0) {
+        memcpy(dst + dst_len, src, copy_len);
+        dst[dst_len + copy_len] = '\0';
+    }
 }
 
 static bool ap__file_picker_copy_path(char *dst, size_t dst_size, const char *src) {
@@ -3719,8 +3714,10 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
             /* Try to go up */
             if (strcmp(current_path, effective_root) == 0) return AP_ERROR;
             if (!ap__file_picker_parent_path(current_path) ||
-                !ap__file_picker_is_path_inside(current_path, effective_root))
-                snprintf(current_path, sizeof(current_path), "%s", effective_root);
+                !ap__file_picker_is_path_inside(current_path, effective_root)) {
+                if (!ap__file_picker_copy_path(current_path, sizeof(current_path), effective_root))
+                    return AP_ERROR;
+            }
             continue;
         }
 
