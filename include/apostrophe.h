@@ -573,6 +573,7 @@ int            ap_draw_text_clipped(TTF_Font *font, const char *text, int x, int
 int            ap_draw_text_ellipsized(TTF_Font *font, const char *text, int x, int y, ap_color color, int max_w); /* truncate with "..." if too wide */
 int            ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align); /* returns rendered height */
 int            ap_measure_text(TTF_Font *font, const char *text);
+int            ap_measure_text_ellipsized(TTF_Font *font, const char *text, int max_w); /* measure width text would occupy when ellipsized to fit max_w */
 void           ap_draw_image(SDL_Texture *tex, int x, int y, int w, int h);
 SDL_Texture   *ap_load_image(const char *path);
 void           ap_draw_scrollbar(int x, int y, int h, int visible, int total, int offset);
@@ -2540,6 +2541,61 @@ int ap_draw_text_ellipsized(TTF_Font *font, const char *text, int x, int y, ap_c
     int result = ap_draw_text(font, buf, x, y, color);
     if (buf != stack_buf) free(buf);
     return result;
+}
+
+int ap_measure_text_ellipsized(TTF_Font *font, const char *text, int max_w) {
+    if (!font || !text || !text[0]) return 0;
+    if (max_w <= 0) return 0;
+
+    int full_w = 0;
+    TTF_SizeUTF8(font, text, &full_w, NULL);
+    if (full_w <= max_w) return full_w;
+
+    int ellipsis_w = 0;
+    TTF_SizeUTF8(font, "...", &ellipsis_w, NULL);
+    if (ellipsis_w >= max_w) return max_w;
+
+    int target_w = max_w - ellipsis_w;
+    int len = (int)strlen(text);
+    int lo = 0, hi = len, best = 0;
+
+    char stack_buf[1024];
+    int buf_size = len + 4;
+    char *buf = buf_size <= (int)sizeof(stack_buf) ? stack_buf : (char *)malloc(buf_size);
+    int result_w;
+
+    if (!buf) return max_w;
+
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        int safe = mid;
+        while (safe > 0 && (text[safe] & 0xC0) == 0x80) safe--;
+
+        memcpy(buf, text, safe);
+        buf[safe] = '\0';
+
+        int tw = 0;
+        TTF_SizeUTF8(font, buf, &tw, NULL);
+
+        if (tw <= target_w) {
+            best = safe;
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+
+    while (best > 0 && text[best - 1] == ' ') best--;
+
+    memcpy(buf, text, best);
+    buf[best]     = '.';
+    buf[best + 1] = '.';
+    buf[best + 2] = '.';
+    buf[best + 3] = '\0';
+
+    TTF_SizeUTF8(font, buf, &result_w, NULL);
+    if (buf != stack_buf) free(buf);
+    return result_w;
 }
 
 int ap_draw_text_wrapped(TTF_Font *font, const char *text, int x, int y, int max_w, ap_color color, ap_text_align align) {

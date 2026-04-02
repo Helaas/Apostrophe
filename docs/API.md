@@ -361,6 +361,10 @@ Render multi-line word-wrapped text.
 
 Measure text width without rendering.
 
+#### `int ap_measure_text_ellipsized(TTF_Font *font, const char *text, int max_w)`
+
+Measure the width the text would occupy if ellipsized to fit `max_w`, without rendering. Returns the full text width when the text already fits. Returns `0` when `max_w <= 0`. If the ellipsis itself is as wide as or wider than `max_w`, returns `max_w` to match the clipped fallback behavior used by `ap_draw_text_ellipsized()`.
+
 #### `int ap_measure_wrapped_text_height(TTF_Font *font, const char *text, int max_w)`
 
 Measure the total height in pixels that word-wrapped text would occupy at the given `max_w` constraint, without rendering. Useful for pre-calculating layout sizes.
@@ -920,6 +924,7 @@ When `confirm_button` is set to `AP_BTN_A`, A takes on a "confirm and exit" role
 - **Keyboard/Color picker items**: A opens the sub-editor; confirming inside it also exits the options list with `AP_ACTION_CONFIRMED`. Cancelling the sub-editor returns to the list.
 - **Clickable items**: Unchanged — A exits with `AP_ACTION_SELECTED`.
 When option storage is malformed (`options == NULL` or out-of-range `selected_option`), Apostrophe safely clamps/ignores the invalid value instead of dereferencing invalid memory.
+Long labels and option values are ellipsized as needed to keep the left label and right value area from overlapping on narrow screens. `AP_OPT_CLICKABLE` rows render their trailing `>` in both focused and unfocused states.
 
 **`ap_options_list_opts`** (action/scroll fields):
 ```c

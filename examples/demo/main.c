@@ -292,6 +292,21 @@ static void demo_options_list(void) {
         { .label = "Large",  .value = "large"  },
     };
 
+    /* Regression coverage for long clickable values on narrow layouts. */
+    ap_option manual_dir_opt[] = {
+        {
+            .label = "/Users/demo/Library/Application Support/Apostrophe/Manuals",
+            .value = "manual-dir",
+        },
+    };
+
+    ap_option upload_dest_opt[] = {
+        {
+            .label = "https://updates.example.invalid/api/v1/devices/trimui-smart-pro/uploads",
+            .value = "upload-destination",
+        },
+    };
+
     ap_options_item settings[] = {
         {
             .label           = "Volume",
@@ -378,6 +393,20 @@ static void demo_options_list(void) {
             .selected_option = 0,
         },
         {
+            .label           = "Manual download directory",
+            .type            = AP_OPT_CLICKABLE,
+            .options         = manual_dir_opt,
+            .option_count    = 1,
+            .selected_option = 0,
+        },
+        {
+            .label           = "Automatic Achievement Screenshot Upload Destination",
+            .type            = AP_OPT_CLICKABLE,
+            .options         = upload_dest_opt,
+            .option_count    = 1,
+            .selected_option = 0,
+        },
+        {
             .label           = "Storage",
             .type            = AP_OPT_CLICKABLE,
             .options         = NULL,
@@ -403,11 +432,13 @@ static void demo_options_list(void) {
 
     /* Named indices for clickable items — avoids fragile hard-coded numbers */
     enum {
-        IDX_NAME      = 10,
-        IDX_ACCENT    = 11,
-        IDX_STORAGE   = 12,
-        IDX_ABOUT     = 13,
-        IDX_RESET_ALL = 14,
+        IDX_NAME         = 10,
+        IDX_ACCENT       = 11,
+        IDX_MANUAL_DIR   = 12,
+        IDX_UPLOAD_DEST  = 13,
+        IDX_STORAGE      = 14,
+        IDX_ABOUT        = 15,
+        IDX_RESET_ALL    = 16,
     };
 
     /* Snapshot default selected_option values for Reset All */
@@ -446,7 +477,13 @@ static void demo_options_list(void) {
         last_visible = result.visible_start_index;
 
         if (rc == AP_OK && result.action == AP_ACTION_SELECTED) {
-            if (result.focused_index == IDX_STORAGE) {
+            if (result.focused_index == IDX_MANUAL_DIR) {
+                demo_show_message("Manual download directory clicked.");
+                continue;
+            } else if (result.focused_index == IDX_UPLOAD_DEST) {
+                demo_show_message("Achievement screenshot upload destination clicked.");
+                continue;
+            } else if (result.focused_index == IDX_STORAGE) {
                 /* "Storage" clicked */
                 demo_show_message("Storage: 2.4 GB used of 32 GB");
                 continue;
