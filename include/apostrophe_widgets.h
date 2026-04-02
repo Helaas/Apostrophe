@@ -1026,63 +1026,6 @@ static int ap__options_valid_index(ap_options_item *item) {
     return item->selected_option;
 }
 
-static int ap__measure_text_ellipsized(TTF_Font *font, const char *text, int max_w) {
-    if (!font || !text || !text[0]) return 0;
-    if (max_w <= 0) return 0;
-
-    int full_w = ap_measure_text(font, text);
-    if (full_w <= max_w) return full_w;
-
-    int ellipsis_w = ap_measure_text(font, "...");
-    if (ellipsis_w >= max_w) return max_w;
-
-    {
-        int target_w = max_w - ellipsis_w;
-        int len = (int)strlen(text);
-        int lo = 0, hi = len, best = 0;
-        char stack_buf[1024];
-        int buf_size = len + 4;
-        char *buf = buf_size <= (int)sizeof(stack_buf)
-            ? stack_buf
-            : (char *)malloc((size_t)buf_size);
-        int result_w;
-
-        if (!buf) return max_w;
-
-        while (lo <= hi) {
-            int mid = (lo + hi) / 2;
-            int safe = mid;
-
-            while (safe > 0 &&
-                   (((unsigned char)text[safe] & 0xC0u) == 0x80u)) {
-                safe--;
-            }
-
-            memcpy(buf, text, (size_t)safe);
-            buf[safe] = '\0';
-
-            if (ap_measure_text(font, buf) <= target_w) {
-                best = safe;
-                lo = mid + 1;
-            } else {
-                hi = mid - 1;
-            }
-        }
-
-        while (best > 0 && text[best - 1] == ' ') best--;
-
-        memcpy(buf, text, (size_t)best);
-        buf[best]     = '.';
-        buf[best + 1] = '.';
-        buf[best + 2] = '.';
-        buf[best + 3] = '\0';
-        result_w = ap_measure_text(font, buf);
-
-        if (buf != stack_buf) free(buf);
-        return result_w;
-    }
-}
-
 int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) {
     if (!opts || !result) return AP_ERROR;
     if (!opts->items || opts->item_count <= 0) return AP_ERROR;
@@ -1398,7 +1341,8 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                 int value_y = item_y + (pill_h - TTF_FontHeight(value_font)) / 2;
                 int content_right = margin + available_w - pill_pad;
                 int max_value_w = inner_w - max_label_w - gap_w - right_decor_w;
-                int draw_value_w = ap__measure_text_ellipsized(value_font, value, max_value_w);
+                int draw_value_w = (value_w <= max_value_w) ? value_w
+                    : ap_measure_text_ellipsized(value_font, value, max_value_w);
 
                 /* Labels and values share the same width budget in both states. */
                 ap_draw_text_ellipsized(label_font, label,
