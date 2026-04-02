@@ -361,6 +361,10 @@ Render multi-line word-wrapped text.
 
 Measure text width without rendering.
 
+#### `int ap_measure_text_ellipsized(TTF_Font *font, const char *text, int max_w)`
+
+Measure the width the text would occupy if ellipsized to fit `max_w`, without rendering. Returns the full text width when the text already fits. Returns `0` when `max_w <= 0`. If the ellipsis itself is as wide as or wider than `max_w`, returns `max_w` to match the clipped fallback behavior used by `ap_draw_text_ellipsized()`.
+
 #### `int ap_measure_wrapped_text_height(TTF_Font *font, const char *text, int max_w)`
 
 Measure the total height in pixels that word-wrapped text would occupy at the given `max_w` constraint, without rendering. Useful for pre-calculating layout sizes.
