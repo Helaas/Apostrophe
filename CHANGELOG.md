@@ -10,6 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **File Picker widget** (`apostrophe_widgets.h`): new `ap_file_picker` widget for browsing the filesystem and selecting files or directories. Features: configurable mode (files only, directories only, or both), sorted directory listing with folders first, visual folder/file differentiation via trailing chevron `>` and uppercase extension labels, inline folder creation in dir-capable modes via `ap_keyboard()`, extension filtering, hidden-file option, and enforced rooted browsing (`SDCARD_PATH` on device, `$HOME` by default on desktop, or a caller-provided `root_path`). Demo entries added for all three modes.
 
+### Changed
+
+- **Options list long-value truncation** (`apostrophe_widgets.h`, `docs/API.md`, `docs/WIDGETS.md`): `ap_options_list()` now applies the same width budgeting to focused and unfocused rows, ellipsizes long right-side values instead of letting them overlap labels, and keeps the clickable-row chevron `>` visible in both states.
+- **Options list demo regression coverage** (`examples/demo/main.c`, `docs/DEMO_COVERAGE.md`): the `Options List` demo now includes long clickable path/URL rows so 640x480 layouts exercise both long-value truncation and long label+value splitting.
+
 ## [v1.1.0] - 2026-03-30
 
 ### Added

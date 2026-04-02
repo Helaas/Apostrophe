@@ -1026,6 +1026,63 @@ static int ap__options_valid_index(ap_options_item *item) {
     return item->selected_option;
 }
 
+static int ap__measure_text_ellipsized(TTF_Font *font, const char *text, int max_w) {
+    if (!font || !text || !text[0]) return 0;
+    if (max_w <= 0) return 0;
+
+    int full_w = ap_measure_text(font, text);
+    if (full_w <= max_w) return full_w;
+
+    int ellipsis_w = ap_measure_text(font, "...");
+    if (ellipsis_w >= max_w) return max_w;
+
+    {
+        int target_w = max_w - ellipsis_w;
+        int len = (int)strlen(text);
+        int lo = 0, hi = len, best = 0;
+        char stack_buf[1024];
+        int buf_size = len + 4;
+        char *buf = buf_size <= (int)sizeof(stack_buf)
+            ? stack_buf
+            : (char *)malloc((size_t)buf_size);
+        int result_w;
+
+        if (!buf) return max_w;
+
+        while (lo <= hi) {
+            int mid = (lo + hi) / 2;
+            int safe = mid;
+
+            while (safe > 0 &&
+                   (((unsigned char)text[safe] & 0xC0u) == 0x80u)) {
+                safe--;
+            }
+
+            memcpy(buf, text, (size_t)safe);
+            buf[safe] = '\0';
+
+            if (ap_measure_text(font, buf) <= target_w) {
+                best = safe;
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
+            }
+        }
+
+        while (best > 0 && text[best - 1] == ' ') best--;
+
+        memcpy(buf, text, (size_t)best);
+        buf[best]     = '.';
+        buf[best + 1] = '.';
+        buf[best + 2] = '.';
+        buf[best + 3] = '\0';
+        result_w = ap_measure_text(font, buf);
+
+        if (buf != stack_buf) free(buf);
+        return result_w;
+    }
+}
+
 int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) {
     if (!opts || !result) return AP_ERROR;
     if (!opts->items || opts->item_count <= 0) return AP_ERROR;
@@ -1294,26 +1351,33 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
             }
 
             int value_w = ap_measure_text(value_font, value);
+            bool show_standard_arrows = is_selected &&
+                item->type == AP_OPT_STANDARD &&
+                valid_opt >= 0 &&
+                item->option_count > 1;
+            bool show_click_arrow = (item->type == AP_OPT_CLICKABLE);
+            int right_decor_w = 0;
+            if (show_standard_arrows) {
+                right_decor_w = arrow_w * 2 + AP_S(4);
+            } else if (show_click_arrow) {
+                right_decor_w = AP_S(16) + AP_S(4);
+            }
 
             /* Compute right-side reservation (value + decorations) */
-            int right_reserve;
-            if (item->type == AP_OPT_STANDARD && valid_opt >= 0 && item->option_count > 1)
-                right_reserve = value_w + arrow_w * 2 + AP_S(4);
-            else if (item->type == AP_OPT_CLICKABLE)
-                right_reserve = (value_w > 0) ? value_w + AP_S(16) + AP_S(4) : AP_S(16);
-            else
-                right_reserve = value_w;
+            int right_reserve = right_decor_w;
+            if (value_w > 0) right_reserve += value_w;
 
             /* Adaptive label width: give label as much space as the value doesn't need */
             int inner_w = available_w - pill_pad * 2;
             int min_gap = AP_DS(8);
             int label_w = ap_measure_text(label_font, label);
             int max_label_w;
+            int gap_w = right_reserve > 0 ? min_gap : 0;
 
             if (right_reserve == 0) {
                 max_label_w = inner_w;
             } else {
-                int budget = inner_w - min_gap;
+                int budget = inner_w - gap_w;
                 if (label_w + right_reserve <= budget) {
                     max_label_w = label_w;           /* both fit naturally */
                 } else {
@@ -1327,63 +1391,51 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                 }
             }
             if (max_label_w < 0) max_label_w = 0;
+            {
+                ap_color label_color = is_selected ? theme->highlighted_text : theme->text;
+                ap_color value_color = is_selected ? theme->highlighted_text : theme->hint;
+                int label_y = item_y + (pill_h - TTF_FontHeight(label_font)) / 2;
+                int value_y = item_y + (pill_h - TTF_FontHeight(value_font)) / 2;
+                int content_right = margin + available_w - pill_pad;
+                int max_value_w = inner_w - max_label_w - gap_w - right_decor_w;
+                int draw_value_w = ap__measure_text_ellipsized(value_font, value, max_value_w);
 
-            if (is_selected) {
-                /* Label on left */
+                /* Labels and values share the same width budget in both states. */
                 ap_draw_text_ellipsized(label_font, label,
                     margin + pill_pad,
-                    item_y + (pill_h - TTF_FontHeight(label_font)) / 2,
-                    theme->highlighted_text,
+                    label_y,
+                    label_color,
                     max_label_w);
 
-                /* Value on right with arrows for standard options */
-                if (item->type == AP_OPT_STANDARD && valid_opt >= 0 && item->option_count > 1) {
-                    int right_x = margin + available_w - pill_pad - value_w - arrow_w * 2;
-                    ap_draw_text(value_font, "<",
-                        right_x,
-                        item_y + (pill_h - TTF_FontHeight(value_font)) / 2,
-                        theme->highlighted_text);
-                    ap_draw_text(value_font, value,
-                        right_x + arrow_w,
-                        item_y + (pill_h - TTF_FontHeight(value_font)) / 2,
-                        theme->highlighted_text);
-                    ap_draw_text(value_font, ">",
-                        right_x + arrow_w + value_w + AP_S(4),
-                        item_y + (pill_h - TTF_FontHeight(value_font)) / 2,
-                        theme->highlighted_text);
-                } else if (item->type == AP_OPT_CLICKABLE) {
-                    int arrow_x = margin + available_w - pill_pad - AP_S(16);
-                    int vy = item_y + (pill_h - TTF_FontHeight(value_font)) / 2;
-                    if (value_w > 0) {
-                        int max_vw = inner_w - max_label_w - min_gap - AP_S(16) - AP_S(4);
-                        if (max_vw > 0) {
-                            int draw_w = value_w < max_vw ? value_w : max_vw;
-                            ap_draw_text_ellipsized(value_font, value,
-                                arrow_x - draw_w - AP_S(4), vy,
-                                theme->highlighted_text, max_vw);
-                        }
+                if (show_standard_arrows) {
+                    int right_arrow_x = content_right - arrow_w;
+                    int value_right = right_arrow_x - AP_S(4);
+                    int value_x = value_right - draw_value_w;
+
+                    ap_draw_text(value_font, "<", value_x - arrow_w, value_y, value_color);
+                    if (draw_value_w > 0) {
+                        ap_draw_text_ellipsized(value_font, value,
+                            value_x, value_y, value_color, max_value_w);
                     }
-                    ap_draw_text(value_font, ">", arrow_x, vy, theme->highlighted_text);
-                } else {
-                    int right_x = margin + available_w - pill_pad - value_w;
-                    ap_draw_text(value_font, value,
-                        right_x,
-                        item_y + (pill_h - TTF_FontHeight(value_font)) / 2,
-                        theme->highlighted_text);
-                }
-            } else {
-                /* Unselected */
-                ap_draw_text_ellipsized(label_font, label,
-                    margin + pill_pad,
-                    item_y + (pill_h - TTF_FontHeight(label_font)) / 2,
-                    theme->text,
-                    max_label_w);
+                    ap_draw_text(value_font, ">", right_arrow_x, value_y, value_color);
+                } else if (show_click_arrow) {
+                    int arrow_x = content_right - AP_S(16);
 
-                int right_x = margin + available_w - pill_pad - value_w;
-                ap_draw_text(value_font, value,
-                    right_x,
-                    item_y + (pill_h - TTF_FontHeight(value_font)) / 2,
-                    theme->hint);
+                    if (draw_value_w > 0) {
+                        ap_draw_text_ellipsized(value_font, value,
+                            arrow_x - AP_S(4) - draw_value_w,
+                            value_y,
+                            value_color,
+                            max_value_w);
+                    }
+                    ap_draw_text(value_font, ">", arrow_x, value_y, value_color);
+                } else if (draw_value_w > 0) {
+                    ap_draw_text_ellipsized(value_font, value,
+                        content_right - draw_value_w,
+                        value_y,
+                        value_color,
+                        max_value_w);
+                }
             }
         }
 

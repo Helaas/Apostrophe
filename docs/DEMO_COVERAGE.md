@@ -26,7 +26,7 @@ This matrix reflects Apostrophe **v1.1.0** (2026-03-30).
 | List: background preview, `ap_reload_background()` | `examples/demo/main.c` → `Background Preview` |
 | List: multi-select | `examples/demo/main.c` → `Multi-Select List` |
 | List: reorder | `examples/demo/main.c` → `Reorderable List` |
-| Options list: standard, keyboard, clickable, color picker, action buttons | `examples/demo/main.c` → `Options List` |
+| Options list: standard, keyboard, clickable, color picker, action buttons, long clickable-value truncation | `examples/demo/main.c` → `Options List` |
 | Keyboard: general, URL, numeric, UTF-8 / long text editing, custom URL help/shortcuts, URL number-symbol toggle, return-to-mode flow | `examples/demo/main.c` → `Keyboard` |
 | Confirmation | `examples/demo/main.c` → `Confirmation` |
 | Selection | `examples/demo/main.c` → `Selection` |

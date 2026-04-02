@@ -920,6 +920,7 @@ When `confirm_button` is set to `AP_BTN_A`, A takes on a "confirm and exit" role
 - **Keyboard/Color picker items**: A opens the sub-editor; confirming inside it also exits the options list with `AP_ACTION_CONFIRMED`. Cancelling the sub-editor returns to the list.
 - **Clickable items**: Unchanged — A exits with `AP_ACTION_SELECTED`.
 When option storage is malformed (`options == NULL` or out-of-range `selected_option`), Apostrophe safely clamps/ignores the invalid value instead of dereferencing invalid memory.
+Long labels and option values are ellipsized as needed to keep the left label and right value area from overlapping on narrow screens. `AP_OPT_CLICKABLE` rows render their trailing `>` in both focused and unfocused states.
 
 **`ap_options_list_opts`** (action/scroll fields):
 ```c
