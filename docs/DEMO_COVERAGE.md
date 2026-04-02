@@ -29,7 +29,7 @@ This matrix reflects Apostrophe **v1.1.0** (2026-03-30).
 | Options list: standard, keyboard, clickable, color picker, action buttons, long clickable-value truncation | `examples/demo/main.c` → `Options List` |
 | Keyboard: general, URL, numeric, UTF-8 / long text editing, custom URL help/shortcuts, URL number-symbol toggle, return-to-mode flow | `examples/demo/main.c` → `Keyboard` |
 | Confirmation | `examples/demo/main.c` → `Confirmation` |
-| Selection | `examples/demo/main.c` → `Selection` |
+| Selection: wrapped prompt layout | `examples/demo/main.c` → `Selection` |
 | Process message: progress, cancel, dynamic text | `examples/demo/main.c` → `Process Message`, `Advanced Process` |
 | Queue viewer: live snapshot, filter, details, cancel, clear, footer overflow | `examples/demo/main.c` → `Queue Viewer` |
 | Detail screen | `examples/demo/main.c` → `Detail Screen` |

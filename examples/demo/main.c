@@ -715,7 +715,8 @@ static void demo_selection(void) {
     };
 
     ap_selection_result result;
-    int rc = ap_selection("Choose difficulty:", opts, 3, footer, 2, &result);
+    int rc = ap_selection("Choose difficulty for this intentionally long prompt example on narrower displays:",
+                          opts, 3, footer, 2, &result);
 
     if (rc == AP_OK) {
         char msg[128];

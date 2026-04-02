@@ -2588,11 +2588,13 @@ int ap_selection(const char *message, ap_selection_option *options, int count,
         /* Message */
         int msg_y = screen_h / 3;
         if (message) {
+            int msg_h = ap_measure_wrapped_text_height(
+                msg_font, message, screen_w - AP_S(80));
             ap_draw_text_wrapped(msg_font, message,
                 AP_S(40), msg_y,
                 screen_w - AP_S(80),
                 theme->text, AP_ALIGN_CENTER);
-            msg_y += TTF_FontHeight(msg_font) + AP_S(30);
+            msg_y += msg_h + AP_S(30);
         }
 
         /* Option pills (horizontal, centered) */
