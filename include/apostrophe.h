@@ -3642,87 +3642,89 @@ int ap_get_fan_speed(void) {
 #endif
 }
 
-#define AP__WIFI_CACHE_TTL_MS 5000  /* Match NextUI's 5-second polling interval */
+#if AP_PLATFORM_IS_DEVICE
+    #define AP__WIFI_CACHE_TTL_MS 5000  /* Match NextUI's 5-second polling interval */
 
-static int ap__map_rssi_to_wifi_strength(int rssi) {
-    /* Match NextUI thresholds:
-       0   = disconnected
-       -60 = high
-       -70 = med
-       else low */
-    if (rssi == 0)    return 0;
-    if (rssi >= -60)  return 3;
-    if (rssi >= -70)  return 2;
-    return 1;
-}
-
-static int ap__read_wifi_rssi_iw(void) {
-    const int unavailable = -10000;
-    FILE *f = popen("iw dev wlan0 link 2>/dev/null", "r");
-    if (!f) return unavailable;
-
-    char line[256];
-    int rssi = unavailable;
-    bool disconnected = false;
-
-    while (fgets(line, sizeof(line), f)) {
-        int val;
-        if (sscanf(line, " signal: %d dBm", &val) == 1 ||
-            sscanf(line, "signal: %d dBm", &val) == 1) {
-            rssi = val;
-            break;
-        }
-        if (strstr(line, "Not connected") != NULL) {
-            disconnected = true;
-        }
+    static int ap__map_rssi_to_wifi_strength(int rssi) {
+        /* Match NextUI thresholds:
+           0   = disconnected
+           -60 = high
+           -70 = med
+           else low */
+        if (rssi == 0)    return 0;
+        if (rssi >= -60)  return 3;
+        if (rssi >= -70)  return 2;
+        return 1;
     }
 
-    int rc = pclose(f);
-    if (rssi != unavailable) return rssi;
-    if (disconnected) return 0;
-    if (rc == -1) return unavailable;
-    if (WIFEXITED(rc) && WEXITSTATUS(rc) != 0) return unavailable;
-    return unavailable;
-}
+    static int ap__read_wifi_rssi_iw(void) {
+        const int unavailable = -10000;
+        FILE *f = popen("iw dev wlan0 link 2>/dev/null", "r");
+        if (!f) return unavailable;
 
-static int ap__read_wifi_rssi_wpa_cli(void) {
-    const int unavailable = -10000;
-    static const char *cmds[] = {
-        "wpa_cli -p /var/run/wpa_supplicant -i wlan0 signal_poll 2>/dev/null",
-        "/usr/sbin/wpa_cli -p /var/run/wpa_supplicant -i wlan0 signal_poll 2>/dev/null",
-        "wpa_cli -p /etc/wifi/sockets -i wlan0 signal_poll 2>/dev/null",
-        "/usr/sbin/wpa_cli -p /etc/wifi/sockets -i wlan0 signal_poll 2>/dev/null",
-        "wpa_cli -i wlan0 signal_poll 2>/dev/null",
-        "/usr/sbin/wpa_cli -i wlan0 signal_poll 2>/dev/null",
-        NULL
-    };
-
-    for (int i = 0; cmds[i]; i++) {
-        FILE *f = popen(cmds[i], "r");
-        if (!f) continue;
-
-        int rssi = unavailable;
         char line[256];
+        int rssi = unavailable;
+        bool disconnected = false;
+
         while (fgets(line, sizeof(line), f)) {
             int val;
-            if (sscanf(line, "RSSI=%d", &val) == 1) {
+            if (sscanf(line, " signal: %d dBm", &val) == 1 ||
+                sscanf(line, "signal: %d dBm", &val) == 1) {
                 rssi = val;
                 break;
+            }
+            if (strstr(line, "Not connected") != NULL) {
+                disconnected = true;
             }
         }
 
         int rc = pclose(f);
         if (rssi != unavailable) return rssi;
-        if (rc == -1) continue;
-        if (WIFEXITED(rc) && WEXITSTATUS(rc) == 0) {
-            /* Command worked but did not report RSSI.
-               Treat as disconnected rather than unavailable. */
-            return 0;
-        }
+        if (disconnected) return 0;
+        if (rc == -1) return unavailable;
+        if (WIFEXITED(rc) && WEXITSTATUS(rc) != 0) return unavailable;
+        return unavailable;
     }
 
-    return unavailable;
-}
+    static int ap__read_wifi_rssi_wpa_cli(void) {
+        const int unavailable = -10000;
+        static const char *cmds[] = {
+            "wpa_cli -p /var/run/wpa_supplicant -i wlan0 signal_poll 2>/dev/null",
+            "/usr/sbin/wpa_cli -p /var/run/wpa_supplicant -i wlan0 signal_poll 2>/dev/null",
+            "wpa_cli -p /etc/wifi/sockets -i wlan0 signal_poll 2>/dev/null",
+            "/usr/sbin/wpa_cli -p /etc/wifi/sockets -i wlan0 signal_poll 2>/dev/null",
+            "wpa_cli -i wlan0 signal_poll 2>/dev/null",
+            "/usr/sbin/wpa_cli -i wlan0 signal_poll 2>/dev/null",
+            NULL
+        };
+
+        for (int i = 0; cmds[i]; i++) {
+            FILE *f = popen(cmds[i], "r");
+            if (!f) continue;
+
+            int rssi = unavailable;
+            char line[256];
+            while (fgets(line, sizeof(line), f)) {
+                int val;
+                if (sscanf(line, "RSSI=%d", &val) == 1) {
+                    rssi = val;
+                    break;
+                }
+            }
+
+            int rc = pclose(f);
+            if (rssi != unavailable) return rssi;
+            if (rc == -1) continue;
+            if (WIFEXITED(rc) && WEXITSTATUS(rc) == 0) {
+                /* Command worked but did not report RSSI.
+                   Treat as disconnected rather than unavailable. */
+                return 0;
+            }
+        }
+
+        return unavailable;
+    }
+#endif
 
 /* Returns wifi signal strength: 0=off, 1=low, 2=med, 3=high
    Uses iw first; falls back to wpa_cli signal_poll on my355 where iw may be unavailable.
