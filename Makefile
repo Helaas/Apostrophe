@@ -52,6 +52,7 @@ NEXTUI_PREVIEW_READY := $(NEXTUI_PREVIEW_CACHE)/.ready
 
 # Example names
 EXAMPLES := hello demo download combo perf
+WARN_CFLAGS := -Wall -Wextra -Wno-unused-parameter
 
 # ─── Phony targets ───────────────────────────────────────────────────────
 
@@ -84,7 +85,7 @@ endif
 mac-%:
 	@echo "════════ Building $* for macOS ════════"
 	@mkdir -p $(BUILD_DIR)/mac/$*
-	cc -std=gnu11 -O0 -g \
+	cc -std=gnu11 -O0 -g $(WARN_CFLAGS) \
 		-DPLATFORM_MAC \
 		-I$(INCLUDE_DIR) \
 		$(shell pkg-config --cflags sdl2 SDL2_ttf SDL2_image) \
@@ -206,7 +207,7 @@ linux: $(EXAMPLES:%=linux-%)
 linux-%:
 	@echo "════════ Building $* for Linux ════════"
 	@mkdir -p $(BUILD_DIR)/linux/$*
-	cc -std=gnu11 -O0 -g \
+	cc -std=gnu11 -O0 -g $(WARN_CFLAGS) \
 		-DPLATFORM_LINUX \
 		-I$(INCLUDE_DIR) \
 		$(shell pkg-config --cflags sdl2 SDL2_ttf SDL2_image) \
@@ -233,7 +234,7 @@ windows: $(EXAMPLES:%=windows-%)
 windows-%:
 	@echo "════════ Building $* for Windows ════════"
 	@mkdir -p $(BUILD_DIR)/windows/$*
-	gcc -std=gnu11 -O0 -g \
+	gcc -std=gnu11 -O0 -g $(WARN_CFLAGS) \
 		-DPLATFORM_WINDOWS \
 		-I$(INCLUDE_DIR) \
 		$(shell pkg-config --cflags sdl2 SDL2_ttf SDL2_image) \
