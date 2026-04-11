@@ -22,6 +22,7 @@ This matrix reflects Apostrophe **v1.1.0** (2026-03-30).
 |------------------|---------------|
 | List: basic select, help overlay | `examples/demo/main.c` → `Basic List` |
 | List: hidden scrollbar | `examples/demo/main.c` → `List (No Scrollbar)` |
+| List: live footer labels, idle refresh via `ap_request_frame_in()` | `examples/demo/main.c` → `Live Footer` |
 | List: images, primary/secondary/tertiary actions, footer overflow | `examples/demo/main.c` → `Image List` |
 | List: background preview, `ap_reload_background()` | `examples/demo/main.c` → `Background Preview` |
 | List: multi-select | `examples/demo/main.c` → `Multi-Select List` |
@@ -37,7 +38,7 @@ This matrix reflects Apostrophe **v1.1.0** (2026-03-30).
 | Detail screen: custom font overrides | `examples/demo/main.c` → `Detail Screen (Fonts)` |
 | Color picker | `examples/demo/main.c` → `Color Picker` |
 | Help overlay | `examples/demo/main.c` → `Help Overlay` |
-| File picker: files, dirs, both mode with hidden files, extension filter, folder creation | `examples/demo/main.c` → `File Picker` |
+| File picker: files, dirs, both mode with hidden files, extension filter, folder creation, live `A` footer hint | `examples/demo/main.c` → `File Picker` |
 | Download manager | `examples/download/main.c` |
 
 ## Platform Notes

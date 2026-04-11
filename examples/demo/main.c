@@ -129,6 +129,130 @@ static void demo_list_no_scrollbar(void) {
     }
 }
 
+typedef struct {
+    const char    *preview_path;
+    uint32_t       preview_until_ms;
+    ap_footer_item *footer;
+    int             footer_index;
+} demo_live_footer_context;
+
+static bool demo_live_footer_preview_active(demo_live_footer_context *ctx, uint32_t now) {
+    if (!ctx || !ctx->preview_path) return false;
+    if (now >= ctx->preview_until_ms) {
+        ctx->preview_path = NULL;
+        ctx->preview_until_ms = 0;
+        return false;
+    }
+    return true;
+}
+
+static const char *demo_live_footer_label(demo_live_footer_context *ctx,
+                                          const char *selected_path) {
+    uint32_t now = SDL_GetTicks();
+    bool preview_active = demo_live_footer_preview_active(ctx, now);
+
+    if (!selected_path || !selected_path[0]) return "PREVIEW";
+
+    if (preview_active) {
+        if (strcmp(ctx->preview_path, selected_path) == 0)
+            return "STOP PREVIEW";
+        return "SWITCH PREVIEW";
+    }
+
+    return "PREVIEW";
+}
+
+static void demo_live_footer_update(ap_list_opts *opts, int cursor, void *userdata) {
+    demo_live_footer_context *ctx = (demo_live_footer_context *)userdata;
+    const char *selected_path = NULL;
+    uint32_t now = SDL_GetTicks();
+
+    if (!ctx || !ctx->footer || ctx->footer_index < 0) return;
+
+    if (demo_live_footer_preview_active(ctx, now)) {
+        ap_request_frame_in(100);
+    }
+
+    if (cursor >= 0 && cursor < opts->item_count) {
+        selected_path = opts->items[cursor].metadata;
+    }
+
+    ctx->footer[ctx->footer_index].label =
+        demo_live_footer_label(ctx, selected_path);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: List (live footer labels)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void demo_live_footer(void) {
+    ap_list_item items[] = {
+        { .label = "Acoustic Demo", .metadata = "/preview/acoustic.ogg" },
+        { .label = "City Lights",   .metadata = "/preview/city-lights.ogg" },
+        { .label = "Night Drive",   .metadata = "/preview/night-drive.ogg" },
+        { .label = "Sunrise Theme", .metadata = "/preview/sunrise-theme.ogg" },
+    };
+    int count = sizeof(items) / sizeof(items[0]);
+    int last_index = 0;
+    int last_visible = 0;
+    demo_live_footer_context preview_ctx = {
+        .footer_index = 1,
+    };
+
+    for (;;) {
+        ap_footer_item footer[] = {
+            { .button = AP_BTN_B, .label = "BACK" },
+            { .button = AP_BTN_Y, .label = "PREVIEW" },
+            { .button = AP_BTN_A, .label = "SELECT", .is_confirm = true },
+        };
+
+        preview_ctx.footer = footer;
+
+        ap_list_opts opts = ap_list_default_opts("Live Footer", items, count);
+        opts.footer = footer;
+        opts.footer_count = 3;
+        opts.secondary_action_button = AP_BTN_Y;
+        opts.initial_index = last_index;
+        opts.visible_start_index = last_visible;
+        opts.help_text = "Press Y to simulate a preview.\n"
+                         "The Y footer label updates while you move between rows.\n"
+                         "Preview also expires on its own after a short delay.";
+        opts.footer_update = demo_live_footer_update;
+        opts.footer_update_userdata = &preview_ctx;
+
+        ap_list_result result;
+        int rc = ap_list(&opts, &result);
+
+        if (result.selected_index >= 0)
+            last_index = result.selected_index;
+        last_visible = result.visible_start_index;
+
+        if (rc == AP_CANCELLED) break;
+        if (rc != AP_OK || result.selected_index < 0) continue;
+
+        if (result.action == AP_ACTION_SECONDARY_TRIGGERED) {
+            const char *selected_path = items[result.selected_index].metadata;
+            uint32_t now = SDL_GetTicks();
+
+            if (demo_live_footer_preview_active(&preview_ctx, now) &&
+                strcmp(preview_ctx.preview_path, selected_path) == 0) {
+                preview_ctx.preview_path = NULL;
+                preview_ctx.preview_until_ms = 0;
+            } else {
+                preview_ctx.preview_path = selected_path;
+                preview_ctx.preview_until_ms = now + 1500;
+            }
+            continue;
+        }
+
+        if (result.action == AP_ACTION_SELECTED) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Selected: %s", items[result.selected_index].label);
+            demo_show_message(msg);
+            break;
+        }
+    }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Demo: Multi-select list
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -2644,6 +2768,7 @@ static const struct {
 } demos[] = {
     { "Basic List",          demo_list                },
     { "List (No Scrollbar)", demo_list_no_scrollbar   },
+    { "Live Footer",         demo_live_footer         },
     { "List Navigation",     demo_list_navigation     },
     { "Image List",          demo_image_list          },
     { "Multi-Select List",   demo_multi_select        },

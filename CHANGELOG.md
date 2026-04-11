@@ -9,9 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **File Picker widget** (`apostrophe_widgets.h`): new `ap_file_picker` widget for browsing the filesystem and selecting files or directories. Features: configurable mode (files only, directories only, or both), sorted directory listing with folders first, visual folder/file differentiation via trailing chevron `>` and uppercase extension labels, inline folder creation in dir-capable modes via `ap_keyboard()`, extension filtering, hidden-file option, and enforced rooted browsing (`SDCARD_PATH` on device, `$HOME` by default on desktop, or a caller-provided `root_path`). Demo entries added for all three modes.
+- **Live footer demo** (`examples/demo/main.c`, `docs/DEMO_COVERAGE.md`): added a `Live Footer` list demo that simulates preview state, updates the `Y` footer label while the cursor moves, and uses `ap_request_frame_in(100)` so the label reverts automatically when preview expires.
 
 ### Changed
 
+- **List live footer callback** (`apostrophe_widgets.h`, `docs/API.md`, `docs/WIDGETS.md`): `ap_list_opts` now includes an optional `footer_update` callback plus userdata. The callback runs after cursor/scroll settle and before footer draw so callers can update existing footer labels or `button_text` in place.
+- **File picker mixed-mode footer label** (`apostrophe_widgets.h`, `docs/API.md`, `docs/WIDGETS.md`, `docs/DEMO_COVERAGE.md`): `ap_file_picker()` now uses the live footer hook in `AP_FILE_PICKER_BOTH`, switching the `A` hint between `ENTER` for directories and `OPEN` for files as focus moves.
 - **Options list long-value truncation** (`apostrophe_widgets.h`, `docs/API.md`, `docs/WIDGETS.md`): `ap_options_list()` now applies the same width budgeting to focused and unfocused rows, ellipsizes long right-side values instead of letting them overlap labels, and keeps the clickable-row chevron `>` visible in both states.
 - **Options list demo regression coverage** (`examples/demo/main.c`, `docs/DEMO_COVERAGE.md`): the `Options List` demo now includes long clickable path/URL rows so 640x480 layouts exercise both long-value truncation and long label+value splitting.
 - **Selection wrapped-message layout** (`apostrophe_widgets.h`, `examples/demo/main.c`, `docs/DEMO_COVERAGE.md`): `ap_selection()` now places its option pills below the full wrapped message height instead of assuming a single text line, preventing overlap on narrow layouts and adding demo coverage for the wrapped-prompt case.

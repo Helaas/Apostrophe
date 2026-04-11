@@ -37,6 +37,7 @@ A scrollable list of items with cursor navigation.
 - Reorder: Toggle reorder mode with a button, then D-Pad to move items
 - Images: Optional thumbnail column on the left
 - Optional hidden scrollbar: keep scrolling behavior without drawing the scrollbar
+- Live footer labels: update existing footer text from a callback while the list is open
 - Background preview: Per-item fullscreen background image shown when the item is focused
 - Trailing hint: Optional right-aligned text for item status/type
 - Text scroll: Long labels auto-scroll horizontally
@@ -64,6 +65,30 @@ ap_list_opts opts = ap_list_default_opts("Title", items, count);
 opts.hide_scrollbar = true;
 ```
 
+To update a footer label from the focused row:
+
+```c
+static void update_footer(ap_list_opts *opts, int cursor, void *userdata) {
+    ap_footer_item *footer = userdata;
+
+    (void)opts;
+    footer[1].label = (cursor == 0) ? "STOP PREVIEW" : "PREVIEW";
+}
+
+ap_footer_item footer[] = {
+    { .button = AP_BTN_B, .label = "BACK" },
+    { .button = AP_BTN_Y, .label = "PREVIEW" },
+};
+
+ap_list_opts opts = ap_list_default_opts("Title", items, count);
+opts.footer = footer;
+opts.footer_count = 2;
+opts.footer_update = update_footer;
+opts.footer_update_userdata = footer;
+```
+
+If the label depends on external state rather than cursor changes alone, call `ap_request_frame_in(ms)` or `ap_request_frame()` inside the callback so the list redraws while idle.
+
 > **Note:** Always use designated initializers (e.g. `{ .label = "Foo" }`) or the
 > `AP_LIST_ITEM` / `AP_LIST_ITEM_BG` convenience macros when creating `ap_list_item`
 > values. New fields may be added in future releases; positional initializers
@@ -73,6 +98,8 @@ opts.hide_scrollbar = true;
 `metadata` stays hidden and is useful for paths, IDs, or other internal payloads. `trailing_text` is the visible right-aligned hint. Trailing hints use the item font and are omitted for a row if showing them would leave less than `AP_S(96)` for the label.
 
 **Font override**: Set `item_font` in `ap_list_opts` to override the list item text font (default: `AP_FONT_LARGE`). Pass `NULL` (zero-init default) to keep the widget default.
+
+**Live footer contract**: `footer_update` runs after the focused row and scroll position settle, but before the footer is drawn. Use it to update existing footer labels or `button_text` in place. Keep it cheap, and do not change `item_count`, `footer_count`, or swap out the items/footer arrays while the widget is running.
 
 **Navigation shortcuts**:
 
@@ -450,6 +477,7 @@ Filesystem browser for selecting files or directories. Built on `ap_list()` — 
 - Extension filter: restrict visible files to specific extensions
 - Hidden file option: set `show_hidden = true` to include dotfiles like `.env` and dotdirs like `.config`
 - Inline folder creation: X button opens keyboard, creates directory in `AP_FILE_PICKER_DIRS` / `AP_FILE_PICKER_BOTH`
+- In `AP_FILE_PICKER_BOTH`, the `A` footer hint follows the focused row: `ENTER` for directories, `OPEN` for files
 - Root enforcement: on device the picker never leaves `SDCARD_PATH`; on desktop it defaults to `$HOME` unless you pass `root_path`
 - Relative-path header when `title == NULL` (for example `SDCARD/roms`)
 - Empty directory placeholder when no entries match filters

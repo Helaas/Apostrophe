@@ -337,6 +337,14 @@ Clear the screen to the theme background color (or render bg image if configured
 
 Present the rendered frame. Call after all drawing for the frame. When the renderer does not have vsync (e.g. software fallback), this function automatically throttles to ~60 fps via `SDL_Delay` to prevent CPU hot-spinning.
 
+#### `void ap_request_frame(void)`
+
+Request another frame immediately. Use this for active animations or callbacks that need the next frame to render without waiting for input.
+
+#### `void ap_request_frame_in(uint32_t ms)`
+
+Schedule a redraw in the future while the UI is otherwise idle. This is useful for widgets that need periodic refresh without adding their own polling loop. For example, an `ap_list()` footer callback can call `ap_request_frame_in(100)` to keep a live footer label in sync with external state.
+
 #### `void ap_draw_background(void)`
 
 Draw the background image/color (called automatically by `ap_clear_screen`).
@@ -846,6 +854,7 @@ Scrollable list with:
 - Reorder mode (toggle reorder button + D-Pad)
 - Image thumbnails
 - Optional hidden scrollbar (`hide_scrollbar`)
+- Optional live footer updates (`footer_update`)
 - Text overflow scrolling
 - Help overlay (Menu)
 - Explicit action bindings (`action_button`, `secondary_action_button`, `confirm_button`, `tertiary_action_button`)
@@ -868,7 +877,10 @@ Use `metadata` for hidden payloads such as paths or IDs. Use `trailing_text` for
 
 **`ap_list_opts`** (action-related fields):
 ```c
-typedef struct {
+typedef struct ap_list_opts ap_list_opts;
+typedef void (*ap_list_footer_update_fn)(ap_list_opts *opts, int cursor, void *userdata);
+
+struct ap_list_opts {
     ...
     ap_button reorder_button;
     ap_button action_button;
@@ -879,12 +891,16 @@ typedef struct {
     int       initial_index;
     int       visible_start_index;
     TTF_Font *item_font;           // Override list item text (default: AP_FONT_LARGE)
-} ap_list_opts;
+    ap_list_footer_update_fn footer_update; // Optional live footer updater
+    void     *footer_update_userdata;
+};
 ```
 
 `item_font` overrides the font used to render list item labels and trailing hints. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)`. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
 
 `hide_scrollbar` suppresses the scrollbar gutter and thumb without changing list navigation, cursor behavior, or visible-item paging.
+
+`footer_update` runs once per list loop after cursor and scroll position are finalized, but before the footer is drawn. It may inspect `opts->items[cursor]` and update existing footer text such as `label` or `button_text`. Keep the callback cheap and avoid mutating layout-driving state such as `item_count`, `footer_count`, or replacing the footer/items arrays while the list is open. If the footer needs to refresh without input, call `ap_request_frame_in(ms)` or `ap_request_frame()` from inside the callback.
 
 When `trailing_text` is set, `ap_list()` renders it right-aligned using `theme->hint`. The hint is skipped for that row if reserving space for it would leave less than `AP_S(96)` for the main label.
 
@@ -1304,7 +1320,7 @@ typedef struct {
 | D-Pad Up/Down | Navigate items |
 | D-Pad Left/Right | Page up/down |
 | L1/R1 | Jump between letter groups |
-| A | Open folder / select file |
+| A | Enter folder / select file |
 | B | Go up one directory (cancel at root) |
 | X | Create new folder (DIRS / BOTH modes with `allow_create`) |
 | START | Select current directory (DIRS / BOTH modes) |
@@ -1322,6 +1338,7 @@ Notes:
 - On desktop, `root_path` overrides the default home root when provided.
 - `initial_path` is only used when it resolves to a directory inside the effective root.
 - `allow_create` is ignored in `AP_FILE_PICKER_FILES`.
+- In `AP_FILE_PICKER_BOTH`, the `A` footer hint updates live: `ENTER` on directories, `OPEN` on files.
 - Set `show_hidden = true` to list and select dotfiles like `.env` and dot-directories like `.config`.
 - New-folder creation only accepts a single path component; separators and `.` / `..` are rejected.
 - Dotfiles still use the normal extension-filter logic when `extensions` are configured.
