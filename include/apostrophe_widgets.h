@@ -73,8 +73,11 @@ typedef struct {
 #define AP_LIST_ITEM_BG(lbl, meta, bg) \
     { .label = (lbl), .metadata = (meta), .background_image = (bg) }
 
+typedef struct ap_list_opts ap_list_opts;
+typedef void (*ap_list_footer_update_fn)(ap_list_opts *opts, int cursor, void *userdata);
+
 /* Options controlling list behavior */
-typedef struct {
+struct ap_list_opts {
     const char      *title;
     ap_list_item    *items;
     int              item_count;
@@ -94,7 +97,9 @@ typedef struct {
     int              initial_index;    /* Starting cursor position */
     int              visible_start_index; /* Initial scroll top index */
     TTF_Font        *item_font;          /* Override list item text (default: AP_FONT_LARGE) */
-} ap_list_opts;
+    ap_list_footer_update_fn footer_update; /* Optional live footer updater */
+    void            *footer_update_userdata;
+};
 
 /* Result from closing a list */
 typedef struct {
@@ -514,6 +519,8 @@ ap_list_opts ap_list_default_opts(const char *title, ap_list_item *items, int co
     opts.input_delay = 0;
     opts.initial_index = 0;
     opts.visible_start_index = 0;
+    opts.footer_update = NULL;
+    opts.footer_update_userdata = NULL;
     return opts;
 }
 
@@ -787,6 +794,10 @@ int ap_list(ap_list_opts *opts, ap_list_result *result) {
         if (cursor >= scroll_top + max_visible)
             scroll_top = cursor - max_visible + 1;
         if (scroll_top < 0) scroll_top = 0;
+
+        if (opts->footer_update) {
+            opts->footer_update(opts, cursor, opts->footer_update_userdata);
+        }
 
         /* Compute target pill geometry for current cursor */
         int pill_target_y = content_y + (cursor - scroll_top) * (pill_h + item_gap);
@@ -3632,6 +3643,27 @@ ap_file_picker_opts ap_file_picker_default_opts(const char *title) {
     return opts;
 }
 
+typedef struct {
+    ap_footer_item *footer;
+    int             footer_index;
+    bool           *is_dir_map;
+    int             entry_count;
+} ap__file_picker_footer_context;
+
+static void ap__file_picker_footer_update(ap_list_opts *opts, int cursor, void *userdata) {
+    ap__file_picker_footer_context *ctx = (ap__file_picker_footer_context *)userdata;
+
+    (void)opts;
+
+    if (!ctx || !ctx->footer || ctx->footer_index < 0) return;
+
+    if (cursor >= 0 && cursor < ctx->entry_count && ctx->is_dir_map[cursor]) {
+        ctx->footer[ctx->footer_index].label = "ENTER";
+    } else {
+        ctx->footer[ctx->footer_index].label = "OPEN";
+    }
+}
+
 int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
     if (!opts || !result) return AP_ERROR;
 
@@ -3867,6 +3899,7 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
 
         /* ── Show list ──────────────────────────────────────────────── */
         ap_list_opts lopts = ap_list_default_opts(title_str, items, list_count);
+        ap__file_picker_footer_context footer_ctx = {0};
         lopts.footer = footer;
         lopts.footer_count = footer_count;
         lopts.status_bar = opts->status_bar;
@@ -3874,6 +3907,16 @@ int ap_file_picker(ap_file_picker_opts *opts, ap_file_picker_result *result) {
             lopts.action_button = AP_BTN_X;
         if (opts->mode == AP_FILE_PICKER_DIRS || opts->mode == AP_FILE_PICKER_BOTH)
             lopts.confirm_button = AP_BTN_START;
+        if (opts->mode == AP_FILE_PICKER_BOTH) {
+            footer_ctx = (ap__file_picker_footer_context){
+                .footer = footer,
+                .footer_index = 0,
+                .is_dir_map = is_dir_map,
+                .entry_count = entry_count,
+            };
+            lopts.footer_update = ap__file_picker_footer_update;
+            lopts.footer_update_userdata = &footer_ctx;
+        }
 
         ap_list_result lresult;
         int rc = ap_list(&lopts, &lresult);
