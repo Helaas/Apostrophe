@@ -106,6 +106,11 @@ ap_options_list(&opts, &result);
 
 **Key differences**: In Gabagool, options are just strings. In Apostrophe, each option has a `.label` (displayed) and `.value` (returned).
 If you want Gabagool-style "A saves settings, Left/Right changes values" behavior, set `.confirm_button = AP_BTN_A` and rely on Left/Right for `AP_OPT_STANDARD` changes. For `AP_OPT_KEYBOARD` and `AP_OPT_COLOR_PICKER` items, A still opens the sub-editor first, but confirming inside the sub-editor will also confirm and exit the options list. Cancelling the sub-editor returns to the list without confirming.
+If your caller needs every successful standard-option change to return immediately, set `.return_on_option_change = true`. Apostrophe will update `selected_option`, then return with `result.action == AP_ACTION_OPTION_CHANGED`, leaving `AP_ACTION_TRIGGERED` reserved for `action_button`.
+
+## Detail / Info Screen
+
+If your port expects a secondary detail action, `ap_detail_screen()` returns `AP_DETAIL_ACTION` on A, `AP_DETAIL_SECONDARY_ACTION` on Y, and `AP_DETAIL_BACK` on B. Add a matching Y footer hint if you want that secondary action to be visible in the UI.
 
 ## Keyboard
 

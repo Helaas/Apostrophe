@@ -108,6 +108,7 @@ AP_ACTION_TRIGGERED
 AP_ACTION_SECONDARY_TRIGGERED
 AP_ACTION_CONFIRMED
 AP_ACTION_TERTIARY_TRIGGERED
+AP_ACTION_OPTION_CHANGED   // Options list standard value changed
 AP_ACTION_CUSTOM    // Alias of AP_ACTION_TRIGGERED (backward compatibility)
 ```
 
@@ -935,6 +936,7 @@ Settings-style list where each row has a label and a configurable value area:
 | `AP_OPT_COLOR_PICKER` | A opens the color picker; if `confirm_button == AP_BTN_A`, picking a color also confirms the list |
 
 Action buttons are explicit in `ap_options_list_opts` (`action_button`, `secondary_action_button`, `confirm_button`), and footer hints remain visual-only.
+When `return_on_option_change` is enabled, a successful Left/Right cycle on a standard item exits immediately with `AP_ACTION_OPTION_CHANGED` after updating `selected_option`. If `confirm_button != AP_BTN_A`, pressing A on a standard item also cycles forward and returns `AP_ACTION_OPTION_CHANGED`. This keeps option-change exits distinct from `action_button`, which still reports `AP_ACTION_TRIGGERED`.
 When `confirm_button` is set to `AP_BTN_A`, A takes on a "confirm and exit" role across all item types:
 - **Standard items**: A confirms immediately (use Left/Right to change values).
 - **Keyboard/Color picker items**: A opens the sub-editor; confirming inside it also exits the options list with `AP_ACTION_CONFIRMED`. Cancelling the sub-editor returns to the list.
@@ -951,12 +953,13 @@ typedef struct {
     ap_button action_button;
     ap_button secondary_action_button;
     ap_button confirm_button;
+    bool      return_on_option_change;
     TTF_Font *label_font;          // Override option label text (default: AP_FONT_LARGE)
     TTF_Font *value_font;          // Override option value text (default: AP_FONT_TINY)
 } ap_options_list_opts;
 ```
 
-`label_font` overrides the font used for option labels; `value_font` overrides the font used for option values. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)` and `ap_get_font(AP_FONT_TINY)` respectively. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
+`return_on_option_change` makes standard-option changes return immediately with `AP_ACTION_OPTION_CHANGED` after the value updates. Leave it as `false` (the zero-init default) to keep the existing in-place behavior. `label_font` overrides the font used for option labels; `value_font` overrides the font used for option values. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)` and `ap_get_font(AP_FONT_TINY)` respectively. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
 
 **`ap_options_list_result`**:
 ```c
@@ -967,6 +970,8 @@ typedef struct {
     int            visible_start_index;
 } ap_options_list_result;
 ```
+
+`action` may be `AP_ACTION_OPTION_CHANGED` when `return_on_option_change` is enabled, `AP_ACTION_TRIGGERED` for `action_button`, `AP_ACTION_SECONDARY_TRIGGERED` for `secondary_action_button`, `AP_ACTION_SELECTED` for clickable rows, `AP_ACTION_CONFIRMED` for confirm exits, or `AP_ACTION_BACK`.
 
 ### Keyboard
 
@@ -1077,9 +1082,12 @@ Scrollable multi-section view for displaying information. Supports:
 ```c
 typedef enum {
     AP_DETAIL_BACK = 0,   // User pressed back
-    AP_DETAIL_ACTION      // User pressed the action button
+    AP_DETAIL_ACTION,     // User pressed the primary action button (A)
+    AP_DETAIL_SECONDARY_ACTION // User pressed the secondary action button (Y)
 } ap_detail_action;
 ```
+
+`ap_detail_screen()` exits with `AP_DETAIL_BACK` on B, `AP_DETAIL_ACTION` on A, and `AP_DETAIL_SECONDARY_ACTION` on Y. If you want the Y action to be visible to users, add a matching Y footer hint.
 
 **`ap_detail_opts`** (styling fields):
 ```c
