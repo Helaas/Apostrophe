@@ -154,7 +154,7 @@ typedef struct {
     ap_button          confirm_button;  /* Button that confirms/exits (e.g. START) */
     const char        *help_text;
     uint32_t           input_delay;
-    int                return_on_option_change; /* Return AP_ACTION_OPTION_CHANGED after cycling a standard option */
+    bool               return_on_option_change; /* Return AP_ACTION_OPTION_CHANGED after cycling a standard option */
     TTF_Font          *label_font;       /* Override option label text (default: AP_FONT_LARGE) */
     TTF_Font          *value_font;       /* Override option value text (default: AP_FONT_TINY) */
 } ap_options_list_opts;
@@ -1039,6 +1039,13 @@ static int ap__options_valid_index(ap_options_item *item) {
     return item->selected_option;
 }
 
+static inline void ap__options_finish_changed(ap_options_list_result *result,
+                                              int cursor, bool *running) {
+    result->focused_index = cursor;
+    result->action = AP_ACTION_OPTION_CHANGED;
+    *running = false;
+}
+
 int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) {
     if (!opts || !result) return AP_ERROR;
     if (!opts->items || opts->item_count <= 0) return AP_ERROR;
@@ -1123,9 +1130,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                         if (sel < 0) sel = item->option_count - 1;
                         item->selected_option = sel;
                         if (opts->return_on_option_change) {
-                            result->focused_index = cursor;
-                            result->action = AP_ACTION_OPTION_CHANGED;
-                            running = false;
+                            ap__options_finish_changed(result, cursor, &running);
                         }
                     }
                     break;
@@ -1139,9 +1144,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                         if (sel >= item->option_count) sel = 0;
                         item->selected_option = sel;
                         if (opts->return_on_option_change) {
-                            result->focused_index = cursor;
-                            result->action = AP_ACTION_OPTION_CHANGED;
-                            running = false;
+                            ap__options_finish_changed(result, cursor, &running);
                         }
                     }
                     break;
@@ -1216,9 +1219,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                             if (sel >= item->option_count) sel = 0;
                             item->selected_option = sel;
                             if (opts->return_on_option_change) {
-                                result->focused_index = cursor;
-                                result->action = AP_ACTION_OPTION_CHANGED;
-                                running = false;
+                                ap__options_finish_changed(result, cursor, &running);
                             }
                         }
                     }

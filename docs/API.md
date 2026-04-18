@@ -953,13 +953,13 @@ typedef struct {
     ap_button action_button;
     ap_button secondary_action_button;
     ap_button confirm_button;
-    int       return_on_option_change;
+    bool      return_on_option_change;
     TTF_Font *label_font;          // Override option label text (default: AP_FONT_LARGE)
     TTF_Font *value_font;          // Override option value text (default: AP_FONT_TINY)
 } ap_options_list_opts;
 ```
 
-`return_on_option_change` makes standard-option changes return immediately with `AP_ACTION_OPTION_CHANGED` after the value updates. `label_font` overrides the font used for option labels; `value_font` overrides the font used for option values. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)` and `ap_get_font(AP_FONT_TINY)` respectively. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
+`return_on_option_change` makes standard-option changes return immediately with `AP_ACTION_OPTION_CHANGED` after the value updates. Leave it as `false` (the zero-init default) to keep the existing in-place behavior. `label_font` overrides the font used for option labels; `value_font` overrides the font used for option values. When `NULL` (zero-init default), the widget uses `ap_get_font(AP_FONT_LARGE)` and `ap_get_font(AP_FONT_TINY)` respectively. Pass a font obtained from `ap_get_font()` or a custom-loaded `TTF_Font` to override.
 
 **`ap_options_list_result`**:
 ```c

@@ -736,7 +736,7 @@ static void demo_options_list_immediate_return(void) {
         .footer                  = footer,
         .footer_count            = 4,
         .action_button           = AP_BTN_X,
-        .return_on_option_change = 1,
+        .return_on_option_change = true,
         .help_text               = "Left/Right or A change the focused standard option.\n"
                                    "Each successful change returns immediately with "
                                    "AP_ACTION_OPTION_CHANGED.\n"

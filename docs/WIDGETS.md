@@ -141,7 +141,7 @@ Settings-style list with per-row option values.
 
 Footer hints are visual-only; configure behavior with `action_button`, `secondary_action_button`, and `confirm_button`.
 Use `ap_footer_item.button_text` when you want custom footer pill text such as `←/→` for a shared "Change" hint.
-Set `return_on_option_change = 1` when you want each standard-option change to return immediately with `AP_ACTION_OPTION_CHANGED`. This stays distinct from `action_button`, which still reports `AP_ACTION_TRIGGERED`.
+Set `return_on_option_change = true` when you want each standard-option change to return immediately with `AP_ACTION_OPTION_CHANGED`. This stays distinct from `action_button`, which still reports `AP_ACTION_TRIGGERED`.
 If an item has invalid option storage (`options == NULL` or an out-of-range `selected_option`), the widget clamps/ignores it safely.
 Long labels and long right-side values are ellipsized to avoid overlap on narrow layouts. `AP_OPT_CLICKABLE` rows always reserve and render the trailing `>` indicator, even when the row is not focused.
 
