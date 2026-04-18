@@ -154,7 +154,7 @@ typedef struct {
     ap_button          confirm_button;  /* Button that confirms/exits (e.g. START) */
     const char        *help_text;
     uint32_t           input_delay;
-    int                return_on_option_change; /* Return after cycling a standard option */
+    int                return_on_option_change; /* Return AP_ACTION_OPTION_CHANGED after cycling a standard option */
     TTF_Font          *label_font;       /* Override option label text (default: AP_FONT_LARGE) */
     TTF_Font          *value_font;       /* Override option value text (default: AP_FONT_TINY) */
 } ap_options_list_opts;
@@ -1124,7 +1124,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                         item->selected_option = sel;
                         if (opts->return_on_option_change) {
                             result->focused_index = cursor;
-                            result->action = AP_ACTION_TRIGGERED;
+                            result->action = AP_ACTION_OPTION_CHANGED;
                             running = false;
                         }
                     }
@@ -1140,7 +1140,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                         item->selected_option = sel;
                         if (opts->return_on_option_change) {
                             result->focused_index = cursor;
-                            result->action = AP_ACTION_TRIGGERED;
+                            result->action = AP_ACTION_OPTION_CHANGED;
                             running = false;
                         }
                     }
@@ -1217,7 +1217,7 @@ int ap_options_list(ap_options_list_opts *opts, ap_options_list_result *result) 
                             item->selected_option = sel;
                             if (opts->return_on_option_change) {
                                 result->focused_index = cursor;
-                                result->action = AP_ACTION_TRIGGERED;
+                                result->action = AP_ACTION_OPTION_CHANGED;
                                 running = false;
                             }
                         }

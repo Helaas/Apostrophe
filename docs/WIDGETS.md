@@ -141,6 +141,7 @@ Settings-style list with per-row option values.
 
 Footer hints are visual-only; configure behavior with `action_button`, `secondary_action_button`, and `confirm_button`.
 Use `ap_footer_item.button_text` when you want custom footer pill text such as `←/→` for a shared "Change" hint.
+Set `return_on_option_change = 1` when you want each standard-option change to return immediately with `AP_ACTION_OPTION_CHANGED`. This stays distinct from `action_button`, which still reports `AP_ACTION_TRIGGERED`.
 If an item has invalid option storage (`options == NULL` or an out-of-range `selected_option`), the widget clamps/ignores it safely.
 Long labels and long right-side values are ellipsized to avoid overlap on narrow layouts. `AP_OPT_CLICKABLE` rows always reserve and render the trailing `>` indicator, even when the row is not focused.
 
@@ -376,6 +377,8 @@ Image sections are loaded once per detail-screen session and reused every frame 
 | `section_title_font = ap_get_font(tier)` | Override section header font (default: `AP_FONT_SMALL`) |
 | `key_font = ap_get_font(tier)` | Override info-pair key text font (default: `AP_FONT_TINY`) |
 
+`ap_detail_screen()` exits with `AP_DETAIL_BACK` on B, `AP_DETAIL_ACTION` on A, and `AP_DETAIL_SECONDARY_ACTION` on Y. Add a Y footer hint when you want the secondary action to be discoverable.
+
 ```c
 ap_color key_col = ap_get_theme()->text;
 ap_detail_opts opts = {
@@ -383,7 +386,7 @@ ap_detail_opts opts = {
     .sections               = sections,
     .section_count          = 2,
     .footer                 = footer,
-    .footer_count           = 2,
+    .footer_count           = 3,
     .center_title           = true,
     .show_section_separator = true,
     .key_color              = &key_col,

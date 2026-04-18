@@ -33,9 +33,11 @@ This document tracks Apostrophe **v1.1.0** parity against Gabagool `v2.9.6`.
 | `ListAction*` outcomes | `ap_list_action` expanded | Implemented |
 | `OptionsList` (`ConfirmButton`) | `ap_options_list` (`confirm_button`) | Implemented |
 | `OptionsList` (`ActionButton`, `SecondaryActionButton`, index restoration) | Added in this cycle | Implemented |
+| `OptionsList` immediate return on standard-option change | `ap_options_list` (`return_on_option_change`, `AP_ACTION_OPTION_CHANGED`) | Implemented |
 | `Keyboard` | `ap_keyboard` | Implemented |
 | `ProcessMessage` (progress, interrupt, dynamic message, message lines) | `ap_process_message` | Implemented (behavior differs) |
 | `ConfirmationMessage` | `ap_confirmation` | Implemented |
+| Detail/info screen secondary action | `ap_detail_screen` (`AP_DETAIL_SECONDARY_ACTION`) | Implemented |
 | `SetLogPath`/`LogPath` option | `ap_set_log_path` / `ap_config.log_path` | Implemented |
 
 ## Broader Parity Matrix
@@ -47,14 +49,14 @@ This document tracks Apostrophe **v1.1.0** parity against Gabagool `v2.9.6`.
 | Directional repeat control | `ap_set_input_repeat` | Implemented | |
 | Debounce control | `ap_set_input_delay` | Implemented | |
 | List widget | `ap_list` | Implemented | Includes reorder, help, images, multi-select. |
-| Options list widget | `ap_options_list` | Implemented | Includes standard/keyboard/clickable/color picker. |
+| Options list widget | `ap_options_list` | Implemented | Includes standard/keyboard/clickable/color picker and immediate return on standard-option change. |
 | Keyboard + URL keyboard | `ap_keyboard`, `ap_url_keyboard` | Implemented | |
 | Selection message | `ap_selection` | Implemented | |
 | Confirmation message | `ap_confirmation` | Implemented | |
 | Process message | `ap_process_message` | Implemented (behavior differs) | Generic Go return values are mapped to C callback/userdata patterns. |
 | Idle rendering | `ap_present()` + `ap_request_frame()` | Implemented | Dirty-flag system: thread sleeps via `SDL_WaitEventTimeout` when idle, wakes on input or scheduled redraw. 60fps during animations, near-zero CPU when static. |
 | Download manager | `ap_download_manager` | Implemented | |
-| Detail/info screen | `ap_detail_screen` | Implemented | |
+| Detail/info screen | `ap_detail_screen` | Implemented | Supports primary (A) and secondary (Y) action exits. |
 | Color picker | `ap_color_picker` | Implemented | |
 | Help overlay | `ap_show_help_overlay` | Implemented | |
 | Status bar | `ap_draw_status_bar` + per-widget status options | Implemented | |

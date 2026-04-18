@@ -28,13 +28,14 @@ This matrix reflects Apostrophe **v1.1.0** (2026-03-30).
 | List: multi-select | `examples/demo/main.c` → `Multi-Select List` |
 | List: reorder | `examples/demo/main.c` → `Reorderable List` |
 | Options list: standard, keyboard, clickable, color picker, action buttons, long clickable-value truncation | `examples/demo/main.c` → `Options List` |
+| Options list: immediate standard-option returns via `AP_ACTION_OPTION_CHANGED` while keeping `action_button` distinct | `examples/demo/main.c` → `Options List (Immediate Return)` |
 | Keyboard: general, URL, numeric, UTF-8 / long text editing, custom URL help/shortcuts, URL number-symbol toggle, return-to-mode flow | `examples/demo/main.c` → `Keyboard` |
 | Confirmation | `examples/demo/main.c` → `Confirmation` |
 | Selection: wrapped prompt layout | `examples/demo/main.c` → `Selection` |
 | Process message: progress, cancel, dynamic text | `examples/demo/main.c` → `Process Message`, `Advanced Process` |
 | Queue viewer: live snapshot, filter, details, cancel, clear, footer overflow | `examples/demo/main.c` → `Queue Viewer` |
 | Detail screen | `examples/demo/main.c` → `Detail Screen` |
-| Detail screen: centered title, section separators, key color override | `examples/demo/main.c` → `Detail Screen (Styled)` |
+| Detail screen: centered title, section separators, key color override, secondary Y action | `examples/demo/main.c` → `Detail Screen (Styled)` |
 | Detail screen: custom font overrides | `examples/demo/main.c` → `Detail Screen (Fonts)` |
 | Color picker | `examples/demo/main.c` → `Color Picker` |
 | Help overlay | `examples/demo/main.c` → `Help Overlay` |

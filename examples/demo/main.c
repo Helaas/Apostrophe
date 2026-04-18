@@ -14,6 +14,7 @@
 static void demo_detail(void);
 static void demo_detail_custom_fonts(void);
 static void demo_image_list(void);
+static void demo_options_list_immediate_return(void);
 static void demo_process_advanced(void);
 static void demo_drawing_primitives(void);
 static void demo_screen_fade(void);
@@ -679,6 +680,108 @@ static void demo_options_list(void) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ *  Demo: Options List (Immediate Return)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void demo_options_list_immediate_return(void) {
+    ap_option wifi_opts[] = {
+        { .label = "On",  .value = "1" },
+        { .label = "Off", .value = "0" },
+    };
+    ap_option theme_opts[] = {
+        { .label = "Dark",  .value = "dark" },
+        { .label = "Light", .value = "light" },
+        { .label = "Retro", .value = "retro" },
+    };
+    ap_option cpu_opts[] = {
+        { .label = "Menu",        .value = "menu" },
+        { .label = "Normal",      .value = "normal" },
+        { .label = "Performance", .value = "performance" },
+    };
+
+    ap_options_item items[] = {
+        {
+            .label           = "WiFi",
+            .type            = AP_OPT_STANDARD,
+            .options         = wifi_opts,
+            .option_count    = 2,
+            .selected_option = 0,
+        },
+        {
+            .label           = "Theme",
+            .type            = AP_OPT_STANDARD,
+            .options         = theme_opts,
+            .option_count    = 3,
+            .selected_option = 0,
+        },
+        {
+            .label           = "CPU Profile",
+            .type            = AP_OPT_STANDARD,
+            .options         = cpu_opts,
+            .option_count    = 3,
+            .selected_option = 1,
+        },
+    };
+
+    ap_footer_item footer[] = {
+        { .button = AP_BTN_B,    .label = "BACK" },
+        { .button = AP_BTN_LEFT, .label = "CHANGE", .button_text = "<->" },
+        { .button = AP_BTN_X,    .label = "SUMMARY" },
+        { .button = AP_BTN_A,    .label = "NEXT" },
+    };
+
+    ap_options_list_opts opts = {
+        .title                   = "Immediate Return",
+        .items                   = items,
+        .item_count              = (int)(sizeof(items) / sizeof(items[0])),
+        .footer                  = footer,
+        .footer_count            = 4,
+        .action_button           = AP_BTN_X,
+        .return_on_option_change = 1,
+        .help_text               = "Left/Right or A change the focused standard option.\n"
+                                   "Each successful change returns immediately with "
+                                   "AP_ACTION_OPTION_CHANGED.\n"
+                                   "X still returns AP_ACTION_TRIGGERED for the summary action.",
+    };
+
+    int last_cursor = 0;
+    int last_visible = 0;
+
+    while (1) {
+        opts.initial_selected_index = last_cursor;
+        opts.visible_start_index = last_visible;
+
+        ap_options_list_result result;
+        int rc = ap_options_list(&opts, &result);
+        last_cursor = result.focused_index;
+        last_visible = result.visible_start_index;
+
+        if (rc != AP_OK) break;
+
+        if (result.action == AP_ACTION_OPTION_CHANGED) {
+            ap_options_item *item = &items[result.focused_index];
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Changed %s to %s.",
+                     item->label, demo_option_display(item, "(unset)"));
+            demo_show_message(msg);
+            continue;
+        }
+
+        if (result.action == AP_ACTION_TRIGGERED) {
+            char msg[256];
+            snprintf(msg, sizeof(msg),
+                     "WiFi: %s\nTheme: %s\nCPU Profile: %s",
+                     demo_option_display(&items[0], "On"),
+                     demo_option_display(&items[1], "Dark"),
+                     demo_option_display(&items[2], "Normal"));
+            demo_show_message(msg);
+            continue;
+        }
+
+        break;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  *  Demo: Keyboard
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void demo_keyboard(void) {
@@ -1019,14 +1122,16 @@ static void demo_detail_styled(void) {
             .type        = AP_SECTION_DESCRIPTION,
             .title       = "About",
             .description = "This demo shows the styled detail screen options: "
-                           "centered title, section separator lines, and "
-                           "custom key colors. These are all opt-in — existing "
+                           "centered title, section separator lines, custom "
+                           "key colors, and a visible secondary footer action. "
+                           "These are all opt-in — existing "
                            "apps that zero-initialize ap_detail_opts are unaffected.",
         },
     };
 
     ap_footer_item footer[] = {
         { .button = AP_BTN_B, .label = "BACK" },
+        { .button = AP_BTN_Y, .label = "INFO" },
         { .button = AP_BTN_A, .label = "ACTION", .is_confirm = true },
     };
 
@@ -1037,7 +1142,7 @@ static void demo_detail_styled(void) {
         .sections               = sections,
         .section_count          = (int)(sizeof(sections) / sizeof(sections[0])),
         .footer                 = footer,
-        .footer_count           = 2,
+        .footer_count           = 3,
         .center_title           = true,
         .show_section_separator = true,
         .key_color              = &key_col,
@@ -1045,6 +1150,11 @@ static void demo_detail_styled(void) {
 
     ap_detail_result result;
     ap_detail_screen(&opts, &result);
+    if (result.action == AP_DETAIL_ACTION) {
+        demo_show_message("Primary detail action triggered.");
+    } else if (result.action == AP_DETAIL_SECONDARY_ACTION) {
+        demo_show_message("Secondary detail action triggered.");
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2774,6 +2884,7 @@ static const struct {
     { "Multi-Select List",   demo_multi_select        },
     { "Reorderable List",    demo_reorder             },
     { "Options List",        demo_options_list        },
+    { "Options List (Immediate Return)", demo_options_list_immediate_return },
     { "Keyboard",            demo_keyboard            },
     { "Confirmation",        demo_confirmation        },
     { "Selection",           demo_selection           },
