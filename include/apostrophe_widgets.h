@@ -426,6 +426,8 @@ typedef struct {
     ap_status_bar_opts   *status_bar;  /* Optional: top-right status pill */
     bool                  hide_filter; /* Set true to suppress Y=FILTER button */
     const char           *filter_labels[4]; /* Optional labels for filters: [0]=ALL, [1]=PENDING||RUNNING (default "IN PROGRESS"), [2]=DONE||SKIPPED, [3]=FAILED; NULL or "" entries use defaults */
+    const char           *empty_message;        /* Optional override for "NO ITEMS IN QUEUE." */
+    const char           *empty_filter_message; /* Optional override for "NO ITEMS MATCH THIS FILTER." */
 } ap_queue_opts;
 
 /* Runs the queue viewer event loop. Returns AP_OK when user exits (B). */
@@ -4774,8 +4776,13 @@ int ap_queue_viewer(const ap_queue_opts *opts) {
 
         /* Empty state */
         if (filtered_count == 0) {
-            const char *msg = (stat_total == 0) ? "NO ITEMS IN QUEUE."
-                                                : "NO ITEMS MATCH THIS FILTER.";
+            const char *msg;
+            if (stat_total == 0)
+                msg = (opts->empty_message && opts->empty_message[0])
+                      ? opts->empty_message : "NO ITEMS IN QUEUE.";
+            else
+                msg = (opts->empty_filter_message && opts->empty_filter_message[0])
+                      ? opts->empty_filter_message : "NO ITEMS MATCH THIS FILTER.";
             int mw = ap_measure_text(layout_sub_font, msg);
             ap_draw_text(layout_sub_font, msg,
                          (screen_w - mw) / 2,
