@@ -21,6 +21,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Options list demo regression coverage** (`examples/demo/main.c`, `docs/DEMO_COVERAGE.md`): the `Options List` demo now includes long clickable path/URL rows so 640x480 layouts exercise both long-value truncation and long label+value splitting.
 - **Selection wrapped-message layout** (`apostrophe_widgets.h`, `examples/demo/main.c`, `docs/DEMO_COVERAGE.md`): `ap_selection()` now places its option pills below the full wrapped message height instead of assuming a single text line, preventing overlap on narrow layouts and adding demo coverage for the wrapped-prompt case.
 
+### Fixed
+
+- **NextUI RGBA theme compatibility** (`apostrophe.h`, `Makefile`, `README.md`, `docs/API.md`): theme colors now accept both legacy six-digit `RRGGBB` and current eight-digit `RRGGBBAA` values without shifting color channels, preserving alpha when supplied. The generated desktop preview fixture now uses opaque eight-digit colors and carries a fixture version marker so older cached fixtures regenerate automatically.
+
 ## [v1.1.0] - 2026-03-30
 
 ### Added

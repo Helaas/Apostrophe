@@ -23,6 +23,7 @@
 #include <SDL2/SDL_image.h>
 
 #include <stdbool.h>
+#include <ctype.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -354,7 +355,7 @@ typedef struct {
     const char *font_path;        /* Path to .ttf font file, NULL = auto */
     const char *bg_image_path;    /* Background image path, NULL = none */
     const char *log_path;         /* Log file path, NULL = stderr only */
-    const char *primary_color_hex;/* Override accent color "#RRGGBB", NULL = theme default */
+    const char *primary_color_hex;/* Override accent color "#RRGGBB[AA]", NULL = theme default */
     bool        disable_background;  /* Set true to skip bg.png rendering */
     bool        is_nextui;        /* Load theme from NextUI's nextval.elf */
     ap_cpu_speed cpu_speed;       /* Set CPU at init; 0 = AP_CPU_SPEED_DEFAULT (no-op) */
@@ -519,6 +520,7 @@ int            ap_font_size_for_resolution(int base_size);
 ap_theme      *ap_get_theme(void);
 int            ap_theme_load_nextui(void);
 int            ap_reload_background(const char *bg_path);
+/* Parse RRGGBB (opaque) or RRGGBBAA. Accepts optional '#', '0x', or '0X' prefix and surrounding whitespace. */
 ap_color       ap_hex_to_color(const char *hex);
 void           ap_set_theme_color(const char *hex);
 
@@ -970,15 +972,51 @@ ap_color ap_hex_to_color(const char *hex) {
     ap_color c = {0, 0, 0, 255};
     if (!hex) return c;
 
-    /* Skip "0x" or "#" prefix */
-    if (hex[0] == '#') hex++;
-    else if (hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X')) hex += 2;
+    const unsigned char *cursor = (const unsigned char *)hex;
+    while (isspace(*cursor)) cursor++;
 
-    unsigned long val = strtoul(hex, NULL, 16);
-    c.r = (uint8_t)((val >> 16) & 0xFF);
-    c.g = (uint8_t)((val >>  8) & 0xFF);
-    c.b = (uint8_t)( val        & 0xFF);
-    c.a = 255;
+    if (*cursor == '#') {
+        cursor++;
+    } else if (cursor[0] == '0' && (cursor[1] == 'x' || cursor[1] == 'X')) {
+        cursor += 2;
+    }
+
+    uint32_t val = 0;
+    size_t digit_count = 0;
+    for (;;) {
+        uint32_t digit;
+        if (*cursor >= '0' && *cursor <= '9') {
+            digit = (uint32_t)(*cursor - '0');
+        } else if (*cursor >= 'a' && *cursor <= 'f') {
+            digit = (uint32_t)(*cursor - 'a' + 10);
+        } else if (*cursor >= 'A' && *cursor <= 'F') {
+            digit = (uint32_t)(*cursor - 'A' + 10);
+        } else {
+            break;
+        }
+
+        if (digit_count == 8) return c;
+        val = (val << 4) | digit;
+        digit_count++;
+        cursor++;
+    }
+
+    /* NextUI used RRGGBB historically and emits RRGGBBAA since v6.12. */
+    if (digit_count != 6 && digit_count != 8) return c;
+
+    while (isspace(*cursor)) cursor++;
+    if (*cursor != '\0') return c;
+
+    if (digit_count == 8) {
+        c.r = (uint8_t)((val >> 24) & 0xFF);
+        c.g = (uint8_t)((val >> 16) & 0xFF);
+        c.b = (uint8_t)((val >>  8) & 0xFF);
+        c.a = (uint8_t)( val        & 0xFF);
+    } else {
+        c.r = (uint8_t)((val >> 16) & 0xFF);
+        c.g = (uint8_t)((val >>  8) & 0xFF);
+        c.b = (uint8_t)( val        & 0xFF);
+    }
     return c;
 }
 
