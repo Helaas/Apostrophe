@@ -159,7 +159,7 @@ All pixel values are specified at a **1024px reference width** and automatically
 
 ### Theming
 
-On device, colors are loaded from NextUI's theme system (`nextval.elf`). Apostrophe accepts both the current `color7` background key and the legacy `bgcolor` key for backward compatibility. On desktop, you can load the same theme and status-bar sprites by setting `AP_NEXTVAL_PATH`, `AP_STATUS_ASSETS_DIR`, and `AP_MINUI_SETTINGS_PATH`; otherwise sensible defaults are used. Apostrophe does not bundle the upstream NextUI sprite assets; `make setup-nextui-preview-cache` fetches them into `.cache/nextui-preview/` for local demo use only. You can still override the accent color via `ap_config.primary_color_hex`.
+On device, colors are loaded from NextUI's theme system (`nextval.elf`). Apostrophe accepts both legacy six-digit `RRGGBB` colors and current eight-digit `RRGGBBAA` colors, preserving the alpha channel when present. It also accepts both the current `color7` background key and the legacy `bgcolor` key for backward compatibility. On desktop, you can load the same theme and status-bar sprites by setting `AP_NEXTVAL_PATH`, `AP_STATUS_ASSETS_DIR`, and `AP_MINUI_SETTINGS_PATH`; otherwise sensible defaults are used. Apostrophe does not bundle the upstream NextUI sprite assets; `make setup-nextui-preview-cache` fetches them into `.cache/nextui-preview/` for local demo use only. You can still override the accent color via `ap_config.primary_color_hex`, using either `RRGGBB` or `RRGGBBAA`.
 
 ### Input
 

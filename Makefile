@@ -45,6 +45,7 @@ RES_DIR      := res
 CACHE_DIR    := .cache
 NEXTUI_PREVIEW_REPO := https://github.com/LoveRetro/NextUI.git
 NEXTUI_PREVIEW_COMMIT := 7d201cf293f3a253e09749b8bb002e0b9f66d652
+NEXTUI_PREVIEW_FIXTURE_VERSION := 2
 NEXTUI_PREVIEW_CACHE := $(CACHE_DIR)/nextui-preview
 NEXTUI_PREVIEW_REPO_DIR := $(NEXTUI_PREVIEW_CACHE)/repo
 NEXTUI_PREVIEW_ASSETS_DIR := $(NEXTUI_PREVIEW_CACHE)/assets
@@ -143,11 +144,13 @@ $(NEXTUI_PREVIEW_READY): FORCE
 		"$(NEXTUI_PREVIEW_CACHE)/nextval.json" \
 		"$(NEXTUI_PREVIEW_CACHE)/minuisettings.txt" \
 		"$(NEXTUI_PREVIEW_CACHE)/.commit" \
+		"$(NEXTUI_PREVIEW_CACHE)/.fixture-version" \
 		"$(NEXTUI_PREVIEW_CACHE)/.source-url"; do \
 		[ -f "$$file" ] || ready=0; \
 	done; \
 	if [ "$$ready" -eq 1 ] && \
 		[ "$$(cat "$(NEXTUI_PREVIEW_CACHE)/.commit")" = "$(NEXTUI_PREVIEW_COMMIT)" ] && \
+		[ "$$(cat "$(NEXTUI_PREVIEW_CACHE)/.fixture-version")" = "$(NEXTUI_PREVIEW_FIXTURE_VERSION)" ] && \
 		[ "$$(cat "$(NEXTUI_PREVIEW_CACHE)/.source-url")" = "$(NEXTUI_PREVIEW_REPO)" ]; then \
 		echo "✓ NextUI preview cache ready ($(NEXTUI_PREVIEW_COMMIT))"; \
 		touch "$@"; \
@@ -177,13 +180,13 @@ $(NEXTUI_PREVIEW_READY): FORCE
 	printf '%s\n' \
 		'{' \
 		'  "font": 1,' \
-		'  "color1": "0xFFFFFF",' \
-		'  "color2": "0x9B2257",' \
-		'  "color3": "0x1E2329",' \
-		'  "color4": "0xFFFFFF",' \
-		'  "color5": "0x000000",' \
-		'  "color6": "0xFFFFFF",' \
-		'  "color7": "0x000000",' \
+		'  "color1": "0xFFFFFFFF",' \
+		'  "color2": "0x9B2257FF",' \
+		'  "color3": "0x1E2329FF",' \
+		'  "color4": "0xFFFFFFFF",' \
+		'  "color5": "0x000000FF",' \
+		'  "color6": "0xFFFFFFFF",' \
+		'  "color7": "0x000000FF",' \
 		'  "radius": 0' \
 		'}' > "$(NEXTUI_PREVIEW_CACHE)/nextval.json"; \
 	printf '%s\n' \
@@ -191,6 +194,7 @@ $(NEXTUI_PREVIEW_READY): FORCE
 		'clock24h=1' \
 		'batteryperc=0' > "$(NEXTUI_PREVIEW_CACHE)/minuisettings.txt"; \
 	printf '%s\n' "$(NEXTUI_PREVIEW_COMMIT)" > "$(NEXTUI_PREVIEW_CACHE)/.commit"; \
+	printf '%s\n' "$(NEXTUI_PREVIEW_FIXTURE_VERSION)" > "$(NEXTUI_PREVIEW_CACHE)/.fixture-version"; \
 	printf '%s\n' "$(NEXTUI_PREVIEW_REPO)" > "$(NEXTUI_PREVIEW_CACHE)/.source-url"; \
 	touch "$@"; \
 	echo "✓ NextUI preview cache ready ($(NEXTUI_PREVIEW_COMMIT))";

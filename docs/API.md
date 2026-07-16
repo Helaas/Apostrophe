@@ -140,7 +140,7 @@ typedef struct {
     const char *font_path;         // Path to .ttf, NULL = auto
     const char *bg_image_path;     // Background image, NULL = none
     const char *log_path;          // Log file, NULL = stderr only
-    const char *primary_color_hex; // Override accent "#RRGGBB"
+    const char *primary_color_hex; // Override accent "#RRGGBB" or "#RRGGBBAA"
     bool        disable_background; // Set true to skip bg.png
     bool        is_nextui;         // Load theme from nextval.elf
     ap_cpu_speed cpu_speed;        // Set CPU at init; 0 = AP_CPU_SPEED_DEFAULT (no-op)
@@ -280,15 +280,15 @@ Get a pointer to the current theme. Modifiable.
 
 #### `int ap_theme_load_nextui(void)`
 
-Load theme colors from the NextUI configuration, including the fallback background color. Accepts both the current `color7` background key and the legacy `bgcolor` key for backward compatibility. Returns `AP_OK` on success, `AP_ERROR` on failure. Called automatically during `ap_init()` when `ap_config.is_nextui` is true.
+Load theme colors from the NextUI configuration, including the fallback background color. Theme values may use legacy six-digit `RRGGBB` or current eight-digit `RRGGBBAA` colors; eight-digit values preserve their alpha channel. Accepts both the current `color7` background key and the legacy `bgcolor` key for backward compatibility. Returns `AP_OK` on success, `AP_ERROR` on failure. Called automatically during `ap_init()` when `ap_config.is_nextui` is true.
 
 #### `ap_color ap_hex_to_color(const char *hex)`
 
-Parse a `#RRGGBB` hex string and return the corresponding `ap_color` (with alpha 255). Returns black `{0,0,0,255}` on invalid input.
+Parse a six-digit `RRGGBB` or eight-digit `RRGGBBAA` color and return the corresponding `ap_color`. Input may be bare or prefixed with `#`, `0x`, or `0X`, with surrounding whitespace; six-digit input receives alpha 255 and eight-digit input preserves its alpha channel. Returns black `{0,0,0,255}` on null or invalid input.
 
 #### `void ap_set_theme_color(const char *hex)`
 
-Parse a `#RRGGBB` string and apply it as the theme accent color: `ap_set_theme_color("#FF6600");`
+Parse an `RRGGBB` or `RRGGBBAA` string in any format accepted by `ap_hex_to_color()` and apply it as the theme accent color: `ap_set_theme_color("#FF6600");`
 
 #### `int ap_reload_background(const char *bg_path)`
 
