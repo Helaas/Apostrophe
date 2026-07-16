@@ -520,7 +520,7 @@ int            ap_font_size_for_resolution(int base_size);
 ap_theme      *ap_get_theme(void);
 int            ap_theme_load_nextui(void);
 int            ap_reload_background(const char *bg_path);
-/* Parse RRGGBB (opaque) or RRGGBBAA, with an optional '#' or '0x' prefix. */
+/* Parse RRGGBB (opaque) or RRGGBBAA. Accepts optional '#', '0x', or '0X' prefix and surrounding whitespace. */
 ap_color       ap_hex_to_color(const char *hex);
 void           ap_set_theme_color(const char *hex);
 
