@@ -7,6 +7,7 @@
 #   make mac          — Build examples natively for macOS
 #   make linux        — Build examples natively for Linux
 #   make windows      — Build examples natively for Windows (MSYS2/MinGW)
+#   make universal    — Build one binary for all supported NextUI devices
 #   make tg5040       — Cross-compile for TrimUI Brick/Smart Pro
 #   make tg5050       — Cross-compile for TrimUI Smart Pro S
 #   make my355        — Cross-compile for Miyoo Flip
@@ -34,6 +35,7 @@ endif
 TG5040_TOOLCHAIN := ghcr.io/loveretro/tg5040-toolchain:latest
 TG5050_TOOLCHAIN := ghcr.io/loveretro/tg5050-toolchain:latest
 MY355_TOOLCHAIN  := ghcr.io/loveretro/my355-toolchain:latest
+UNIVERSAL_TOOLCHAIN := ghcr.io/loveretro/tg5040-toolchain@sha256:f131c6af64029a8723d0ce8d3c2682642f5f091b04714f6beedda9bec18477ab
 
 # Directories
 BUILD_DIR    := build
@@ -57,7 +59,7 @@ WARN_CFLAGS := -Wall -Wextra -Wno-unused-parameter
 
 # ─── Phony targets ───────────────────────────────────────────────────────
 
-.PHONY: all native mac linux windows tg5040 tg5050 my355 package deploy clean help \
+.PHONY: all native mac linux windows universal tg5040 tg5050 my355 package deploy clean help \
 	run-mac-demo run-mac-download setup-nextui-preview-cache clean-nextui-preview-cache FORCE
 
 # ─── Native (auto-detect host OS) ─────────────────────────────────────
@@ -68,6 +70,21 @@ run-native-%:
 	$(MAKE) run-$(NATIVE_PLATFORM)-$*
 
 all: tg5040 tg5050 my355
+
+# One ARMv8-A/glibc-baseline binary; PLATFORM and DEVICE are selected at runtime.
+universal: $(EXAMPLES:%=universal-%)
+
+universal-%:
+	@echo "════════ Building $* for universal NextUI ════════"
+	@mkdir -p $(BUILD_DIR)/universal/$*
+	docker run --rm \
+		-v "$(CURDIR)":/workspace \
+		$(UNIVERSAL_TOOLCHAIN) \
+		make -C /workspace -f ports/tg5040/Makefile \
+			PLATFORM_DEFINE=PLATFORM_NEXTUI \
+			EXAMPLE=$* \
+			BUILD_DIR=/workspace/$(BUILD_DIR)/universal/$*
+	@echo "→ $(BUILD_DIR)/universal/$*/$*"
 
 # ─── macOS (native) ─────────────────────────────────────────────────────
 
