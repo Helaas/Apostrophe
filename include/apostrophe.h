@@ -2473,6 +2473,9 @@ void ap_present(void) {
         uint32_t wake = ap__next_wake_time();
         uint32_t now = SDL_GetTicks();
         int timeout = (wake > now) ? (int)(wake - now) : 0;
+        /* H700's built-in controls use raw evdev and cannot wake SDL's event wait. */
+        if (ap_get_platform() == AP_PLATFORM_H700)
+            timeout = ap__g.renderer_has_vsync ? 0 : (timeout > 8 ? 8 : timeout);
         if (timeout > 0) {
             if (SDL_WaitEventTimeout(&ap__g.wake_event, timeout) == 1) {
                 ap__g.has_wake_event = true;
