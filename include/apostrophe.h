@@ -9,7 +9,7 @@
  *
  * Dependencies: SDL2, SDL2_ttf, SDL2_image, C standard library, pthreads
  * Platforms:    tg5040 (TrimUI Brick/Smart Pro), tg5050 (TrimUI Smart Pro S),
- *               my355 (Miyoo Flip), macOS, Linux, Windows (dev/testing)
+ *               my355 (Miyoo Flip), h700 (Anbernic), macOS, Linux, Windows
  *
  * License: MIT
  * https://github.com/Helaas/apostrophe
@@ -43,8 +43,9 @@
 #include <signal.h>
 #include <errno.h>
 #include <sys/wait.h>
-#if defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050) || defined(PLATFORM_MY355)
+#if defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050) || defined(PLATFORM_MY355) || defined(PLATFORM_NEXTUI)
 #include <linux/input.h>
+#include <sys/ioctl.h>
 #endif
 #endif
 
@@ -73,7 +74,10 @@
  * Platform Detection
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-#if defined(PLATFORM_TG5040)
+#if defined(PLATFORM_NEXTUI)
+    #define AP_PLATFORM_NAME ap_get_platform_name()
+    #define AP_PLATFORM_IS_DEVICE 1
+#elif defined(PLATFORM_TG5040)
     #define AP_PLATFORM_NAME "tg5040"
     #define AP_PLATFORM_IS_DEVICE 1
 #elif defined(PLATFORM_TG5050)
@@ -129,11 +133,8 @@
 #define AP_INPUT_REPEAT_DELAY  300
 #define AP_INPUT_REPEAT_RATE   100
 #define AP_INPUT_DEBOUNCE       20
-#ifdef PLATFORM_MY355
-#define AP_AXIS_DEADZONE     20000  /* MY355 joystick needs higher deadzone to avoid crosstalk */
-#else
 #define AP_AXIS_DEADZONE     16000
-#endif
+#define AP_MY355_AXIS_DEADZONE 20000
 
 /* Text scroll timing */
 #define AP_TEXT_SCROLL_SPEED     1
@@ -154,6 +155,19 @@
 /* ═══════════════════════════════════════════════════════════════════════════
  * Enums
  * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Runtime platform identity. PLATFORM_NEXTUI builds select this from the
+ * launcher's PLATFORM and SYSTEM_PATH environment variables. */
+typedef enum {
+    AP_PLATFORM_UNKNOWN = 0,
+    AP_PLATFORM_TG5040,
+    AP_PLATFORM_TG5050,
+    AP_PLATFORM_MY355,
+    AP_PLATFORM_H700,
+    AP_PLATFORM_MACOS,
+    AP_PLATFORM_LINUX_DESKTOP,
+    AP_PLATFORM_WINDOWS_DESKTOP,
+} ap_platform_id;
 
 /* Virtual button abstraction — unifies keyboard, joystick, gamepad input */
 typedef enum {
@@ -464,6 +478,8 @@ typedef struct {
     pthread_t     power_thread;
     bool          power_thread_running;
     int           power_fd;
+    int           h700_input_fds[16];
+    uint32_t      h700_input_scan_ms;
     #endif
 
     /* Initialization flag */
@@ -498,6 +514,10 @@ static inline float ap__clampf(float v, float lo, float hi) {
 
 int            ap_init(ap_config *cfg);
 void           ap_quit(void);
+ap_platform_id ap_get_platform(void);
+const char    *ap_get_platform_name(void);
+const char    *ap_get_device_name(void);
+bool           ap_is_device(void);
 SDL_Renderer  *ap_get_renderer(void);
 SDL_Window    *ap_get_window(void);
 int            ap_get_screen_width(void);
@@ -730,6 +750,69 @@ static ap__state ap__g = {0};
 /* Last error message buffer */
 static char ap__error_buf[512] = {0};
 
+#if defined(PLATFORM_NEXTUI)
+static ap_platform_id ap__platform_from_name(const char *name) {
+    if (!name || !name[0]) return AP_PLATFORM_UNKNOWN;
+    if (strcmp(name, "tg5040") == 0) return AP_PLATFORM_TG5040;
+    if (strcmp(name, "tg5050") == 0) return AP_PLATFORM_TG5050;
+    if (strcmp(name, "my355") == 0) return AP_PLATFORM_MY355;
+    if (strcmp(name, "h700") == 0) return AP_PLATFORM_H700;
+    return AP_PLATFORM_UNKNOWN;
+}
+#endif
+
+ap_platform_id ap_get_platform(void) {
+#if defined(PLATFORM_NEXTUI)
+    ap_platform_id platform = ap__platform_from_name(getenv("PLATFORM"));
+    if (platform != AP_PLATFORM_UNKNOWN) return platform;
+
+    const char *system_path = getenv("SYSTEM_PATH");
+    if (system_path && system_path[0]) {
+        const char *name = strrchr(system_path, '/');
+        platform = ap__platform_from_name(name ? name + 1 : system_path);
+    }
+    return platform;
+#elif defined(PLATFORM_TG5040)
+    return AP_PLATFORM_TG5040;
+#elif defined(PLATFORM_TG5050)
+    return AP_PLATFORM_TG5050;
+#elif defined(PLATFORM_MY355)
+    return AP_PLATFORM_MY355;
+#elif defined(PLATFORM_MAC)
+    return AP_PLATFORM_MACOS;
+#elif defined(PLATFORM_WINDOWS)
+    return AP_PLATFORM_WINDOWS_DESKTOP;
+#elif defined(PLATFORM_LINUX)
+    return AP_PLATFORM_LINUX_DESKTOP;
+#else
+    return AP_PLATFORM_UNKNOWN;
+#endif
+}
+
+const char *ap_get_platform_name(void) {
+    switch (ap_get_platform()) {
+        case AP_PLATFORM_TG5040:          return "tg5040";
+        case AP_PLATFORM_TG5050:          return "tg5050";
+        case AP_PLATFORM_MY355:           return "my355";
+        case AP_PLATFORM_H700:            return "h700";
+        case AP_PLATFORM_MACOS:           return "mac";
+        case AP_PLATFORM_LINUX_DESKTOP:   return "linux";
+        case AP_PLATFORM_WINDOWS_DESKTOP: return "windows";
+        default:                          return "unknown";
+    }
+}
+
+const char *ap_get_device_name(void) {
+    const char *device = getenv("DEVICE");
+    return (device && device[0]) ? device : "unknown";
+}
+
+bool ap_is_device(void) {
+    ap_platform_id platform = ap_get_platform();
+    return platform == AP_PLATFORM_TG5040 || platform == AP_PLATFORM_TG5050 ||
+           platform == AP_PLATFORM_MY355 || platform == AP_PLATFORM_H700;
+}
+
 /* ─── Internal Helpers ───────────────────────────────────────────────────── */
 
 static void ap__set_error(const char *fmt, ...) {
@@ -809,7 +892,13 @@ static const char *ap__font_search_paths[] = {
     "./font.ttf",
     "./res/font.ttf",
     "../res/font.ttf",
-#if defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050)
+#if defined(PLATFORM_NEXTUI)
+    "/mnt/SDCARD/.system/res/font1.ttf",
+    "/mnt/SDCARD/.system/res/font2.ttf",
+    "/mnt/SDCARD/.system/res/font.ttf",
+    "/mnt/SDCARD/.system/tg5040/res/font.ttf",
+    "/mnt/SDCARD/.system/my355/res/font.ttf",
+#elif defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050)
     "/mnt/SDCARD/.system/res/font1.ttf",
     "/mnt/SDCARD/.system/res/font2.ttf",
     "/mnt/SDCARD/.system/res/font.ttf",
@@ -1083,13 +1172,21 @@ int ap_theme_load_nextui(void) {
     /* Look for nextval.elf — prefer SYSTEM_PATH env var, fall back to hardcoded path */
     const char *nextval_path = NULL;
     char nextval_env_buf[256] = {0};
+    #if defined(PLATFORM_NEXTUI)
+    char nextval_fallback_buf[256] = {0};
+    #endif
     const char *system_path_env = getenv("SYSTEM_PATH");
     if (system_path_env && system_path_env[0]) {
         snprintf(nextval_env_buf, sizeof(nextval_env_buf), "%s/bin/nextval.elf", system_path_env);
         if (access(nextval_env_buf, X_OK) == 0) nextval_path = nextval_env_buf;
     }
     if (!nextval_path) {
-    #if defined(PLATFORM_TG5040)
+    #if defined(PLATFORM_NEXTUI)
+        snprintf(nextval_fallback_buf, sizeof(nextval_fallback_buf),
+                 "/mnt/SDCARD/.system/%s/bin/nextval.elf", ap_get_platform_name());
+        if (access(nextval_fallback_buf, X_OK) == 0)
+            nextval_path = nextval_fallback_buf;
+    #elif defined(PLATFORM_TG5040)
         if (access("/mnt/SDCARD/.system/tg5040/bin/nextval.elf", X_OK) == 0)
             nextval_path = "/mnt/SDCARD/.system/tg5040/bin/nextval.elf";
     #elif defined(PLATFORM_TG5050)
@@ -1246,8 +1343,7 @@ static void ap__compute_scale_factor(void) {
 }
 
 static void ap__resolve_device_metrics(void) {
-#if defined(PLATFORM_TG5040) || !AP_PLATFORM_IS_DEVICE
-    /* Match TG5040 preview profiles by resolution: Brick 1024×768 uses 3/5,
+    /* Match NextUI profiles by effective resolution: Brick 1024×768 uses 3/5,
        handheld-style layouts use 2/10. Desktop previews follow the same rule. */
     if (ap__g.screen_w <= 1024 && ap__g.screen_h >= 768) {
         ap__g.device_scale = 3;
@@ -1256,16 +1352,6 @@ static void ap__resolve_device_metrics(void) {
         ap__g.device_scale = 2;
         ap__g.device_padding = 10;
     }
-#elif defined(PLATFORM_TG5050)
-    ap__g.device_scale = 2;
-    ap__g.device_padding = 10;
-#elif defined(PLATFORM_MY355)
-    ap__g.device_scale = 2;
-    ap__g.device_padding = 10;
-#else
-    ap__g.device_scale = 2;
-    ap__g.device_padding = 10;
-#endif
 }
 
 /* ─── NextUI settings reader ─────────────────────────────────────────────── */
@@ -1405,8 +1491,23 @@ int ap_get_font_bump(void) {
 /* ─── Input System ───────────────────────────────────────────────────────── */
 
 /* Map SDL joystick button to virtual button (raw joystick — used on TrimUI) */
-#if !defined(PLATFORM_MY355)
 static ap_button ap__map_joy_button(uint8_t btn) {
+    if (ap_get_platform() == AP_PLATFORM_H700) {
+        switch (btn) {
+            case 0:                    return AP_BTN_A;
+            case 1:                    return AP_BTN_B;
+            case AP__JOY_BTN_X:        return AP_BTN_X;
+            case AP__JOY_BTN_Y:        return AP_BTN_Y;
+            case AP__JOY_BTN_L1:       return AP_BTN_L1;
+            case AP__JOY_BTN_R1:       return AP_BTN_R1;
+            case AP__JOY_BTN_L2:       return AP_BTN_L2;
+            case AP__JOY_BTN_R2:       return AP_BTN_R2;
+            case AP__JOY_BTN_SELECT:   return AP_BTN_SELECT;
+            case AP__JOY_BTN_START:    return AP_BTN_START;
+            case AP__JOY_BTN_MENU:     return AP_BTN_MENU;
+            default:                   return AP_BTN_NONE;
+        }
+    }
     if (ap__g.face_buttons_flipped) {
         if (btn == AP__JOY_BTN_A) return AP_BTN_B;
         if (btn == AP__JOY_BTN_B) return AP_BTN_A;
@@ -1426,11 +1527,9 @@ static ap_button ap__map_joy_button(uint8_t btn) {
         default:                 return AP_BTN_NONE;
     }
 }
-#endif
 
 /* Map SDL GameController button to virtual button (used on macOS / when SDL
  * recognises the device as a standard game controller) */
-#if !AP_PLATFORM_IS_DEVICE
 static ap_button ap__map_controller_button(uint8_t btn) {
     ap_button mapped = AP_BTN_NONE;
     switch (btn) {
@@ -1458,33 +1557,56 @@ static ap_button ap__map_controller_button(uint8_t btn) {
     }
     return mapped;
 }
-#endif
+
+static int ap__axis_deadzone(void) {
+    return ap_get_platform() == AP_PLATFORM_MY355 ? AP_MY355_AXIS_DEADZONE : AP_AXIS_DEADZONE;
+}
 
 /* Map SDL keyboard to virtual button.
  * On my355 we match by scancode (the Flip sends buttons as keyboard HID scancodes).
  * On all other platforms we match by keycode for developer convenience. */
-#if defined(PLATFORM_MY355)
 static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
-    uint8_t sc = (uint8_t)kev->keysym.scancode;
     ap_button mapped = AP_BTN_NONE;
-    switch (sc) {
-        case AP__MY355_CODE_UP:     mapped = AP_BTN_UP;     break;
-        case AP__MY355_CODE_DOWN:   mapped = AP_BTN_DOWN;   break;
-        case AP__MY355_CODE_LEFT:   mapped = AP_BTN_LEFT;   break;
-        case AP__MY355_CODE_RIGHT:  mapped = AP_BTN_RIGHT;  break;
-        case AP__MY355_CODE_A:      mapped = AP_BTN_A;      break;
-        case AP__MY355_CODE_B:      mapped = AP_BTN_B;      break;
-        case AP__MY355_CODE_X:      mapped = AP_BTN_X;      break;
-        case AP__MY355_CODE_Y:      mapped = AP_BTN_Y;      break;
-        case AP__MY355_CODE_L1:     mapped = AP_BTN_L1;     break;
-        case AP__MY355_CODE_R1:     mapped = AP_BTN_R1;     break;
-        case AP__MY355_CODE_L2:     mapped = AP_BTN_L2;     break;
-        case AP__MY355_CODE_R2:     mapped = AP_BTN_R2;     break;
-        case AP__MY355_CODE_START:  mapped = AP_BTN_START;  break;
-        case AP__MY355_CODE_SELECT: mapped = AP_BTN_SELECT; break;
-        case AP__MY355_CODE_MENU:   mapped = AP_BTN_MENU;   break;
-        case AP__MY355_CODE_POWER:  mapped = AP_BTN_POWER;  break;
-        default: break;
+    if (ap_get_platform() == AP_PLATFORM_MY355) {
+        switch ((uint8_t)kev->keysym.scancode) {
+            case AP__MY355_CODE_UP:     mapped = AP_BTN_UP;     break;
+            case AP__MY355_CODE_DOWN:   mapped = AP_BTN_DOWN;   break;
+            case AP__MY355_CODE_LEFT:   mapped = AP_BTN_LEFT;   break;
+            case AP__MY355_CODE_RIGHT:  mapped = AP_BTN_RIGHT;  break;
+            case AP__MY355_CODE_A:      mapped = AP_BTN_A;      break;
+            case AP__MY355_CODE_B:      mapped = AP_BTN_B;      break;
+            case AP__MY355_CODE_X:      mapped = AP_BTN_X;      break;
+            case AP__MY355_CODE_Y:      mapped = AP_BTN_Y;      break;
+            case AP__MY355_CODE_L1:     mapped = AP_BTN_L1;     break;
+            case AP__MY355_CODE_R1:     mapped = AP_BTN_R1;     break;
+            case AP__MY355_CODE_L2:     mapped = AP_BTN_L2;     break;
+            case AP__MY355_CODE_R2:     mapped = AP_BTN_R2;     break;
+            case AP__MY355_CODE_START:  mapped = AP_BTN_START;  break;
+            case AP__MY355_CODE_SELECT: mapped = AP_BTN_SELECT; break;
+            case AP__MY355_CODE_MENU:   mapped = AP_BTN_MENU;   break;
+            case AP__MY355_CODE_POWER:  mapped = AP_BTN_POWER;  break;
+            default: break;
+        }
+    } else {
+        /* Match Gabagool DefaultInputMapping() — letter keys for desktop previews. */
+        switch (kev->keysym.sym) {
+            case SDLK_UP:        mapped = AP_BTN_UP;     break;
+            case SDLK_DOWN:      mapped = AP_BTN_DOWN;   break;
+            case SDLK_LEFT:      mapped = AP_BTN_LEFT;   break;
+            case SDLK_RIGHT:     mapped = AP_BTN_RIGHT;  break;
+            case SDLK_a:         mapped = AP_BTN_A;      break;
+            case SDLK_b:         mapped = AP_BTN_B;      break;
+            case SDLK_x:         mapped = AP_BTN_X;      break;
+            case SDLK_y:         mapped = AP_BTN_Y;      break;
+            case SDLK_l:         mapped = AP_BTN_L1;     break;
+            case SDLK_SEMICOLON: mapped = AP_BTN_L2;     break;
+            case SDLK_r:         mapped = AP_BTN_R1;     break;
+            case SDLK_t:         mapped = AP_BTN_R2;     break;
+            case SDLK_RETURN:    mapped = AP_BTN_START;  break;
+            case SDLK_SPACE:     mapped = AP_BTN_SELECT; break;
+            case SDLK_h:         mapped = AP_BTN_MENU;   break;
+            default: break;
+        }
     }
     if (ap__g.face_buttons_flipped) {
         if (mapped == AP_BTN_A) return AP_BTN_B;
@@ -1494,37 +1616,6 @@ static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
     }
     return mapped;
 }
-#else
-static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
-    /* Match Gabagool DefaultInputMapping() — letter keys for face buttons */
-    ap_button mapped = AP_BTN_NONE;
-    switch (kev->keysym.sym) {
-        case SDLK_UP:        mapped = AP_BTN_UP;     break;
-        case SDLK_DOWN:      mapped = AP_BTN_DOWN;   break;
-        case SDLK_LEFT:      mapped = AP_BTN_LEFT;   break;
-        case SDLK_RIGHT:     mapped = AP_BTN_RIGHT;  break;
-        case SDLK_a:         mapped = AP_BTN_A;      break;
-        case SDLK_b:         mapped = AP_BTN_B;      break;
-        case SDLK_x:         mapped = AP_BTN_X;      break;
-        case SDLK_y:         mapped = AP_BTN_Y;      break;
-        case SDLK_l:         mapped = AP_BTN_L1;     break;
-        case SDLK_SEMICOLON: mapped = AP_BTN_L2;     break;
-        case SDLK_r:         mapped = AP_BTN_R1;     break;
-        case SDLK_t:         mapped = AP_BTN_R2;     break;
-        case SDLK_RETURN:    mapped = AP_BTN_START;  break;
-        case SDLK_SPACE:     mapped = AP_BTN_SELECT; break;
-        case SDLK_h:         mapped = AP_BTN_MENU;   break;
-        default: break;
-    }
-    if (ap__g.face_buttons_flipped) {
-        if (mapped == AP_BTN_A) return AP_BTN_B;
-        if (mapped == AP_BTN_B) return AP_BTN_A;
-        if (mapped == AP_BTN_X) return AP_BTN_Y;
-        if (mapped == AP_BTN_Y) return AP_BTN_X;
-    }
-    return mapped;
-}
-#endif
 
 /* Internal input event buffer */
 static ap_input_event ap__input_queue[64];
@@ -1813,7 +1904,6 @@ static bool ap__repeat_direction(ap_button btn, uint32_t now) {
     return true;
 }
 
-#if !defined(PLATFORM_MY355)
 static void ap__set_hat_state(uint8_t hat, uint32_t now) {
     uint8_t prev = ap__g.hat_held;
 
@@ -1838,7 +1928,6 @@ static void ap__set_hat_state(uint8_t hat, uint32_t now) {
     ap__g.hat_held = hat;
     ap__g.hat_repeat_time = hat ? (now + ap__g.input_repeat_delay_ms) : 0;
 }
-#endif
 
 static void ap__set_axis_direction_y(int dir, uint32_t now) {
     if (ap__g.axis_held_dir_y == dir) return;
@@ -1882,6 +1971,100 @@ static void ap__set_axis_direction_x(int dir, uint32_t now) {
     }
 }
 
+#if AP_PLATFORM_IS_DEVICE
+static ap_button ap__h700_button_from_code(uint16_t code) {
+    switch (code) {
+        case 103: return AP_BTN_UP;
+        case 108: return AP_BTN_DOWN;
+        case 105: return AP_BTN_LEFT;
+        case 106: return AP_BTN_RIGHT;
+        case 304: return AP_BTN_A;
+        case 305: return AP_BTN_B;
+        case 307: return AP_BTN_X;
+        case 306: return AP_BTN_Y;
+        case 308: return AP_BTN_L1;
+        case 314: return AP_BTN_L2;
+        case 309: return AP_BTN_R1;
+        case 315: return AP_BTN_R2;
+        case 311: return AP_BTN_START;
+        case 310: return AP_BTN_SELECT;
+        case 312: return AP_BTN_MENU;
+        case 116: return AP_BTN_POWER;
+        default:  return AP_BTN_NONE;
+    }
+}
+
+static void ap__h700_close_input(int index) {
+    if (index < 0 || index >= 16 || ap__g.h700_input_fds[index] < 0) return;
+    close(ap__g.h700_input_fds[index]);
+    ap__g.h700_input_fds[index] = -1;
+}
+
+static void ap__h700_scan_inputs(void) {
+    if (ap_get_platform() != AP_PLATFORM_H700) return;
+
+    uint32_t now = SDL_GetTicks();
+    if (ap__g.h700_input_scan_ms && now - ap__g.h700_input_scan_ms < 2000) return;
+    ap__g.h700_input_scan_ms = now;
+
+    for (int i = 0; i < 16; i++) {
+        char path[32];
+        snprintf(path, sizeof(path), "/dev/input/event%d", i);
+        bool exists = access(path, R_OK) == 0;
+        if (ap__g.h700_input_fds[i] < 0 && exists) {
+            ap__g.h700_input_fds[i] = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+            if (ap__g.h700_input_fds[i] >= 0) ap_log("H700 input: opened %s", path);
+        } else if (ap__g.h700_input_fds[i] >= 0 && !exists) {
+            ap__h700_close_input(i);
+        }
+    }
+}
+
+static void ap__h700_poll_inputs(uint32_t now) {
+    if (ap_get_platform() != AP_PLATFORM_H700) return;
+    ap__h700_scan_inputs();
+
+    for (int i = 0; i < 16; i++) {
+        int fd = ap__g.h700_input_fds[i];
+        if (fd < 0) continue;
+
+        struct input_event ev;
+        errno = 0;
+        while (read(fd, &ev, sizeof(ev)) == sizeof(ev)) {
+            if (ev.type == EV_KEY && ev.value <= 1) {
+                ap_button button = ap__h700_button_from_code(ev.code);
+                if (ev.value) ap__push_button_press(button, now);
+                else ap__push_button_release(button);
+            } else if (ev.type == EV_ABS) {
+                switch (ev.code) {
+                    case 17: ap__set_axis_direction_y(ev.value < 0 ? -1 : (ev.value > 0 ? 1 : 0), now); break;
+                    case 16: ap__set_axis_direction_x(ev.value < 0 ? -1 : (ev.value > 0 ? 1 : 0), now); break;
+                    case 3: {
+                        int value = (ev.value * 32767) / 4096;
+                        ap__set_axis_direction_y(value < -AP_AXIS_DEADZONE ? -1 :
+                                                 (value > AP_AXIS_DEADZONE ? 1 : 0), now);
+                        break;
+                    }
+                    case 2: {
+                        int value = (ev.value * 32767) / 4096;
+                        ap__set_axis_direction_x(value < -AP_AXIS_DEADZONE ? -1 :
+                                                 (value > AP_AXIS_DEADZONE ? 1 : 0), now);
+                        break;
+                    }
+                    default: break;
+                }
+            }
+        }
+
+        if (errno && errno != EAGAIN && errno != EWOULDBLOCK) ap__h700_close_input(i);
+    }
+}
+
+static void ap__h700_close_inputs(void) {
+    for (int i = 0; i < 16; i++) ap__h700_close_input(i);
+}
+#endif
+
 static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
     switch (ev->type) {
         case SDL_QUIT:
@@ -1911,8 +2094,8 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
            button/hat events — the GameController API already maps them
            correctly, and the raw mappings differ, causing phantom inputs.
            Axis events (thumbstick) are allowed through on all platforms. */
-        #if !defined(PLATFORM_MY355)
         case SDL_JOYBUTTONDOWN: {
+            if (ap_get_platform() == AP_PLATFORM_MY355) break;
             if (ap__g.controller) break; /* GameController handles this */
             ap_button b = ap__map_joy_button(ev->jbutton.button);
             ap__push_button_press(b, now);
@@ -1920,6 +2103,7 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
         }
 
         case SDL_JOYBUTTONUP: {
+            if (ap_get_platform() == AP_PLATFORM_MY355) break;
             if (ap__g.controller) break; /* GameController handles this */
             ap_button b = ap__map_joy_button(ev->jbutton.button);
             ap__push_button_release(b);
@@ -1927,7 +2111,6 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
         }
 
         /* --- SDL GameController events (macOS / recognised controllers) --- */
-        #if !AP_PLATFORM_IS_DEVICE
         case SDL_CONTROLLERBUTTONDOWN: {
             ap_button b = ap__map_controller_button(ev->cbutton.button);
             ap__push_button_press(b, now);
@@ -1943,23 +2126,23 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
         case SDL_CONTROLLERAXISMOTION: {
             /* Map left analog stick to d-pad via GameController axis */
             if (ev->caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
-                if (ev->caxis.value < -AP_AXIS_DEADZONE) {
+                if (ev->caxis.value < -ap__axis_deadzone()) {
                     ap__set_axis_direction_y(-1, now);
-                } else if (ev->caxis.value > AP_AXIS_DEADZONE) {
+                } else if (ev->caxis.value > ap__axis_deadzone()) {
                     ap__set_axis_direction_y(1, now);
                 } else {
                     ap__set_axis_direction_y(0, now);
                 }
             } else if (ev->caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
-                if (ev->caxis.value < -AP_AXIS_DEADZONE) {
+                if (ev->caxis.value < -ap__axis_deadzone()) {
                     ap__set_axis_direction_x(-1, now);
-                } else if (ev->caxis.value > AP_AXIS_DEADZONE) {
+                } else if (ev->caxis.value > ap__axis_deadzone()) {
                     ap__set_axis_direction_x(1, now);
                 } else {
                     ap__set_axis_direction_x(0, now);
                 }
             } else if (ev->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
-                if (ev->caxis.value > AP_AXIS_DEADZONE) {
+                if (ev->caxis.value > ap__axis_deadzone()) {
                     if (!ap__g.buttons_held[AP_BTN_L2]) {
                         ap__input_push(AP_BTN_L2, true);
                     }
@@ -1967,7 +2150,7 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
                     ap__input_push(AP_BTN_L2, false);
                 }
             } else if (ev->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
-                if (ev->caxis.value > AP_AXIS_DEADZONE) {
+                if (ev->caxis.value > ap__axis_deadzone()) {
                     if (!ap__g.buttons_held[AP_BTN_R2]) {
                         ap__input_push(AP_BTN_R2, true);
                     }
@@ -1977,50 +2160,50 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
             }
             break;
         }
-        #endif
-
         case SDL_JOYHATMOTION: {
+            if (ap_get_platform() == AP_PLATFORM_MY355) break;
             if (ap__g.controller) break; /* GameController handles d-pad */
             ap__set_hat_state(ev->jhat.value, now);
             break;
         }
-        #endif /* !PLATFORM_MY355 */
-
         /* --- Analog stick axis events (all device platforms) ---
            Thumbstick generates SDL_JOYAXISMOTION on all devices including
            MY355, so this must remain outside the MY355 exclusion guard. */
         case SDL_JOYAXISMOTION: {
             if (ev->jaxis.axis == 1) { /* Y axis (up/down) */
-                if (ev->jaxis.value < -AP_AXIS_DEADZONE) {
+                if (ev->jaxis.value < -ap__axis_deadzone()) {
                     ap__set_axis_direction_y(-1, now);
-                } else if (ev->jaxis.value > AP_AXIS_DEADZONE) {
+                } else if (ev->jaxis.value > ap__axis_deadzone()) {
                     ap__set_axis_direction_y(1, now);
                 } else {
                     ap__set_axis_direction_y(0, now);
                 }
             } else if (ev->jaxis.axis == 0) { /* X axis (left/right) */
-                if (ev->jaxis.value < -AP_AXIS_DEADZONE) {
+                if (ev->jaxis.value < -ap__axis_deadzone()) {
                     ap__set_axis_direction_x(-1, now);
-                } else if (ev->jaxis.value > AP_AXIS_DEADZONE) {
+                } else if (ev->jaxis.value > ap__axis_deadzone()) {
                     ap__set_axis_direction_x(1, now);
                 } else {
                     ap__set_axis_direction_x(0, now);
                 }
             }
-            #if AP_PLATFORM_IS_DEVICE
             /* L2/R2 analog triggers (TrimUI TG5040/TG5050 send triggers as
              * axes 2/5 rather than joystick buttons). Use val > 0 threshold
              * to match NextUI's trigger handling.  The buttons_held guard in
              * ap__input_push prevents duplicate events if the platform also
              * sends joystick button events for these triggers. */
-            else if (ev->jaxis.axis == AP__JOY_AXIS_L2) {
+            else if ((ap_get_platform() == AP_PLATFORM_TG5040 ||
+                      ap_get_platform() == AP_PLATFORM_TG5050) &&
+                     ev->jaxis.axis == AP__JOY_AXIS_L2) {
                 if (ev->jaxis.value > 0) {
                     if (!ap__g.buttons_held[AP_BTN_L2])
                         ap__input_push(AP_BTN_L2, true);
                 } else if (ap__g.buttons_held[AP_BTN_L2]) {
                     ap__input_push(AP_BTN_L2, false);
                 }
-            } else if (ev->jaxis.axis == AP__JOY_AXIS_R2) {
+            } else if ((ap_get_platform() == AP_PLATFORM_TG5040 ||
+                        ap_get_platform() == AP_PLATFORM_TG5050) &&
+                       ev->jaxis.axis == AP__JOY_AXIS_R2) {
                 if (ev->jaxis.value > 0) {
                     if (!ap__g.buttons_held[AP_BTN_R2])
                         ap__input_push(AP_BTN_R2, true);
@@ -2028,7 +2211,6 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
                     ap__input_push(AP_BTN_R2, false);
                 }
             }
-            #endif
             break;
         }
     }
@@ -2047,6 +2229,10 @@ static void ap__process_sdl_events(void) {
     while (SDL_PollEvent(&ev)) {
         ap__handle_sdl_event(&ev, now);
     }
+
+    #if AP_PLATFORM_IS_DEVICE
+    ap__h700_poll_inputs(now);
+    #endif
 
     bool repeated_up = false;
     bool repeated_down = false;
@@ -2287,6 +2473,9 @@ void ap_present(void) {
         uint32_t wake = ap__next_wake_time();
         uint32_t now = SDL_GetTicks();
         int timeout = (wake > now) ? (int)(wake - now) : 0;
+        /* H700's built-in controls use raw evdev and cannot wake SDL's event wait. */
+        if (ap_get_platform() == AP_PLATFORM_H700)
+            timeout = ap__g.renderer_has_vsync ? 0 : (timeout > 8 ? 8 : timeout);
         if (timeout > 0) {
             if (SDL_WaitEventTimeout(&ap__g.wake_event, timeout) == 1) {
                 ap__g.has_wake_event = true;
@@ -3409,12 +3598,9 @@ static int ap__read_sysfs_int(const char *path) {
 
 static int ap__get_battery_percent(void) {
 #if AP_PLATFORM_IS_DEVICE
-    int cap;
-    #if defined(PLATFORM_MY355)
-    cap = ap__read_sysfs_int("/sys/class/power_supply/battery/capacity");
-    #else /* tg5040, tg5050 */
-    cap = ap__read_sysfs_int("/sys/class/power_supply/axp2202-battery/capacity");
-    #endif
+    int cap = ap__read_sysfs_int("/sys/class/power_supply/battery/capacity");
+    if (cap < 0)
+        cap = ap__read_sysfs_int("/sys/class/power_supply/axp2202-battery/capacity");
     return (cap >= 0 && cap <= 100) ? cap : -1;
 #else
     int cap = -1;
@@ -3425,14 +3611,12 @@ static int ap__get_battery_percent(void) {
 
 static bool ap__is_charging(void) {
 #if AP_PLATFORM_IS_DEVICE
-    int charger, ttf;
-    #if defined(PLATFORM_MY355)
-    charger = ap__read_sysfs_int("/sys/class/power_supply/ac/online");
-    ttf     = ap__read_sysfs_int("/sys/class/power_supply/battery/time_to_full_now");
-    #else
-    charger = ap__read_sysfs_int("/sys/class/power_supply/axp2202-usb/online");
-    ttf     = ap__read_sysfs_int("/sys/class/power_supply/axp2202-battery/time_to_full_now");
-    #endif
+    int charger = ap__read_sysfs_int("/sys/class/power_supply/ac/online");
+    int ttf = ap__read_sysfs_int("/sys/class/power_supply/battery/time_to_full_now");
+    if (charger < 0) {
+        charger = ap__read_sysfs_int("/sys/class/power_supply/axp2202-usb/online");
+        ttf = ap__read_sysfs_int("/sys/class/power_supply/axp2202-battery/time_to_full_now");
+    }
     return (charger == 1) && (ttf > 0);
 #else
     int charging = 0;
@@ -3443,36 +3627,51 @@ static bool ap__is_charging(void) {
 /* ─── CPU & Fan sysfs paths and frequency presets ───────────────────────── */
 
 #if AP_PLATFORM_IS_DEVICE
-#if defined(PLATFORM_MY355)
-#  define AP__CPU_GOVERNOR_PATH  "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor"
-#  define AP__CPU_SPEED_PATH     "/sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed"
-#  define AP__CPU_CUR_FREQ_PATH  "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
-#  define AP__CPU_FREQ_MENU         600000
-#  define AP__CPU_FREQ_POWERSAVE   1200000
-#  define AP__CPU_FREQ_NORMAL      1608000
-#  define AP__CPU_FREQ_PERFORMANCE 2000000
-#elif defined(PLATFORM_TG5040)
-#  define AP__CPU_GOVERNOR_PATH  "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
-#  define AP__CPU_SPEED_PATH     "/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed"
-#  define AP__CPU_CUR_FREQ_PATH  "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
-#  define AP__CPU_FREQ_MENU         600000
-#  define AP__CPU_FREQ_POWERSAVE   1200000
-#  define AP__CPU_FREQ_NORMAL      1608000
-#  define AP__CPU_FREQ_PERFORMANCE 2000000
-#elif defined(PLATFORM_TG5050)
-#  define AP__CPU_GOVERNOR_PATH  "/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor"
-#  define AP__CPU_SPEED_PATH     "/sys/devices/system/cpu/cpu4/cpufreq/scaling_setspeed"
-#  define AP__CPU_CUR_FREQ_PATH  "/sys/devices/system/cpu/cpu4/cpufreq/scaling_cur_freq"
-#  define AP__CPU_FREQ_MENU         672000
-#  define AP__CPU_FREQ_POWERSAVE   1200000
-#  define AP__CPU_FREQ_NORMAL      1680000
-#  define AP__CPU_FREQ_PERFORMANCE 2160000
-#  define AP__FAN_STATE_PATH     "/sys/class/thermal/cooling_device0/cur_state"
-#  define AP__FAN_HELPER_PATH    "/mnt/SDCARD/.system/tg5050/bin/fancontrol"
-#  define AP__FAN_LOCK_PATH      "/var/run/fan-control.lock"
-#endif
-
 #define AP__CPU_TEMP_PATH "/sys/devices/virtual/thermal/thermal_zone0/temp"
+#define AP__FAN_STATE_PATH "/sys/class/thermal/cooling_device0/cur_state"
+#define AP__FAN_HELPER_PATH "/mnt/SDCARD/.system/tg5050/bin/fancontrol"
+#define AP__FAN_LOCK_PATH "/var/run/fan-control.lock"
+
+static const char *ap__cpu_governor_path(void) {
+    return ap_get_platform() == AP_PLATFORM_TG5050
+        ? "/sys/devices/system/cpu/cpu4/cpufreq/scaling_governor"
+        : (ap_get_platform() == AP_PLATFORM_MY355
+            ? "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor"
+            : "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor");
+}
+
+static const char *ap__cpu_speed_path(void) {
+    return ap_get_platform() == AP_PLATFORM_TG5050
+        ? "/sys/devices/system/cpu/cpu4/cpufreq/scaling_setspeed"
+        : (ap_get_platform() == AP_PLATFORM_MY355
+            ? "/sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed"
+            : "/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed");
+}
+
+static const char *ap__cpu_cur_freq_path(void) {
+    return ap_get_platform() == AP_PLATFORM_TG5050
+        ? "/sys/devices/system/cpu/cpu4/cpufreq/scaling_cur_freq"
+        : "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq";
+}
+
+static int ap__cpu_frequency(ap_cpu_speed speed) {
+    if (ap_get_platform() == AP_PLATFORM_TG5050) {
+        switch (speed) {
+            case AP_CPU_SPEED_MENU:        return 672000;
+            case AP_CPU_SPEED_POWERSAVE:   return 1200000;
+            case AP_CPU_SPEED_NORMAL:      return 1680000;
+            case AP_CPU_SPEED_PERFORMANCE: return 2160000;
+            default: return 0;
+        }
+    }
+    switch (speed) {
+        case AP_CPU_SPEED_MENU:        return 600000;
+        case AP_CPU_SPEED_POWERSAVE:   return 1200000;
+        case AP_CPU_SPEED_NORMAL:      return 1608000;
+        case AP_CPU_SPEED_PERFORMANCE: return 2000000;
+        default: return 0;
+    }
+}
 
 static int ap__write_sysfs_int(const char *path, int value) {
     FILE *f = fopen(path, "w");
@@ -3490,7 +3689,7 @@ static int ap__write_sysfs_str(const char *path, const char *value) {
     return AP_OK;
 }
 
-#if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
+#if (defined(PLATFORM_TG5050) || defined(PLATFORM_NEXTUI)) && defined(AP__FAN_STATE_PATH)
 static bool ap__is_all_digits(const char *s) {
     if (!s || !s[0]) return false;
     for (const char *p = s; *p; ++p) {
@@ -3593,17 +3792,37 @@ static ap_fan_mode ap__fan_detect_helper_mode(void) {
 /* ─── CPU & Fan implementations ──────────────────────────────────────────── */
 
 int ap_set_cpu_speed(ap_cpu_speed speed) {
-#if AP_PLATFORM_IS_DEVICE && defined(AP__CPU_SPEED_PATH)
-    int freq = 0;
-    switch (speed) {
-        case AP_CPU_SPEED_MENU:        freq = AP__CPU_FREQ_MENU;        break;
-        case AP_CPU_SPEED_POWERSAVE:   freq = AP__CPU_FREQ_POWERSAVE;   break;
-        case AP_CPU_SPEED_NORMAL:      freq = AP__CPU_FREQ_NORMAL;      break;
-        case AP_CPU_SPEED_PERFORMANCE: freq = AP__CPU_FREQ_PERFORMANCE; break;
-        default: return AP_ERROR;
+#if AP_PLATFORM_IS_DEVICE
+    if (ap_get_platform() == AP_PLATFORM_H700) {
+        const char *mode = NULL;
+        switch (speed) {
+            case AP_CPU_SPEED_MENU:
+            case AP_CPU_SPEED_NORMAL:      mode = "auto"; break;
+            case AP_CPU_SPEED_POWERSAVE:   mode = "powersave"; break;
+            case AP_CPU_SPEED_PERFORMANCE: mode = "performance"; break;
+            default: return AP_ERROR;
+        }
+        const char *system_path = getenv("SYSTEM_PATH");
+        if (!system_path || !system_path[0]) return AP_ERROR;
+        char script[256];
+        snprintf(script, sizeof(script), "%s/bin/governor.sh", system_path);
+        if (access(script, R_OK) != 0) return AP_ERROR;
+        pid_t child = fork();
+        if (child < 0) return AP_ERROR;
+        if (child == 0) {
+            execl("/bin/sh", "sh", script, mode, (char *)NULL);
+            _exit(127);
+        }
+        int status = 0;
+        return waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0
+            ? AP_OK : AP_ERROR;
     }
-    ap__write_sysfs_str(AP__CPU_GOVERNOR_PATH, "userspace\n");
-    return ap__write_sysfs_int(AP__CPU_SPEED_PATH, freq);
+
+    if (!ap_is_device() || ap_get_platform() == AP_PLATFORM_UNKNOWN) return AP_ERROR;
+    int freq = ap__cpu_frequency(speed);
+    if (freq <= 0) return AP_ERROR;
+    ap__write_sysfs_str(ap__cpu_governor_path(), "userspace\n");
+    return ap__write_sysfs_int(ap__cpu_speed_path(), freq);
 #else
     (void)speed;
     return AP_OK;
@@ -3611,8 +3830,8 @@ int ap_set_cpu_speed(ap_cpu_speed speed) {
 }
 
 int ap_get_cpu_speed_mhz(void) {
-#if AP_PLATFORM_IS_DEVICE && defined(AP__CPU_CUR_FREQ_PATH)
-    int khz = ap__read_sysfs_int(AP__CPU_CUR_FREQ_PATH);
+#if AP_PLATFORM_IS_DEVICE
+    int khz = ap__read_sysfs_int(ap__cpu_cur_freq_path());
     return (khz > 0) ? khz / 1000 : -1;
 #else
     return -1;
@@ -3629,7 +3848,8 @@ int ap_get_cpu_temp_celsius(void) {
 }
 
 int ap_set_fan_mode(ap_fan_mode mode) {
-#if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
+#if (defined(PLATFORM_TG5050) || defined(PLATFORM_NEXTUI)) && defined(AP__FAN_STATE_PATH)
+    if (ap_get_platform() != AP_PLATFORM_TG5050) return AP_OK;
     const char *arg;
     if (mode == AP_FAN_MODE_MANUAL) return ap__fan_stop_helper();
 
@@ -3646,7 +3866,8 @@ int ap_set_fan_mode(ap_fan_mode mode) {
 }
 
 ap_fan_mode ap_get_fan_mode(void) {
-#if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
+#if (defined(PLATFORM_TG5050) || defined(PLATFORM_NEXTUI)) && defined(AP__FAN_STATE_PATH)
+    if (ap_get_platform() != AP_PLATFORM_TG5050) return AP_FAN_MODE_UNSUPPORTED;
     ap_fan_mode mode = ap__fan_detect_helper_mode();
     if (mode != AP_FAN_MODE_UNSUPPORTED) return mode;
     return ap__read_sysfs_int(AP__FAN_STATE_PATH) >= 0 ? AP_FAN_MODE_MANUAL : AP_FAN_MODE_UNSUPPORTED;
@@ -3656,7 +3877,8 @@ ap_fan_mode ap_get_fan_mode(void) {
 }
 
 int ap_set_fan_speed(int percent) {
-#if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
+#if (defined(PLATFORM_TG5050) || defined(PLATFORM_NEXTUI)) && defined(AP__FAN_STATE_PATH)
+    if (ap_get_platform() != AP_PLATFORM_TG5050) return AP_OK;
     if (percent < 0) return AP_OK; /* -1 = keep current */
     if (percent > 100) percent = 100;
     ap__fan_stop_helper();
@@ -3673,7 +3895,8 @@ int ap_set_fan_speed(int percent) {
 }
 
 int ap_get_fan_speed(void) {
-#if defined(PLATFORM_TG5050) && defined(AP__FAN_STATE_PATH)
+#if (defined(PLATFORM_TG5050) || defined(PLATFORM_NEXTUI)) && defined(AP__FAN_STATE_PATH)
+    if (ap_get_platform() != AP_PLATFORM_TG5050) return 0;
     int raw = ap__read_sysfs_int(AP__FAN_STATE_PATH);
     return (raw >= 0) ? raw * 100 / 31 : -1;
 #else
@@ -4093,23 +4316,9 @@ void ap_draw_status_bar(ap_status_bar_opts *opts) {
 /* ─── Power Button Handler ───────────────────────────────────────────────── */
 
 #if AP_PLATFORM_IS_DEVICE
-#if !defined(PLATFORM_MY355)
-static const char **ap__power_input_paths(void) {
-    #if defined(PLATFORM_TG5040)
-    static const char *paths[] = { "/dev/input/event1", NULL };
-    #elif defined(PLATFORM_TG5050)
-    static const char *paths[] = { "/dev/input/event2", NULL };
-    #else
-    static const char *paths[] = { "/dev/input/event1", NULL };
-    #endif
-    return paths;
-}
-#endif
-
-/* MY355: scan all /dev/input/event* devices for the one that has KEY_POWER.
+/* Scan all /dev/input/event* devices for the one that has KEY_POWER.
    Returns an open fd on success, -1 if no matching device found.
    Uses EVIOCGBIT to query key capabilities, matching the Linux input API. */
-#if defined(PLATFORM_MY355)
 static int ap__open_power_device_by_capability(void) {
     unsigned char key_bits[(KEY_MAX + 1) / 8];
     for (int i = 0; i < 16; i++) {
@@ -4130,18 +4339,11 @@ static int ap__open_power_device_by_capability(void) {
     ap_log("Power: no /dev/input/event* device has KEY_POWER capability");
     return -1;
 }
-#endif
 
-#if defined(PLATFORM_MY355)
 static bool ap__is_power_key_code(int code) {
-    /* Compatibility: some stacks may still expose power as 102. */
-    return code == KEY_POWER || code == 102;
+    /* Compatibility: MY355 stacks may still expose power as 102. */
+    return code == KEY_POWER || (ap_get_platform() == AP_PLATFORM_MY355 && code == 102);
 }
-#else
-static bool ap__is_power_key_code(int code) {
-    return code == KEY_POWER;
-}
-#endif
 
 static void ap__drain_power_events(int fd) {
     if (fd < 0) return;
@@ -4184,22 +4386,8 @@ static void *ap__power_thread_func(void *arg) {
 
     int fd = -1;
 
-#if defined(PLATFORM_MY355)
-    /* Use EVIOCGBIT capability scan to find the device that actually has KEY_POWER */
+    /* Use EVIOCGBIT capability scan instead of platform-specific event numbers. */
     fd = ap__open_power_device_by_capability();
-#else
-    const char **input_paths = ap__power_input_paths();
-    const char *opened_path = NULL;
-    for (int i = 0; input_paths[i]; i++) {
-        fd = open(input_paths[i], O_RDONLY | O_NONBLOCK);
-        if (fd >= 0) {
-            opened_path = input_paths[i];
-            break;
-        }
-    }
-    if (fd >= 0)
-        ap_log("Power handler: listening on %s", opened_path ? opened_path : "unknown");
-#endif
 
     if (fd < 0) {
         ap_log("Power handler: could not open input device");
@@ -4253,26 +4441,23 @@ static void *ap__power_thread_func(void *arg) {
                 } else if (released) {
                     /* Short press: suspend */
                     ap_log("Power: short press → suspend");
-                    #if defined(PLATFORM_MY355)
-                    int rc = ap__run_power_command("suspend", "echo mem > /sys/power/state");
-                    if (rc != 0) {
-                        ap_log("Power: suspend mem failed, trying freeze fallback");
-                        ap__run_power_command("suspend-fallback", "echo freeze > /sys/power/state");
-                    }
-                    #elif defined(PLATFORM_TG5040) || defined(PLATFORM_TG5050)
                     {
                         const char *sp = getenv("SYSTEM_PATH");
                         char suspend_cmd[256];
-                        #if defined(PLATFORM_TG5040)
-                        snprintf(suspend_cmd, sizeof(suspend_cmd), "%s/bin/suspend",
-                                 (sp && sp[0]) ? sp : "/mnt/SDCARD/.system/tg5040");
-                        #else
-                        snprintf(suspend_cmd, sizeof(suspend_cmd), "%s/bin/suspend",
-                                 (sp && sp[0]) ? sp : "/mnt/SDCARD/.system/tg5050");
-                        #endif
-                        ap__run_power_command("suspend", suspend_cmd);
+                        int rc = AP_ERROR;
+                        if (sp && sp[0]) {
+                            snprintf(suspend_cmd, sizeof(suspend_cmd), "%s/bin/suspend", sp);
+                            if (access(suspend_cmd, X_OK) == 0)
+                                rc = ap__run_power_command("suspend", suspend_cmd);
+                        }
+                        if (rc != 0) {
+                            rc = ap__run_power_command("suspend", "echo mem > /sys/power/state");
+                            if (rc != 0) {
+                                ap_log("Power: suspend mem failed, trying freeze fallback");
+                                ap__run_power_command("suspend-fallback", "echo freeze > /sys/power/state");
+                            }
+                        }
                     }
-                    #endif
 
                     /* Match NextUI behavior: ignore power key for a short time after resume
                        to avoid immediate re-suspend from wake button events. */
@@ -4332,9 +4517,18 @@ int ap_init(ap_config *cfg) {
         return AP_ERROR;
     }
 
+    #if defined(PLATFORM_NEXTUI)
+    if (!ap_is_device()) {
+        ap__set_error("Unsupported NextUI platform: set PLATFORM to tg5040, tg5050, my355, or h700");
+        fprintf(stderr, "Apostrophe: %s\n", ap_get_error());
+        return AP_ERROR;
+    }
+    #endif
+
     memset(&ap__g, 0, sizeof(ap__g));
     #if AP_PLATFORM_IS_DEVICE
     ap__g.power_fd = -1;
+    for (int i = 0; i < 16; i++) ap__g.h700_input_fds[i] = -1;
     #endif
 
     /* Logging */
@@ -4385,6 +4579,11 @@ int ap_init(ap_config *cfg) {
     int num_joy = SDL_NumJoysticks();
     #if AP_PLATFORM_IS_DEVICE
     for (int i = 0; i < num_joy; i++) {
+        const char *name = SDL_JoystickNameForIndex(i);
+        if (ap_get_platform() == AP_PLATFORM_H700 && name && strcmp(name, "ANBERNIC-keys") == 0) {
+            ap_log("Joystick %d skipped: %s (handled via evdev)", i, name);
+            continue;
+        }
         SDL_Joystick *joy = SDL_JoystickOpen(i);
         if (joy) {
             ap_log("Joystick %d opened: %s", i, SDL_JoystickName(joy));
@@ -4445,6 +4644,14 @@ int ap_init(ap_config *cfg) {
             #if defined(PLATFORM_MY355)
             ap__g.screen_w = 640;
             ap__g.screen_h = 480;
+            #elif defined(PLATFORM_NEXTUI)
+            if (ap_get_platform() == AP_PLATFORM_MY355 || ap_get_platform() == AP_PLATFORM_H700) {
+                ap__g.screen_w = 640;
+                ap__g.screen_h = 480;
+            } else {
+                ap__g.screen_w = 1280;
+                ap__g.screen_h = 720;
+            }
             #else
             ap__g.screen_w = 1280;
             ap__g.screen_h = 720;
@@ -4630,6 +4837,10 @@ void ap_quit(void) {
 
     /* Stop power handler */
     ap_set_power_handler(false);
+
+    #if AP_PLATFORM_IS_DEVICE
+    ap__h700_close_inputs();
+    #endif
 
     /* Clear texture cache */
     ap_cache_clear();

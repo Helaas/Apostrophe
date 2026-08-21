@@ -55,17 +55,23 @@ This reference documents Apostrophe **v1.1.0** (2026-03-30).
 | `AP_SCALE_DAMPING` | `0.75f` | Damping for screens wider than reference |
 | `AP_DS(base)` | — | Scale a pixel value by integer `device_scale` (2 or 3) |
 | `AP_S(base)` | — | Scale a pixel value from reference to actual screen |
-| `AP_PLATFORM_NAME` | `"tg5040"` etc. | Compile-time platform identifier |
+| `AP_PLATFORM_NAME` | `"tg5040"` etc. | Platform identifier; runtime-selected in `PLATFORM_NEXTUI` builds |
 | `AP_PLATFORM_IS_DEVICE` | `0` or `1` | Whether building for a real device |
 | `AP_INPUT_DEBOUNCE` | `20` | Input debounce delay (ms) |
 | `AP_INPUT_REPEAT_DELAY` | `300` | Initial hold delay (ms) |
 | `AP_INPUT_REPEAT_RATE` | `100` | Repeat rate (ms) |
-| `AP_AXIS_DEADZONE` | `16000` / `20000` on `my355` | Joystick axis dead zone |
+| `AP_AXIS_DEADZONE` | `16000` | Default joystick axis dead zone (`my355` selects `20000` at runtime) |
 | `AP_TEXT_SCROLL_SPEED` | `1` | Text scroll speed (pixels per tick) |
 | `AP_TEXT_SCROLL_PAUSE_MS` | `1000` | Pause at scroll endpoints (ms) |
 | `AP_TEXTURE_CACHE_SIZE` | `8` | LRU texture cache capacity |
 | `AP_MAX_COMBOS` | `16` | Max registered button combos |
 | `AP_MAX_LOG_LEN` | `2048` | Max log message length |
+
+`make universal` builds once with the pinned TG5040 ABI baseline. At runtime,
+Apostrophe reads `PLATFORM` (falling back to the basename of `SYSTEM_PATH`) and
+supports `tg5040`, `tg5050`, `my355`, and `h700`. The same identity is available
+through `ap_get_platform()`, `ap_get_platform_name()`, `ap_get_device_name()`,
+and `ap_is_device()`.
 
 ### Types & Enums
 
