@@ -8,18 +8,20 @@ CROSS_COMPILE ?= aarch64-nextui-linux-gnu-
 CC      := $(CROSS_COMPILE)gcc
 SYSROOT := /opt/aarch64-nextui-linux-gnu/aarch64-nextui-linux-gnu/libc/usr
 PLATFORM_ID := tg5040
+PLATFORM_DEFINE ?= PLATFORM_TG5040
 THIRD_PARTY_SCRIPT := /workspace/scripts/build_third_party.sh
 
 PKG_CONFIG := pkg-config
+comma := ,
 # NOTE: SDL2_ttf.pc and SDL2_image.pc are missing from the Docker toolchain
 # sysroots, but the .so stubs exist.  Use sdl2.pc only and add -l flags manually.
 SDL_CFLAGS  := $(shell $(PKG_CONFIG) --cflags sdl2)
-SDL_LDFLAGS := $(shell $(PKG_CONFIG) --libs sdl2) -lSDL2_ttf -lSDL2_image
+SDL_LDFLAGS := $(filter-out -Wl$(comma)-rpath$(comma)%,$(shell $(PKG_CONFIG) --libs sdl2)) -lSDL2_ttf -lSDL2_image
 
 EXAMPLE   ?= hello
 BUILD_DIR ?= /workspace/build/tg5040/$(EXAMPLE)
 SRC       := /workspace/examples/$(EXAMPLE)/main.c
-DEPS      := /workspace/include/apostrophe.h /workspace/include/apostrophe_widgets.h
+DEPS      := /workspace/include/apostrophe.h /workspace/include/apostrophe_widgets.h /workspace/ports/tg5040/Makefile
 USE_BUNDLED_CURL ?= $(if $(filter download,$(EXAMPLE)),1,0)
 
 CURL_CFLAGS :=
@@ -41,7 +43,7 @@ endif
 
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter \
 	-mcpu=cortex-a53 -mtune=cortex-a53 \
-	-DPLATFORM_TG5040 \
+	-D$(PLATFORM_DEFINE) \
 	-I/workspace/include \
 	$(SDL_CFLAGS) $(CURL_CFLAGS)
 
