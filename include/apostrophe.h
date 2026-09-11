@@ -1490,33 +1490,25 @@ int ap_get_font_bump(void) {
 
 /* ─── Input System ───────────────────────────────────────────────────────── */
 
+static ap_button ap__flip_face_button(ap_button button) {
+    if (ap__g.face_buttons_flipped) {
+        if (button == AP_BTN_A) return AP_BTN_B;
+        if (button == AP_BTN_B) return AP_BTN_A;
+        if (button == AP_BTN_X) return AP_BTN_Y;
+        if (button == AP_BTN_Y) return AP_BTN_X;
+    }
+    return button;
+}
+
 /* Map SDL joystick button to virtual button (raw joystick — used on TrimUI) */
 static ap_button ap__map_joy_button(uint8_t btn) {
-    if (ap_get_platform() == AP_PLATFORM_H700) {
-        switch (btn) {
-            case 0:                    return AP_BTN_A;
-            case 1:                    return AP_BTN_B;
-            case AP__JOY_BTN_X:        return AP_BTN_X;
-            case AP__JOY_BTN_Y:        return AP_BTN_Y;
-            case AP__JOY_BTN_L1:       return AP_BTN_L1;
-            case AP__JOY_BTN_R1:       return AP_BTN_R1;
-            case AP__JOY_BTN_L2:       return AP_BTN_L2;
-            case AP__JOY_BTN_R2:       return AP_BTN_R2;
-            case AP__JOY_BTN_SELECT:   return AP_BTN_SELECT;
-            case AP__JOY_BTN_START:    return AP_BTN_START;
-            case AP__JOY_BTN_MENU:     return AP_BTN_MENU;
-            default:                   return AP_BTN_NONE;
-        }
-    }
-    if (ap__g.face_buttons_flipped) {
-        if (btn == AP__JOY_BTN_A) return AP_BTN_B;
-        if (btn == AP__JOY_BTN_B) return AP_BTN_A;
-    }
+    /* H700 external pads use the opposite A/B indices to TrimUI. */
+    if (ap_get_platform() == AP_PLATFORM_H700 && btn <= 1) btn ^= 1;
     switch (btn) {
-        case AP__JOY_BTN_A:      return AP_BTN_A;
-        case AP__JOY_BTN_B:      return AP_BTN_B;
-        case AP__JOY_BTN_X:      return AP_BTN_X;
-        case AP__JOY_BTN_Y:      return AP_BTN_Y;
+        case AP__JOY_BTN_A:      return ap__flip_face_button(AP_BTN_A);
+        case AP__JOY_BTN_B:      return ap__flip_face_button(AP_BTN_B);
+        case AP__JOY_BTN_X:      return ap__flip_face_button(AP_BTN_X);
+        case AP__JOY_BTN_Y:      return ap__flip_face_button(AP_BTN_Y);
         case AP__JOY_BTN_L1:     return AP_BTN_L1;
         case AP__JOY_BTN_R1:     return AP_BTN_R1;
         case AP__JOY_BTN_L2:     return AP_BTN_L2;
@@ -1548,14 +1540,7 @@ static ap_button ap__map_controller_button(uint8_t btn) {
         case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:    mapped = AP_BTN_RIGHT;  break;
         default: break;
     }
-    /* Apply face-button flip (Nintendo-style A↔B, X↔Y) */
-    if (ap__g.face_buttons_flipped) {
-        if (mapped == AP_BTN_A) return AP_BTN_B;
-        if (mapped == AP_BTN_B) return AP_BTN_A;
-        if (mapped == AP_BTN_X) return AP_BTN_Y;
-        if (mapped == AP_BTN_Y) return AP_BTN_X;
-    }
-    return mapped;
+    return ap__flip_face_button(mapped);
 }
 
 static int ap__axis_deadzone(void) {
@@ -1608,13 +1593,7 @@ static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
             default: break;
         }
     }
-    if (ap__g.face_buttons_flipped) {
-        if (mapped == AP_BTN_A) return AP_BTN_B;
-        if (mapped == AP_BTN_B) return AP_BTN_A;
-        if (mapped == AP_BTN_X) return AP_BTN_Y;
-        if (mapped == AP_BTN_Y) return AP_BTN_X;
-    }
-    return mapped;
+    return ap__flip_face_button(mapped);
 }
 
 /* Internal input event buffer */
@@ -1978,10 +1957,10 @@ static ap_button ap__h700_button_from_code(uint16_t code) {
         case 108: return AP_BTN_DOWN;
         case 105: return AP_BTN_LEFT;
         case 106: return AP_BTN_RIGHT;
-        case 304: return AP_BTN_A;
-        case 305: return AP_BTN_B;
-        case 307: return AP_BTN_X;
-        case 306: return AP_BTN_Y;
+        case 304: return ap__flip_face_button(AP_BTN_A);
+        case 305: return ap__flip_face_button(AP_BTN_B);
+        case 307: return ap__flip_face_button(AP_BTN_X);
+        case 306: return ap__flip_face_button(AP_BTN_Y);
         case 308: return AP_BTN_L1;
         case 314: return AP_BTN_L2;
         case 309: return AP_BTN_R1;
@@ -2012,8 +1991,18 @@ static void ap__h700_scan_inputs(void) {
         snprintf(path, sizeof(path), "/dev/input/event%d", i);
         bool exists = access(path, R_OK) == 0;
         if (ap__g.h700_input_fds[i] < 0 && exists) {
-            ap__g.h700_input_fds[i] = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-            if (ap__g.h700_input_fds[i] >= 0) ap_log("H700 input: opened %s", path);
+            int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+            if (fd < 0) continue;
+            char name[128] = {0};
+            /* Only built-in controls use this raw mapping. External pads are
+             * handled by SDL and must not be read a second time here. */
+            if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) < 0 ||
+                (strcmp(name, "ANBERNIC-keys") != 0 && strcmp(name, "axp2202-pek") != 0)) {
+                close(fd);
+                continue;
+            }
+            ap__g.h700_input_fds[i] = fd;
+            ap_log("H700 input: opened %s (%s)", path, name);
         } else if (ap__g.h700_input_fds[i] >= 0 && !exists) {
             ap__h700_close_input(i);
         }
