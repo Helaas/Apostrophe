@@ -3,7 +3,7 @@
 This guide walks you through creating your first NextUI Pak using Apostrophe.
 It reflects the same overall setup used by the current real projects such as `nextui-shortcuts-pak` and `nextui-scrapegoat-pak`.
 
-This guide targets Apostrophe **v1.1.0** (2026-03-30).
+This guide targets Apostrophe **v1.2.0** (2026-09-11).
 
 ## Prerequisites
 
@@ -60,6 +60,13 @@ pacman -S mingw-w64-x86_64-curl  # or mingw-w64-clang-aarch64-curl
 ### Device Cross-Compilation
 
 You need Docker installed and running. The build system automatically pulls the correct toolchain image for each platform.
+
+`make universal` builds all five examples with a pinned toolchain and writes them
+to `build/universal/<example>/<example>`. Each application binary supports
+`tg5040`, `tg5050`, `my355`, and `h700`; the NextUI launcher supplies `PLATFORM`
+and `SYSTEM_PATH`, and the firmware supplies its native SDL libraries.
+For your own application, build with `-DPLATFORM_NEXTUI` and use
+`ap_get_platform()` when hardware-specific behavior is needed.
 
 ### Device Download Manager (Bundled curl)
 

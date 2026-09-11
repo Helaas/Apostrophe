@@ -2,7 +2,7 @@
 
 A header-only C UI toolkit for building graphical tools (Paks) on retro gaming handhelds running [NextUI](https://github.com/LoveRetro/NextUI).
 
-Current release: **v1.1.0** (2026-03-30).
+Current release: **v1.2.0** (2026-09-11).
 
 Inspired by [Gabagool](https://github.com/BrandonKowalski/gabagool) (Go). Its framework design directly informed the structure of this project, and this C port would not have been feasible without that foundation.
 
@@ -20,6 +20,7 @@ Thanks to Brandon T. Kowalski (https://github.com/BrandonKowalski) for creating 
 | `tg5040` | TrimUI Smart Brick (`tg3040` hardware) | 1024×768 | Allwinner A133 Plus – Quad-core Cortex-A53 |
 | `tg5050` | TrimUI Smart Pro S | 1280×720 | Allwinner A523 – Octa-core Cortex-A55 |
 | `my355`  | Miyoo Flip | 640×480 | Rockchip RK3566 – Quad-core Cortex-A55 |
+| `h700` | Anbernic H700 devices | Model-dependent | Allwinner H700 – Quad-core Cortex-A53 |
 | `mac`    | macOS (dev/testing) | Windowed preview (default 1024×768) | native host CPU |
 | `linux`  | Linux (dev/testing) | Windowed preview (default 1024×768) | native host CPU |
 | `windows` | Windows (MSYS2/MinGW dev/testing) | Windowed preview (default 1024×768) | native host CPU |
@@ -67,14 +68,19 @@ The `run-mac-demo` / `run-mac-download` aliases automatically point at `.cache/n
 
 ### 3. Build for Device
 
-Requires Docker. Each platform has its own toolchain image:
+Requires Docker. Build one binary for all supported NextUI devices, or use a platform-specific toolchain:
 
 ```bash
+make universal        # One binary for tg5040, tg5050, my355, and h700
 make tg5040           # Cross-compile for TrimUI Brick/Smart Pro
 make tg5050           # Cross-compile for TrimUI Smart Pro S
 make my355            # Cross-compile for Miyoo Flip
-make all              # All device platforms
+make all              # All platform-specific builds
 ```
+
+Universal examples are written to `build/universal/<example>/<example>`.
+They read `PLATFORM` (or the basename of `SYSTEM_PATH`) from the NextUI launcher
+and use the firmware's native SDL libraries. See the [runtime API](docs/API.md#macros--constants).
 
 ### 4. Package & Deploy
 

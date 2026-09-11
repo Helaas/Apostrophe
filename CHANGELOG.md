@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v1.2.0] - 2026-09-11
+
+### Added
+
+- **Universal NextUI builds**: `make universal` uses a pinned TG5040 toolchain to build one application binary for `tg5040`, `tg5050`, `my355`, and `h700`, using each firmware's native SDL and hardware runtime.
+- **Runtime platform API**: added `ap_get_platform()`, `ap_get_platform_name()`, `ap_get_device_name()`, and `ap_is_device()`. `PLATFORM_NEXTUI` builds select the platform from `PLATFORM`, falling back to the basename of `SYSTEM_PATH`.
+- **H700 support**: added built-in evdev input, external SDL joystick mapping, display defaults, and CPU governor integration for Anbernic devices running NextUI.
+- **Input regression checks**: added checks for platform-specific face-button mappings and H700 device filtering, plus a real H700 uinput/SDL test for external controller events.
+
+### Changed
+
+- **Runtime hardware behavior**: centralized input deadzones, device scaling, battery paths, CPU/fan control, theme lookup, and suspend handling behind runtime platform selection. Power-key discovery now uses evdev capabilities on all device platforms.
+- **Portable device linking**: removed toolchain SDL runtime search paths from TG5040 and universal application binaries.
+
+### Fixed
+
+- **H700 idle input latency**: raw built-in controls are polled promptly instead of waiting for SDL's idle timeout.
+- **H700 external controller input**: raw evdev polling now accepts only the built-in controls and power-key devices, preventing duplicate SDL events and right-stick motion being interpreted as navigation.
+- **Face-button flipping**: H700 built-in and external controllers now honor `ap_flip_face_buttons()`. Shared mapping also applies the documented X/Y swap to raw joysticks.
+
+## [v1.1.1] - 2026-07-16
+
 ### Added
 
 - **File Picker widget** (`apostrophe_widgets.h`): new `ap_file_picker` widget for browsing the filesystem and selecting files or directories. Features: configurable mode (files only, directories only, or both), sorted directory listing with folders first, visual folder/file differentiation via trailing chevron `>` and uppercase extension labels, inline folder creation in dir-capable modes via `ap_keyboard()`, extension filtering, hidden-file option, and enforced rooted browsing (`SDCARD_PATH` on device, `$HOME` by default on desktop, or a caller-provided `root_path`). Demo entries added for all three modes.
