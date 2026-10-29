@@ -63,6 +63,8 @@ int main(void) {
                                   SDL_CONTROLLER_BUTTON_X, SDL_CONTROLLER_BUTTON_Y };
     const SDL_Keycode keys[] = { SDLK_a, SDLK_b, SDLK_x, SDLK_y };
     const SDL_Scancode scancodes[] = { 44, 224, 225, 226 };
+    SDL_KeyboardEvent power = {0};
+    power.keysym.scancode = AP__MY355_CODE_POWER;
 
     for (int platform = 0; platform < 4; platform++) {
         setenv("PLATFORM", platforms[platform], 1);
@@ -76,10 +78,16 @@ int main(void) {
                 key.keysym.scancode = scancodes[face];
                 assert(ap__map_joy_button(joy) == expected);
                 assert(ap__map_controller_button(controller[face]) == expected);
-                assert(ap__map_key_event(&key) == expected);
+                /* my355 mirrors its gamepad onto the keyboard — those are dropped */
+                assert(ap__map_key_event(&key) == (platform == 2 ? AP_BTN_NONE : expected));
                 assert(ap__h700_button_from_code(codes[face]) == expected);
             }
             assert(ap__map_joy_button(AP__JOY_BTN_L1) == AP_BTN_L1);
+            /* Buttons 10/11 are the triggers on H700 but stick clicks elsewhere */
+            assert(ap__map_joy_button(AP__JOY_BTN_L2) == (platform == 3 ? AP_BTN_L2 : AP_BTN_NONE));
+            assert(ap__map_joy_button(AP__JOY_BTN_R2) == (platform == 3 ? AP_BTN_R2 : AP_BTN_NONE));
+            /* Power is the one my355 button that still arrives as a scancode */
+            assert(ap__map_key_event(&power) == (platform == 2 ? AP_BTN_POWER : AP_BTN_NONE));
             assert(ap__h700_button_from_code(116) == AP_BTN_POWER);
         }
     }

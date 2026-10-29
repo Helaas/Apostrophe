@@ -922,40 +922,26 @@ static const char *ap__font_search_paths[] = {
     NULL,
 };
 
-/* Joystick button mapping — TrimUI raw values (firmware swaps A/B, X/Y) */
+/* Joystick button mapping — TrimUI raw values (firmware swaps A/B, X/Y).
+ * my355 uses the same indices; H700 differs, see ap__map_joy_button(). */
 #define AP__JOY_BTN_A       1
 #define AP__JOY_BTN_B       0
 #define AP__JOY_BTN_X       3
 #define AP__JOY_BTN_Y       2
 #define AP__JOY_BTN_L1      4
 #define AP__JOY_BTN_R1      5
-#define AP__JOY_BTN_L2      10
-#define AP__JOY_BTN_R2      11
+#define AP__JOY_BTN_L2      10  /* H700 only — R3 on the TrimUI/Miyoo pads */
+#define AP__JOY_BTN_R2      11  /* H700 only */
 #define AP__JOY_BTN_SELECT  6
 #define AP__JOY_BTN_START   7
 #define AP__JOY_BTN_MENU    8
 
-/* TrimUI analog trigger axes (L2/R2 are axes, not buttons, on TG5040/TG5050) */
+/* Analog trigger axes (L2/R2 are axes, not buttons, on TG5040/TG5050/MY355) */
 #define AP__JOY_AXIS_L2     2   /* ABS_Z   */
 #define AP__JOY_AXIS_R2     5   /* ABS_RZ  */
 
-/* my355 (Miyoo Flip) keyboard scancode mapping.
- * On the Flip, ALL buttons arrive as SDL keyboard scancodes, not joystick. */
-#define AP__MY355_CODE_A       44   /* SDL_SCANCODE_SPACE */
-#define AP__MY355_CODE_B       224  /* SDL_SCANCODE_LCTRL */
-#define AP__MY355_CODE_X       225  /* SDL_SCANCODE_LSHIFT */
-#define AP__MY355_CODE_Y       226  /* SDL_SCANCODE_LALT */
-#define AP__MY355_CODE_UP      82   /* SDL_SCANCODE_UP */
-#define AP__MY355_CODE_DOWN    81   /* SDL_SCANCODE_DOWN */
-#define AP__MY355_CODE_LEFT    80   /* SDL_SCANCODE_LEFT */
-#define AP__MY355_CODE_RIGHT   79   /* SDL_SCANCODE_RIGHT */
-#define AP__MY355_CODE_START   40   /* SDL_SCANCODE_RETURN */
-#define AP__MY355_CODE_SELECT  228  /* SDL_SCANCODE_RCTRL */
-#define AP__MY355_CODE_L1      43   /* SDL_SCANCODE_TAB */
-#define AP__MY355_CODE_R1      42   /* SDL_SCANCODE_BACKSLASH */
-#define AP__MY355_CODE_L2      75   /* SDL_SCANCODE_PAGEUP */
-#define AP__MY355_CODE_R2      78   /* SDL_SCANCODE_PAGEDOWN */
-#define AP__MY355_CODE_MENU    41   /* SDL_SCANCODE_ESCAPE */
+/* my355 (Miyoo Flip) power scancode. Every other button is reported both as a
+ * scancode and by the gamepad miyoo_inputd creates; only the gamepad is read. */
 #define AP__MY355_CODE_POWER   102  /* SDL_SCANCODE_POWER */
 
 /* Virtual button names */
@@ -1500,10 +1486,11 @@ static ap_button ap__flip_face_button(ap_button button) {
     return button;
 }
 
-/* Map SDL joystick button to virtual button (raw joystick — used on TrimUI) */
+/* Map SDL joystick button to virtual button (raw joystick — used on device) */
 static ap_button ap__map_joy_button(uint8_t btn) {
+    bool h700 = ap_get_platform() == AP_PLATFORM_H700;
     /* H700 external pads use the opposite A/B indices to TrimUI. */
-    if (ap_get_platform() == AP_PLATFORM_H700 && btn <= 1) btn ^= 1;
+    if (h700 && btn <= 1) btn ^= 1;
     switch (btn) {
         case AP__JOY_BTN_A:      return ap__flip_face_button(AP_BTN_A);
         case AP__JOY_BTN_B:      return ap__flip_face_button(AP_BTN_B);
@@ -1511,8 +1498,8 @@ static ap_button ap__map_joy_button(uint8_t btn) {
         case AP__JOY_BTN_Y:      return ap__flip_face_button(AP_BTN_Y);
         case AP__JOY_BTN_L1:     return AP_BTN_L1;
         case AP__JOY_BTN_R1:     return AP_BTN_R1;
-        case AP__JOY_BTN_L2:     return AP_BTN_L2;
-        case AP__JOY_BTN_R2:     return AP_BTN_R2;
+        case AP__JOY_BTN_L2:     return h700 ? AP_BTN_L2 : AP_BTN_NONE;
+        case AP__JOY_BTN_R2:     return h700 ? AP_BTN_R2 : AP_BTN_NONE;
         case AP__JOY_BTN_SELECT: return AP_BTN_SELECT;
         case AP__JOY_BTN_START:  return AP_BTN_START;
         case AP__JOY_BTN_MENU:   return AP_BTN_MENU;
@@ -1548,30 +1535,14 @@ static int ap__axis_deadzone(void) {
 }
 
 /* Map SDL keyboard to virtual button.
- * On my355 we match by scancode (the Flip sends buttons as keyboard HID scancodes).
+ * On my355 only power comes from the keyboard; its other scancodes mirror the
+ * gamepad and would double each press.
  * On all other platforms we match by keycode for developer convenience. */
 static ap_button ap__map_key_event(SDL_KeyboardEvent *kev) {
     ap_button mapped = AP_BTN_NONE;
     if (ap_get_platform() == AP_PLATFORM_MY355) {
-        switch ((uint8_t)kev->keysym.scancode) {
-            case AP__MY355_CODE_UP:     mapped = AP_BTN_UP;     break;
-            case AP__MY355_CODE_DOWN:   mapped = AP_BTN_DOWN;   break;
-            case AP__MY355_CODE_LEFT:   mapped = AP_BTN_LEFT;   break;
-            case AP__MY355_CODE_RIGHT:  mapped = AP_BTN_RIGHT;  break;
-            case AP__MY355_CODE_A:      mapped = AP_BTN_A;      break;
-            case AP__MY355_CODE_B:      mapped = AP_BTN_B;      break;
-            case AP__MY355_CODE_X:      mapped = AP_BTN_X;      break;
-            case AP__MY355_CODE_Y:      mapped = AP_BTN_Y;      break;
-            case AP__MY355_CODE_L1:     mapped = AP_BTN_L1;     break;
-            case AP__MY355_CODE_R1:     mapped = AP_BTN_R1;     break;
-            case AP__MY355_CODE_L2:     mapped = AP_BTN_L2;     break;
-            case AP__MY355_CODE_R2:     mapped = AP_BTN_R2;     break;
-            case AP__MY355_CODE_START:  mapped = AP_BTN_START;  break;
-            case AP__MY355_CODE_SELECT: mapped = AP_BTN_SELECT; break;
-            case AP__MY355_CODE_MENU:   mapped = AP_BTN_MENU;   break;
-            case AP__MY355_CODE_POWER:  mapped = AP_BTN_POWER;  break;
-            default: break;
-        }
+        if ((uint8_t)kev->keysym.scancode == AP__MY355_CODE_POWER)
+            mapped = AP_BTN_POWER;
     } else {
         /* Match Gabagool DefaultInputMapping() — letter keys for desktop previews. */
         switch (kev->keysym.sym) {
@@ -2076,15 +2047,12 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
             break;
         }
 
-        /* --- Raw Joystick button/hat events (TrimUI devices) ---
-           MY355 sends buttons and d-pad as keyboard scancodes; processing
-           joystick button/hat events too would cause double-input.
+        /* --- Raw Joystick button/hat events (device platforms) ---
            When a GameController is active (macOS), skip raw joystick
            button/hat events — the GameController API already maps them
            correctly, and the raw mappings differ, causing phantom inputs.
            Axis events (thumbstick) are allowed through on all platforms. */
         case SDL_JOYBUTTONDOWN: {
-            if (ap_get_platform() == AP_PLATFORM_MY355) break;
             if (ap__g.controller) break; /* GameController handles this */
             ap_button b = ap__map_joy_button(ev->jbutton.button);
             ap__push_button_press(b, now);
@@ -2092,7 +2060,6 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
         }
 
         case SDL_JOYBUTTONUP: {
-            if (ap_get_platform() == AP_PLATFORM_MY355) break;
             if (ap__g.controller) break; /* GameController handles this */
             ap_button b = ap__map_joy_button(ev->jbutton.button);
             ap__push_button_release(b);
@@ -2150,14 +2117,11 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
             break;
         }
         case SDL_JOYHATMOTION: {
-            if (ap_get_platform() == AP_PLATFORM_MY355) break;
             if (ap__g.controller) break; /* GameController handles d-pad */
             ap__set_hat_state(ev->jhat.value, now);
             break;
         }
-        /* --- Analog stick axis events (all device platforms) ---
-           Thumbstick generates SDL_JOYAXISMOTION on all devices including
-           MY355, so this must remain outside the MY355 exclusion guard. */
+        /* --- Analog stick axis events (all device platforms) --- */
         case SDL_JOYAXISMOTION: {
             if (ev->jaxis.axis == 1) { /* Y axis (up/down) */
                 if (ev->jaxis.value < -ap__axis_deadzone()) {
@@ -2176,13 +2140,14 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
                     ap__set_axis_direction_x(0, now);
                 }
             }
-            /* L2/R2 analog triggers (TrimUI TG5040/TG5050 send triggers as
+            /* L2/R2 analog triggers (TG5040/TG5050/MY355 send triggers as
              * axes 2/5 rather than joystick buttons). Use val > 0 threshold
              * to match NextUI's trigger handling.  The buttons_held guard in
              * ap__input_push prevents duplicate events if the platform also
              * sends joystick button events for these triggers. */
             else if ((ap_get_platform() == AP_PLATFORM_TG5040 ||
-                      ap_get_platform() == AP_PLATFORM_TG5050) &&
+                      ap_get_platform() == AP_PLATFORM_TG5050 ||
+                      ap_get_platform() == AP_PLATFORM_MY355) &&
                      ev->jaxis.axis == AP__JOY_AXIS_L2) {
                 if (ev->jaxis.value > 0) {
                     if (!ap__g.buttons_held[AP_BTN_L2])
@@ -2191,7 +2156,8 @@ static void ap__handle_sdl_event(SDL_Event *ev, uint32_t now) {
                     ap__input_push(AP_BTN_L2, false);
                 }
             } else if ((ap_get_platform() == AP_PLATFORM_TG5040 ||
-                        ap_get_platform() == AP_PLATFORM_TG5050) &&
+                        ap_get_platform() == AP_PLATFORM_TG5050 ||
+                        ap_get_platform() == AP_PLATFORM_MY355) &&
                        ev->jaxis.axis == AP__JOY_AXIS_R2) {
                 if (ev->jaxis.value > 0) {
                     if (!ap__g.buttons_held[AP_BTN_R2])
