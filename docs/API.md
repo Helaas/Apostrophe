@@ -316,7 +316,7 @@ Get the automatic font bump computed at init (0–5). The bump is added to each 
 
 Poll for the next input event. Returns `true` if an event was available.
 
-Handles SDL event processing internally: keyboard events, raw joystick buttons/axes/hats (TrimUI), SDL GameController buttons/axes (macOS + recognised gamepads), platform-specific scancodes (my355), and quit events.
+Handles SDL event processing internally: keyboard events, raw joystick buttons/axes/hats (NextUI devices), SDL GameController buttons/axes (macOS + recognised gamepads), the my355 power scancode, and quit events.
 
 #### `void ap_flip_face_buttons(bool flip)`
 

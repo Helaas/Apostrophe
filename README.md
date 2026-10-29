@@ -169,7 +169,7 @@ On device, colors are loaded from NextUI's theme system (`nextval.elf`). Apostro
 
 ### Input
 
-Apostrophe abstracts all input sources into a unified virtual button system (`AP_BTN_*`). On desktop (macOS, Linux, or Windows) and recognised gamepads it uses the SDL GameController API; on TrimUI devices it reads raw joystick events; and on the Miyoo Flip (my355) it maps hardware-specific keyboard scancodes. Directional buttons auto-repeat with configurable delay/rate. Miyoo Flip builds also use a higher analog deadzone than other targets to reduce accidental horizontal movement from the thumbstick.
+Apostrophe abstracts all input sources into a unified virtual button system (`AP_BTN_*`). On desktop (macOS, Linux, or Windows) and recognised gamepads it uses the SDL GameController API, and on NextUI devices it reads raw joystick events. The Miyoo Flip (my355) reports every button both as a keyboard scancode and through its gamepad, so only the gamepad is read, apart from the power key. Directional buttons auto-repeat with configurable delay/rate. Miyoo Flip builds also use a higher analog deadzone than other targets to reduce accidental horizontal movement from the thumbstick.
 
 The **combo system** adds support for chords (simultaneous button presses like L1+R1) and sequences (ordered presses like Up, Up, Down, Down). Register combos with `ap_register_chord()` / `ap_register_sequence()` and poll for events with `ap_poll_combo()`. See `examples/combo/` and the [API reference](docs/API.md#combos) for details.
 

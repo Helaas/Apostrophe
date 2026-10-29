@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **my355 gamepad input**: the Miyoo Flip reports every button twice, as a `gpio-keys-polled` scancode and through the gamepad `miyoo_inputd` creates. Buttons, d-pad and triggers now come from the gamepad — joystick buttons, hat and trigger axes 2/5, the same source NextUI uses — and the mirrored scancodes are ignored so a press is not counted twice. Power still arrives as a scancode, which the gamepad does not report.
+
+### Fixed
+
+- **Stick clicks reported as L2**: joystick buttons 10 and 11 are the triggers only on H700. On `tg5040`, `tg5050` and `my355` button 10 is R3, which no longer fires L2.
+
 ## [v1.2.0] - 2026-09-11
 
 ### Added
